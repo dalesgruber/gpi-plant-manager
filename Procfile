@@ -1,1 +1,1 @@
-web: uvicorn zira_dashboard.app:app --app-dir src --host 0.0.0.0 --port $PORT
+web: PYTHONPATH=src uvicorn zira_dashboard.app:app --host 0.0.0.0 --port $PORT
