@@ -55,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     results_dir = Path(args.results_dir)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report_path = Path(args.report)
+    if report_path.parent != Path(""):
+        report_path.parent.mkdir(parents=True, exist_ok=True)
 
     probe_groups: list[tuple[str, list]] = [("reads", ALL_READ_PROBES)]
     if not args.skip_writes:

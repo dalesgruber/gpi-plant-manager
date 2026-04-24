@@ -128,10 +128,10 @@ def probe_read_ds_paginated(
                     name=name,
                     category="reads",
                     endpoint="GET /reading (paginated)",
-                    status="expected_failure",
+                    status="skipped",
                     request_summary={"limit": 5, "meter_id": ds.meter_id},
                     response_summary=response_summary,
-                    observations=["Not enough data to paginate."],
+                    observations=["No data returned for DS in window; pagination untestable."],
                     raw_log_path=str(
                         write_raw_log(results_dir, name, {}, response_summary)
                     ),
