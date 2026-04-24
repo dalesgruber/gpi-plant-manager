@@ -64,3 +64,12 @@ class ZiraClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def add_readings(self, readings: list[dict]) -> Any:
+        resp = self.session.post(
+            self._url("reading/ids/"),
+            json=readings,
+            timeout=self.timeout_seconds,
+        )
+        resp.raise_for_status()
+        return resp.json()

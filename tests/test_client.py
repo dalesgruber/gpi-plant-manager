@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import responses
 
@@ -71,3 +73,28 @@ def test_get_channel_analysis_builds_url_and_params(client):
     assert "interval=1+days" in url or "interval=1%20days" in url
     assert "fromTime=2026-04-01T00%3A00%3A00Z" in url
     assert "toTime=2026-04-10T00%3A00%3A00Z" in url
+
+
+@responses.activate
+def test_add_readings_posts_json_payload(client):
+    responses.add(
+        method=responses.POST,
+        url="https://api.zira.us/public/reading/ids/",
+        json={"ok": True},
+        status=200,
+    )
+
+    payload = [
+        {
+            "meterId": "3978",
+            "timestamp": "2026-04-24T12:00:00Z",
+            "values": [{"metricId": "6", "value": 0}],
+        }
+    ]
+    result = client.add_readings(payload)
+
+    assert result == {"ok": True}
+    sent = responses.calls[0].request
+    assert sent.headers["X-API-Key"] == "test-key-1234"
+    assert sent.headers["Content-Type"] == "application/json"
+    assert json.loads(sent.body) == payload
