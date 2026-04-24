@@ -48,3 +48,26 @@ def test_get_readings_passes_optional_params(client):
     assert "startTime=2026-04-17T00%3A00%3A00Z" in url
     assert "limit=50" in url
     assert "lastValue=abc" in url
+
+
+@responses.activate
+def test_get_channel_analysis_builds_url_and_params(client):
+    responses.add(
+        method=responses.GET,
+        url="https://api.zira.us/public/channels/42301/analysis",
+        json={"points": []},
+        status=200,
+    )
+
+    result = client.get_channel_analysis(
+        channel_id="42301",
+        interval="1 days",
+        from_time="2026-04-01T00:00:00Z",
+        to_time="2026-04-10T00:00:00Z",
+    )
+
+    assert result == {"points": []}
+    url = responses.calls[0].request.url
+    assert "interval=1+days" in url or "interval=1%20days" in url
+    assert "fromTime=2026-04-01T00%3A00%3A00Z" in url
+    assert "toTime=2026-04-10T00%3A00%3A00Z" in url

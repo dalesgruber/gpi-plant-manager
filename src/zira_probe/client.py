@@ -48,3 +48,19 @@ class ZiraClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def get_channel_analysis(
+        self,
+        channel_id: str,
+        interval: str,
+        from_time: str,
+        to_time: str,
+    ) -> Any:
+        params = {"interval": interval, "fromTime": from_time, "toTime": to_time}
+        resp = self.session.get(
+            self._url(f"channels/{channel_id}/analysis"),
+            params=params,
+            timeout=self.timeout_seconds,
+        )
+        resp.raise_for_status()
+        return resp.json()
