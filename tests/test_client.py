@@ -98,3 +98,48 @@ def test_add_readings_posts_json_payload(client):
     assert sent.headers["X-API-Key"] == "test-key-1234"
     assert sent.headers["Content-Type"] == "application/json"
     assert json.loads(sent.body) == payload
+
+
+@responses.activate
+def test_request_returns_response_object(client):
+    responses.add(
+        method=responses.GET,
+        url="https://api.zira.us/public/data-sources",
+        json={"items": []},
+        status=200,
+    )
+
+    resp = client.request("GET", "data-sources")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"items": []}
+
+
+@responses.activate
+def test_request_does_not_raise_on_4xx(client):
+    responses.add(
+        method=responses.GET,
+        url="https://api.zira.us/public/does-not-exist",
+        json={"error": "not found"},
+        status=404,
+    )
+
+    resp = client.request("GET", "does-not-exist")
+
+    assert resp.status_code == 404
+
+
+@responses.activate
+def test_request_passes_through_json_body(client):
+    responses.add(
+        method=responses.POST,
+        url="https://api.zira.us/public/whatever",
+        json={"ok": True},
+        status=200,
+    )
+
+    client.request("POST", "whatever", json_body={"hello": "world"})
+
+    import json as _json
+    sent = responses.calls[0].request
+    assert _json.loads(sent.body) == {"hello": "world"}

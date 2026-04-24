@@ -73,3 +73,25 @@ class ZiraClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        params: dict | None = None,
+        json_body: Any = None,
+        timeout_seconds: float | None = None,
+    ) -> requests.Response:
+        """Generic request for undocumented-endpoint probing.
+
+        Never raises on 4xx/5xx — returns the response so probes can record
+        the exact error shape.
+        """
+
+        return self.session.request(
+            method=method.upper(),
+            url=self._url(path),
+            params=params,
+            json=json_body,
+            timeout=timeout_seconds or self.timeout_seconds,
+        )
