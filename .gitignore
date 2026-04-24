@@ -1,0 +1,23 @@
+# Secrets
+.env
+
+# Probe output
+results/
+CAPABILITY_REPORT.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/

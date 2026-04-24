@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zira-probe"
+version = "0.1.0"
+description = "Capability probe for the Zira.us public API"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "responses>=0.24",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zira_probe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

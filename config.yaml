@@ -1,0 +1,20 @@
+# Fill in the IDs by copying them from the Zira UI.
+# "Share..." on a data source or channel reveals its ID.
+
+test_data_source:
+  meter_id: "REPLACE_WITH_TEST_DS_METER_ID"
+  metrics:
+    number: "REPLACE_WITH_NUMBER_METRIC_ID"
+    text: "REPLACE_WITH_TEXT_METRIC_ID"
+
+read_targets:
+  data_sources:
+    - meter_id: "REPLACE_WITH_REAL_DS_ID_1"
+      label: "Shop floor DS 1"
+  channels:
+    - channel_id: "REPLACE_WITH_CHANNEL_ID_1"
+      label: "Channel 1"
+
+probe_settings:
+  read_window_days: 7
+  undocumented_timeout_seconds: 10
