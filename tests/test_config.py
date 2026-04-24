@@ -10,6 +10,8 @@ def _write(path: Path, content: str) -> None:
 
 
 def test_load_config_reads_env_and_yaml(tmp_path, monkeypatch):
+    monkeypatch.delenv("ZIRA_API_KEY", raising=False)
+    monkeypatch.delenv("ZIRA_BASE_URL", raising=False)
     env_path = tmp_path / ".env"
     _write(env_path, "ZIRA_API_KEY=key-abc123\nZIRA_BASE_URL=https://api.zira.us/public/\n")
 
@@ -103,3 +105,30 @@ probe_settings:
     config = load_config(env_path=env_path, yaml_path=yaml_path)
 
     assert config.base_url == "https://api.zira.us/public/"
+
+
+def test_load_config_does_not_override_ambient_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZIRA_API_KEY", "ambient-key")
+    env_path = tmp_path / ".env"
+    _write(env_path, "ZIRA_API_KEY=dotfile-key\n")
+    yaml_path = tmp_path / "config.yaml"
+    _write(
+        yaml_path,
+        """
+test_data_source:
+  meter_id: "999"
+  metrics:
+    number: "1"
+    text: "2"
+read_targets:
+  data_sources: []
+  channels: []
+probe_settings:
+  read_window_days: 7
+  undocumented_timeout_seconds: 10
+""",
+    )
+
+    config = load_config(env_path=env_path, yaml_path=yaml_path)
+
+    assert config.api_key == "ambient-key"
