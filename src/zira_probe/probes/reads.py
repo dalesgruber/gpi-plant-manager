@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 
 import requests
 
@@ -168,11 +169,16 @@ def probe_read_ds_paginated(
                 status = "unexpected_failure"
                 observations.append(f"Page 2 errored: {err2['type']}")
             else:
-                page1_ids = {id(x) for x in page1}
+                def _fingerprint(item):
+                    try:
+                        return json.dumps(item, sort_keys=True, default=str)
+                    except Exception:
+                        return repr(item)
+                page1_ids = {_fingerprint(x) for x in page1}
                 overlap = False
                 if isinstance(page2, list):
                     for x in page2:
-                        if id(x) in page1_ids:
+                        if _fingerprint(x) in page1_ids:
                             overlap = True
                             break
                 status = "success"
