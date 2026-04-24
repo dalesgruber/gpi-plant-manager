@@ -1,0 +1,162 @@
+{% extends "_staffing_base.html" %}
+{% block title %}Time Off{% endblock %}
+
+{% block styles %}
+  .cal-header { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+  .cal-header .title { font-size: 1.15rem; font-weight: 600; }
+  .cal-header .nav-btn {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; cursor: pointer;
+  }
+  .cal-header .nav-btn:hover { border-color: var(--muted); }
+  .cal-header .scale-toggle { display: inline-flex; gap: 0.15rem; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.15rem; }
+  .cal-header .scale-toggle a {
+    color: var(--muted); text-decoration: none;
+    padding: 0.25rem 0.6rem; border-radius: 6px; font-size: 0.8rem;
+  }
+  .cal-header .scale-toggle a.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+  .cal-header .spacer { flex: 1 1 auto; }
+
+  table.month { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.month th { font-size: 0.7rem; color: var(--muted); font-weight: 600; text-align: center; padding: 0.3rem; background: var(--panel); border: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.6px; }
+  table.month td { border: 1px solid var(--border); background: var(--panel); padding: 0.4rem; vertical-align: top; min-height: 5rem; height: 5.5rem; }
+  table.month td.outside { background: var(--bg); opacity: 0.5; }
+  table.month td.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+  table.month td.weekend { background: var(--panel-2); }
+  .day-num { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .off-pills { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+  .off-pill { background: var(--warn-dim); color: var(--warn); border-radius: 999px; padding: 0.05rem 0.5rem; font-size: 0.72rem; font-weight: 500; }
+  .off-none { color: var(--muted); font-size: 0.7rem; font-style: italic; }
+
+  /* day view */
+  .day-view-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+  .day-view-list .off-pill { font-size: 0.85rem; padding: 0.2rem 0.75rem; }
+
+  /* week view */
+  table.week { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 0.5rem; }
+  table.week th { font-size: 0.75rem; color: var(--muted); font-weight: 600; padding: 0.3rem; background: var(--panel); border: 1px solid var(--border); text-align: center; text-transform: uppercase; letter-spacing: 0.5px; }
+  table.week td { border: 1px solid var(--border); background: var(--panel); padding: 0.5rem; vertical-align: top; min-height: 6rem; }
+
+  .empty-state { color: var(--muted); text-align: center; padding: 2rem; font-style: italic; }
+{% endblock %}
+
+{% block content %}
+<div class="cal-header">
+  <div class="title">{{ heading }}</div>
+  <div style="display:flex;gap:0.4rem">
+    <a class="nav-btn" href="?scale={{ scale }}&date={{ prev_date }}">‹ Prev</a>
+    <a class="nav-btn" href="?scale={{ scale }}&date={{ today_iso }}">Today</a>
+    <a class="nav-btn" href="?scale={{ scale }}&date={{ next_date }}">Next ›</a>
+  </div>
+  <div class="spacer"></div>
+  <div class="scale-toggle">
+    {% for s in ['day', 'week', 'month', 'quarter', 'year'] %}
+      <a href="?scale={{ s }}&date={{ cursor_iso }}" class="{% if scale == s %}active{% endif %}">{{ s|title }}</a>
+    {% endfor %}
+  </div>
+</div>
+
+{% if scale == 'day' %}
+  <div class="panel">
+    <h2>{{ cursor_label }}</h2>
+    {% if day_names %}
+      <div class="day-view-list">
+        {% for n in day_names %}<span class="off-pill">{{ n }}</span>{% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No one is off this day.</div>
+    {% endif %}
+  </div>
+
+{% elif scale == 'week' %}
+  <table class="week">
+    <thead><tr>
+      {% for d in week_days %}<th>{{ d.label }}<br><span style="color:var(--fg);font-weight:700;font-size:0.9rem">{{ d.num }}</span></th>{% endfor %}
+    </tr></thead>
+    <tbody><tr>
+      {% for d in week_days %}
+        <td{% if d.is_today %} class="today"{% endif %}>
+          {% if d.names %}
+            <div class="off-pills">{% for n in d.names %}<span class="off-pill">{{ n }}</span>{% endfor %}</div>
+          {% else %}
+            <div class="off-none">—</div>
+          {% endif %}
+        </td>
+      {% endfor %}
+    </tr></tbody>
+  </table>
+
+{% elif scale == 'month' %}
+  <table class="month">
+    <thead><tr>
+      {% for d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<th>{{ d }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for week in month_weeks %}
+        <tr>
+          {% for d in week %}
+            <td class="{% if d.outside %}outside{% endif %}{% if d.is_today %} today{% endif %}{% if d.weekend %} weekend{% endif %}">
+              <div class="day-num">{{ d.num }}</div>
+              {% if d.names %}
+                <div class="off-pills">{% for n in d.names %}<span class="off-pill">{{ n }}</span>{% endfor %}</div>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% elif scale == 'quarter' %}
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem">
+    {% for m in quarter_months %}
+      <div>
+        <h2 style="text-align:center">{{ m.label }}</h2>
+        <table class="month">
+          <thead><tr>{% for d in ['M','T','W','T','F','S','S'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for week in m.weeks %}
+              <tr>
+                {% for d in week %}
+                  <td class="{% if d.outside %}outside{% endif %}{% if d.is_today %} today{% endif %}" style="height:2.5rem">
+                    <div class="day-num">{{ d.num }}</div>
+                    {% if d.count > 0 %}<div style="color:var(--warn);font-size:0.7rem;font-weight:600">{{ d.count }} off</div>{% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+  </div>
+
+{% elif scale == 'year' %}
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.75rem">
+    {% for m in year_months %}
+      <div>
+        <h2 style="font-size:0.85rem;text-align:center">{{ m.label }}</h2>
+        <table class="month" style="font-size:0.7rem">
+          <thead><tr>{% for d in ['M','T','W','T','F','S','S'] %}<th style="padding:0.15rem">{{ d }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for week in m.weeks %}
+              <tr>
+                {% for d in week %}
+                  <td class="{% if d.outside %}outside{% endif %}{% if d.is_today %} today{% endif %}" style="height:1.6rem;padding:0.15rem">
+                    <div class="day-num" style="font-size:0.65rem">{{ d.num }}</div>
+                    {% if d.count > 0 %}<div style="color:var(--warn);font-size:0.6rem;font-weight:700">{{ d.count }}</div>{% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<p class="hint" style="margin-top:1rem">
+  Time-off data is currently sourced from the Plant Scheduler's Time Off column per day. In a later iteration this will be fed by your Odoo HR time-off requests.
+</p>
+{% endblock %}

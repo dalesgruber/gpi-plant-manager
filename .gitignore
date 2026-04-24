@@ -1,6 +1,20 @@
 # Secrets
 .env
 
+# User-configured dashboard targets + widget layouts (local, not source)
+settings.json
+layouts.json
+widget_customizations.json
+schedule.json
+work_centers.json
+
+# Staffing data (local, not source)
+roster.json
+schedules/
+roster.csv
+skills.csv
+Plant Scheduler*.csv
+
 # Probe output
 results/
 CAPABILITY_REPORT.md

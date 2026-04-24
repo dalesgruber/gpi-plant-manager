@@ -1,0 +1,358 @@
+{% extends "_staffing_base.html" %}
+{% block title %}People Matrix{% endblock %}
+
+{% block styles %}
+  .skills-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .skills-table th, .skills-table td {
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.35rem;
+    text-align: center;
+  }
+  .skills-table thead th {
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0.4rem 0.35rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .skills-table thead th:hover { color: var(--fg); }
+  .skills-table thead th.sort-asc::after  { content: ' ▲'; color: var(--accent); }
+  .skills-table thead th.sort-desc::after { content: ' ▼'; color: var(--accent); }
+  .skills-table tbody td { background: var(--panel); }
+  .skills-table tbody tr.inactive td { opacity: 0.45; }
+  .skills-table td.name {
+    text-align: left;
+    font-weight: 600;
+    position: sticky;
+    left: 0;
+    background: var(--panel);
+    z-index: 1;
+    padding-left: 0.55rem;
+  }
+
+  .skill-sel {
+    width: 2.4rem;
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.15rem 0.25rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+    appearance: none;
+    cursor: pointer;
+  }
+  .skill-sel:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+  .skill-sel.lvl-0 { color: var(--bad); border-color: var(--bad-dim); }
+  .skill-sel.lvl-1 { color: var(--warn); border-color: var(--warn-dim); }
+  .skill-sel.lvl-2 { color: var(--fg); }
+  .skill-sel.lvl-3 { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); }
+  .skill-sel option { background: var(--panel); color: var(--fg); font-weight: normal; }
+
+  .active-check { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; cursor: pointer; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+  .toolbar .counts { color: var(--muted); font-size: 0.82rem; }
+  .toolbar .save-flash { display: inline-block; color: var(--accent); font-weight: 600; font-size: 0.85rem; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+  .toolbar .save-flash.show { opacity: 1; }
+  .toolbar button.save-btn {
+    background: var(--accent); color: #0e1116;
+    border: 1px solid var(--accent); border-radius: 6px;
+    padding: 0.4rem 0.95rem; font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+  }
+  .toolbar button.save-btn:hover { filter: brightness(1.08); }
+
+  .legend { display: flex; gap: 0.6rem; align-items: center; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .legend span.swatch { display: inline-block; width: 1.25rem; height: 1rem; border-radius: 4px; text-align: center; font-weight: 700; font-size: 0.75rem; line-height: 1rem; vertical-align: middle; margin-right: 0.3rem; }
+  .legend .s0 { background: #0e1116; color: var(--bad); border: 1px solid var(--bad); }
+  .legend .s1 { background: #0e1116; color: var(--warn); border: 1px solid var(--warn); }
+  .legend .s2 { background: #0e1116; color: var(--fg); border: 1px solid var(--border); }
+  .legend .s3 { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); }
+
+  input[type=search] {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.55rem; font: inherit; font-size: 0.85rem;
+    width: 14rem;
+  }
+  label.active-toggle { color: var(--muted); font-size: 0.85rem; display: inline-flex; gap: 0.35rem; align-items: center; }
+
+  /* Add person bar */
+  .add-person-bar {
+    display: flex; gap: 0.5rem; align-items: center;
+    background: var(--panel); border: 1px dashed var(--border); border-radius: 8px;
+    padding: 0.4rem 0.7rem; margin-bottom: 0.75rem;
+  }
+  .add-person-bar label { color: var(--muted); font-size: 0.8rem; }
+  .add-person-bar input[type=text] {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.88rem; width: 14rem;
+  }
+  .add-person-bar button {
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 6px;
+    padding: 0.35rem 0.9rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+
+  /* Delete button in each row */
+  .del-btn {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 0.08rem 0.4rem; font-size: 0.75rem; cursor: pointer;
+  }
+  .del-btn:hover { color: var(--bad); border-color: var(--bad); }
+  .skills-table td.del-cell { padding: 0.15rem 0.35rem; }
+
+  /* Confirmation popup (reuse staffing.html's popover style) */
+  .popover-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: none; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .popover-backdrop.show { display: flex; }
+  .popover { background: var(--panel); color: var(--fg); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; max-width: 30rem; box-shadow: 0 12px 36px rgba(0,0,0,0.5); }
+  .popover h4 { margin: 0 0 0.45rem; font-size: 0.95rem; font-weight: 700; color: var(--warn); }
+  .popover p { margin: 0.25rem 0; font-size: 0.88rem; line-height: 1.45; }
+  .popover .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.9rem; flex-wrap: wrap; }
+  .popover button { border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.85rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .popover button.primary { background: var(--accent); color: #0e1116; border-color: var(--accent); }
+  .popover button.ghost { background: var(--panel-2); color: var(--fg); }
+  .popover button.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .popover button:hover { filter: brightness(1.08); }
+{% endblock %}
+
+{% block content %}
+<form method="post" action="/staffing/skills" id="skills-form">
+  <div class="toolbar">
+    <h2 style="margin:0">People Matrix</h2>
+    <span class="counts">{{ active_count }} active · {{ inactive_count }} inactive · {{ skills|length }} skills</span>
+    <div style="margin-left:auto;display:flex;gap:0.75rem;align-items:center">
+      <input type="search" id="wheel-filter" placeholder="Filter people…">
+      <label class="active-toggle"><input type="checkbox" id="hide-inactive" checked> Active only</label>
+      <span class="save-flash" id="save-flash"></span>
+      <button type="submit" class="save-btn">Save</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch s0">0</span>not trained</span>
+    <span><span class="swatch s1">1</span>practicing</span>
+    <span><span class="swatch s2">2</span>competent</span>
+    <span><span class="swatch s3">3</span>proficient</span>
+  </div>
+
+  <div class="add-person-bar">
+    <label for="new-person-name">Add person:</label>
+    <input type="text" id="new-person-name" placeholder="e.g. Pedro" maxlength="80">
+    <button type="button" id="add-person-btn">Add to roster</button>
+    <span class="hint" style="margin-left:auto">New people start active with all skills at 0.</span>
+  </div>
+
+  <div style="overflow:auto;max-height:75vh">
+    <table class="skills-table" id="skills-table">
+      <thead>
+        <tr>
+          <th class="name" style="text-align:left">Name</th>
+          <th>Active</th>
+          {% for s in skills %}<th>{{ s }}</th>{% endfor %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in people %}
+        <tr class="{% if not p.active %}inactive{% endif %}" data-active="{{ '1' if p.active else '0' }}">
+          <td class="name">{{ p.name }}</td>
+          <td>
+            <input type="hidden" name="active_present__{{ p.name }}" value="1">
+            <input class="active-check" type="checkbox" name="active__{{ p.name }}" {% if p.active %}checked{% endif %}>
+          </td>
+          {% for s in skills %}
+            {% set lvl = p.skills.get(s, 0) %}
+            <td>
+              <select class="skill-sel lvl-{{ lvl }}" name="skill__{{ p.name }}__{{ s }}">
+                {% for i in range(4) %}<option value="{{ i }}" {% if lvl == i %}selected{% endif %}>{{ i }}</option>{% endfor %}
+              </select>
+            </td>
+          {% endfor %}
+          <td class="del-cell"><button type="button" class="del-btn" data-person="{{ p.name }}" title="Remove from roster">×</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Filter + active-only
+  const filterInput = document.getElementById('wheel-filter');
+  const hideInactive = document.getElementById('hide-inactive');
+  const rows = [...document.querySelectorAll('#skills-table tbody tr')];
+  function apply() {
+    const q = (filterInput.value || '').toLowerCase().trim();
+    const hideIn = hideInactive.checked;
+    rows.forEach(r => {
+      const name = r.querySelector('td.name').textContent.toLowerCase();
+      const active = r.dataset.active === '1';
+      const nameMatch = !q || name.includes(q);
+      const activeMatch = !hideIn || active;
+      r.style.display = (nameMatch && activeMatch) ? '' : 'none';
+    });
+  }
+  filterInput.addEventListener('input', apply);
+  hideInactive.addEventListener('change', apply);
+  apply();
+
+  // Column sort: click any <th> to sort rows. Toggle asc/desc on repeat.
+  (function () {
+    const table = document.getElementById('skills-table');
+    const tbody = table.querySelector('tbody');
+    const ths = [...table.querySelectorAll('thead th')];
+    let sortIndex = -1, sortDir = 1;
+    function cellValue(tr, i) {
+      const td = tr.children[i];
+      if (!td) return '';
+      const sel = td.querySelector('select.skill-sel');
+      if (sel) return parseInt(sel.value, 10);
+      const cb = td.querySelector('input[type=checkbox]');
+      if (cb) return cb.checked ? 1 : 0;
+      return td.textContent.trim().toLowerCase();
+    }
+    ths.forEach((th, i) => {
+      th.addEventListener('click', () => {
+        if (sortIndex === i) sortDir = -sortDir; else { sortIndex = i; sortDir = 1; }
+        ths.forEach(x => x.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(sortDir > 0 ? 'sort-asc' : 'sort-desc');
+        const rows = [...tbody.querySelectorAll('tr')];
+        rows.sort((a, b) => {
+          const va = cellValue(a, i), vb = cellValue(b, i);
+          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+          return String(va).localeCompare(String(vb)) * sortDir;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  })();
+
+  // Live color update for skill selects
+  document.querySelectorAll('.skill-sel').forEach(sel => {
+    sel.addEventListener('change', () => {
+      sel.classList.remove('lvl-0', 'lvl-1', 'lvl-2', 'lvl-3');
+      sel.classList.add('lvl-' + sel.value);
+    });
+  });
+  // Active row styling updates live
+  document.querySelectorAll('input.active-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const row = cb.closest('tr');
+      row.classList.toggle('inactive', !cb.checked);
+      row.dataset.active = cb.checked ? '1' : '0';
+      apply();
+    });
+  });
+
+  // Save via fetch — no reload
+  const form = document.getElementById('skills-form');
+  const flash = document.getElementById('save-flash');
+  function toast(msg, err) {
+    flash.textContent = msg;
+    flash.style.color = err ? 'var(--bad)' : 'var(--accent)';
+    flash.classList.add('show');
+    setTimeout(() => flash.classList.remove('show'), 1600);
+  }
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button.save-btn');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
+      .then(r => toast(r.ok ? 'Saved' : 'Save failed', !r.ok))
+      .catch(() => toast('Save failed', true))
+      .finally(() => { btn.disabled = false; btn.textContent = orig; });
+  });
+
+  // --- Add person ---
+  document.getElementById('add-person-btn').addEventListener('click', () => {
+    const input = document.getElementById('new-person-name');
+    const name = (input.value || '').trim();
+    if (!name) { input.focus(); return; }
+    const fd = new FormData();
+    fd.append('name', name);
+    fetch('/staffing/people/add', { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } })
+      .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ok, j}) => {
+        if (ok) { toast('Added ' + name); setTimeout(() => location.reload(), 500); }
+        else    { toast(j.error || 'Add failed', true); }
+      })
+      .catch(() => toast('Add failed', true));
+  });
+  document.getElementById('new-person-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('add-person-btn').click(); }
+  });
+
+  // --- Popover (shared w/ delete confirm) ---
+  function showPopup({title, msg, buttons}) {
+    let bd = document.getElementById('popover-bd');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'popover-bd';
+      bd.className = 'popover-backdrop';
+      bd.innerHTML = '<div class="popover"><h4 data-role="title"></h4><p data-role="msg"></p><div class="actions" data-role="btns"></div></div>';
+      document.body.appendChild(bd);
+    }
+    bd.querySelector('[data-role=title]').textContent = title;
+    bd.querySelector('[data-role=msg]').textContent = msg;
+    const btns = bd.querySelector('[data-role=btns]');
+    btns.innerHTML = '';
+    const close = () => bd.classList.remove('show');
+    for (const b of buttons) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.textContent = b.label;
+      el.className = b.cls || 'ghost';
+      el.onclick = () => { close(); if (b.fn) b.fn(); };
+      btns.appendChild(el);
+    }
+    bd.classList.add('show');
+  }
+
+  // --- Delete person (with warning) ---
+  document.querySelectorAll('.del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.person;
+      const row = btn.closest('tr');
+      const activeCb = row.querySelector('input.active-check');
+      showPopup({
+        title: 'Remove ' + name + '?',
+        msg: 'Permanently deleting ' + name + ' will wipe their skill history from the roster. We recommend marking them Inactive instead — they stay in the system for historical reference but no longer show in the matrix or the scheduler dropdowns.',
+        buttons: [
+          { label: 'Cancel', cls: 'ghost' },
+          { label: 'Inactivate instead', cls: 'primary', fn: () => {
+            if (activeCb) { activeCb.checked = false; activeCb.dispatchEvent(new Event('change', {bubbles: true})); }
+            toast(name + ' marked inactive (remember to Save)');
+          }},
+          { label: 'Delete permanently', cls: 'danger', fn: () => {
+            const fd = new FormData();
+            fd.append('name', name);
+            fetch('/staffing/people/delete', { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } })
+              .then(r => r.json().then(j => ({ ok: r.ok, j })))
+              .then(({ok, j}) => {
+                if (ok) { toast('Deleted ' + name); row.remove(); }
+                else    { toast(j.error || 'Delete failed', true); }
+              })
+              .catch(() => toast('Delete failed', true));
+          }},
+        ],
+      });
+    });
+  });
+</script>
+{% endblock %}

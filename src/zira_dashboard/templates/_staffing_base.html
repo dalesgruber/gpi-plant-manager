@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Staffing{% endblock %} — GPI Plant Manager</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --panel-3: #222a33;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --accent: #4ade80;
+    --accent-dim: #14532d;
+    --warn: #fb923c;
+    --warn-dim: #78350f;
+    --bad: #ef4444;
+    --bad-dim: #7f1d1d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); }
+  header.app {
+    padding: 0.75rem 1.25rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;
+  }
+  header.app h1 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  header.app nav { display: flex; gap: 0.5rem; }
+  header.app nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.6rem; border-radius: 6px; }
+  header.app nav a.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
+  /* Staffing sub-nav */
+  .sub-nav { display: flex; gap: 0.25rem; padding: 0.55rem 1.25rem 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .sub-nav a {
+    color: var(--muted); text-decoration: none;
+    font-size: 0.88rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+  }
+  .sub-nav a:hover { color: var(--fg); }
+  .sub-nav a.active { color: var(--accent); background: var(--bg); border-color: var(--border); font-weight: 600; }
+
+  main { padding: 1rem 1.5rem; }
+  h2 { margin: 0 0 0.5rem; font-size: 1rem; font-weight: 600; }
+  .hint { color: var(--muted); font-size: 0.8rem; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem 1rem; }
+
+  {% block styles %}{% endblock %}
+</style>
+</head>
+<body>
+<header class="app">
+  <div style="display:flex;gap:1.25rem;align-items:center">
+    <h1>GPI Plant Manager</h1>
+    <nav>
+      <a href="/">Work Centers</a>
+      <a href="/recycling">Recycling Cell</a>
+      <a href="/staffing" class="active">Staffing</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </div>
+</header>
+{% with active=active %}{% include '_staffing_subnav.html' %}{% endwith %}
+<main>
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

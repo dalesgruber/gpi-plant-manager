@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — GPI Plant Manager</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --accent: #4ade80;
+    --accent-dim: #14532d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); }
+  header {
+    padding: 0.9rem 1.25rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+  nav { display: flex; gap: 0.5rem; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.6rem; border-radius: 6px; }
+  nav a.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
+  main { padding: 0.65rem 1rem 1rem; }
+  h2 { margin: 0.9rem 0 0.4rem; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .note { color: var(--muted); font-size: 0.72rem; line-height: 1.35; margin-top: 0.3rem; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.8rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.9rem; vertical-align: middle; }
+  th { font-size: 0.68rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; padding-top: 0.4rem; padding-bottom: 0.45rem; }
+  td { line-height: 1.35; }
+  th.num, td.num { text-align: center; font-variant-numeric: tabular-nums; min-width: 6rem; width: 6rem; }
+  td .hint { color: var(--muted); font-size: 0.75rem; }
+
+  td.breakdown-cell {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    letter-spacing: 0.1px;
+  }
+  td.breakdown-cell .breakdown.empty { visibility: hidden; }
+
+  input[type=number] {
+    background: var(--panel-2);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.25rem 0.45rem;
+    font: inherit;
+    width: 5rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type=number]::placeholder { color: var(--muted); font-style: italic; font-size: 0.78em; }
+
+  /* Schedule panel */
+  .sched-grid { display: grid; grid-template-columns: 7rem 1fr; gap: 0.4rem 0.75rem; align-items: center; }
+  .sched-grid > label { color: var(--muted); font-size: 0.8rem; }
+  .sched-grid input[type=time] {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.45rem; font: inherit; font-size: 0.88rem;
+  }
+  .weekdays { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .weekdays label {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 0.2rem 0.55rem; font-size: 0.78rem;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem;
+    color: var(--muted);
+  }
+  .weekdays input { accent-color: var(--accent); margin: 0; }
+  .weekdays label:has(input:checked) { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .break-row {
+    display: grid;
+    grid-template-columns: 5.5rem 5.5rem minmax(0, 1fr) 1.7rem;
+    gap: 0.4rem; align-items: center;
+    margin-bottom: 0.3rem;
+  }
+  .break-row input[type=time] {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.4rem; font: inherit; font-size: 0.85rem;
+  }
+  .break-row input[type=text] {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.5rem; font: inherit; font-size: 0.85rem; width: 100%;
+  }
+  .break-row .remove-btn {
+    background: transparent; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer; font: inherit; padding: 0.15rem 0;
+  }
+  .break-row .remove-btn:hover { color: #ef4444; border-color: #ef4444; }
+  .add-break-btn {
+    background: var(--panel-2); color: var(--accent); border: 1px dashed var(--accent);
+    border-radius: 6px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; cursor: pointer; margin-top: 0.25rem;
+  }
+
+  /* Collapsible <details>/<summary> panel */
+  details.collapsible { padding: 0; }
+  details.collapsible > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 10px;
+    user-select: none;
+  }
+  details.collapsible > summary::-webkit-details-marker { display: none; }
+  details.collapsible[open] > summary { border-bottom: 1px solid var(--border); border-radius: 10px 10px 0 0; }
+  details.collapsible > summary h2 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--fg);
+    text-transform: none;
+    letter-spacing: 0;
+    margin: 0;
+  }
+  details.collapsible > summary .collapsible-sub {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+  }
+  details.collapsible > summary .collapsible-chevron {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.95rem;
+    transition: transform 0.15s ease;
+  }
+  details.collapsible[open] > summary .collapsible-chevron { transform: rotate(180deg); }
+  /* Pin button */
+  .pin-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 0.15rem 0.4rem;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    margin-left: 0.25rem;
+    opacity: 0.55;
+    transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .pin-btn:hover { color: var(--fg); border-color: var(--border); opacity: 1; }
+  .pin-btn.pinned { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); opacity: 1; }
+  form.pinned > details.collapsible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
+
+  /* Inline save-status text next to the Save button */
+  .save-flash {
+    display: inline-block;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-right: 0.6rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+  .save-flash.show { opacity: 1; }
+  .save-flash.error { color: #ef4444; }
+  details.collapsible > :not(summary) { padding: 0 0.8rem; }
+  details.collapsible > .actions { padding: 0.5rem 0.8rem 0.7rem; }
+  details.collapsible .sched-grid { padding-top: 0.55rem; padding-bottom: 0.3rem; }
+
+  /* Work Centers table */
+  .wc-table th.num, .wc-table td.num { width: 4.5rem; }
+  .wc-table td input[type=number] { width: 100%; }
+  .wc-table .note-cell input[type=text] {
+    width: 100%; min-width: 8rem;
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.45rem; font: inherit; font-size: 0.85rem;
+  }
+  .wc-table .skills-cell { min-width: 9rem; }
+  .wc-table .group-cell { min-width: 7rem; }
+  .wc-table .group-cell select {
+    width: 100%; min-width: 6rem;
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.45rem; font: inherit; font-size: 0.85rem;
+  }
+  .group-col .group-name-input {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.2rem 0.45rem; font: inherit; font-size: 0.85rem; width: 100%;
+  }
+  .group-col .del-col { width: 2.5rem; text-align: center; }
+  .group-col .del-check { display: inline-flex; align-items: center; color: var(--muted); cursor: pointer; }
+  .group-col .del-check input { accent-color: #ef4444; }
+  .group-col tr.add-row td { border-top: 1px dashed var(--border); padding-top: 0.5rem; }
+  .group-col tr.add-row input { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+  .group-summaries {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.75rem 0 0.25rem;
+  }
+  .group-col { min-width: 0; }
+  .group-col .section-title {
+    margin: 0 0 0.3rem;
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--muted);
+  }
+  .group-col .section-sub { color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 0.35rem; }
+  .group-col table { width: 100%; }
+  @media (max-width: 900px) {
+    .group-summaries { grid-template-columns: 1fr; }
+  }
+  .skills-picker { display: inline-block; }
+  .skills-picker > summary {
+    list-style: none;
+    cursor: pointer;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.82rem;
+    color: var(--fg);
+    white-space: nowrap;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .skills-picker > summary::-webkit-details-marker { display: none; }
+  .skills-picker[open] > summary { border-color: var(--accent); color: var(--accent); }
+  .skills-picker .skills-list {
+    display: flex; flex-direction: column; gap: 0.15rem;
+    padding: 0.4rem 0.5rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+  }
+  .skills-picker .skills-list label {
+    display: flex; align-items: center; gap: 0.4rem;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .skills-picker .skills-list input { accent-color: var(--accent); }
+
+  /* Two-column targets layout inside the single collapsible */
+  .targets-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.9rem;
+    padding: 0.55rem 0 0.3rem;
+  }
+  .targets-col { min-width: 0; }
+  .targets-col .section-title {
+    margin: 0 0 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+  }
+  .targets-col .section-sub {
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    margin-left: 0.35rem;
+  }
+  .targets-col table { width: 100%; }
+  .targets-col .note { font-size: 0.7rem; line-height: 1.35; padding-top: 0.25rem; }
+  @media (max-width: 900px) {
+    .targets-grid { grid-template-columns: 1fr; gap: 1rem; }
+  }
+
+  .actions { display: flex; gap: 0.5rem; align-items: center; justify-content: flex-end; margin-top: 0.5rem; }
+  button {
+    background: var(--accent);
+    color: #0e1116;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 0.4rem 0.9rem;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+
+  .flash {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 0.5rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>GPI Plant Manager</h1>
+  <nav>
+    <a href="/">Work Centers</a>
+    <a href="/recycling">Recycling Cell</a>
+    <a href="/staffing">Staffing</a>
+    <a href="/settings" class="active">Settings</a>
+  </nav>
+</header>
+<main>
+  <!-- Company Schedule -->
+  <form method="post" action="/settings/schedule" id="schedule" data-panel-id="schedule">
+    <details class="panel collapsible">
+      <summary>
+        <h2 style="display:inline;margin:0">Company Schedule</h2>
+        <span class="collapsible-sub">{{ schedule.shift_start }}–{{ schedule.shift_end }} · {{ schedule.work_weekdays | length }} days · {{ schedule.breaks | length }} breaks</span>
+        <button type="button" class="pin-btn" data-panel-id="schedule" title="Pin to top" aria-label="Pin">📌</button>
+        <span class="collapsible-chevron" aria-hidden="true">▾</span>
+      </summary>
+
+      <div class="sched-grid">
+        <label for="shift_start">Shift start</label>
+        <input id="shift_start" type="time" name="shift_start" value="{{ schedule.shift_start }}" step="300" required>
+
+        <label for="shift_end">Shift end</label>
+        <input id="shift_end" type="time" name="shift_end" value="{{ schedule.shift_end }}" step="300" required>
+
+        <label>Work days</label>
+        <div class="weekdays">
+          {% for i in range(7) %}
+            <label>
+              <input type="checkbox" name="weekday_{{ i }}" {% if i in schedule.work_weekdays %}checked{% endif %}>
+              {{ schedule.weekday_names[i] }}
+            </label>
+          {% endfor %}
+        </div>
+
+        <label>Breaks &amp; cleanup</label>
+        <div id="breaks-list">
+          {% for b in schedule.breaks %}
+            <div class="break-row">
+              <input type="time" name="break_start_{{ loop.index0 }}" value="{{ b.start }}" step="300" required>
+              <input type="time" name="break_end_{{ loop.index0 }}" value="{{ b.end }}" step="300" required>
+              <input type="text" name="break_name_{{ loop.index0 }}" value="{{ b.name }}" placeholder="name (e.g. Lunch, Cleanup)">
+              <button type="button" class="remove-btn" title="Remove">×</button>
+            </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="add-break-btn" id="add-break">+ Add break</button>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Save schedule</button>
+      </div>
+    </details>
+  </form>
+
+  <form method="post" action="/settings">
+  </form>
+
+  <!-- Unified Work Centers & Goals -->
+  <form method="post" action="/settings/work_centers" data-panel-id="work_centers">
+    <details class="panel collapsible">
+      <summary>
+        <h2>Work Centers &amp; Goals</h2>
+        <span class="collapsible-sub">pallets / day · {{ wc_rows | length }} work centers · {{ vs_rows | length }} value streams · {{ group_rows | length }} groups</span>
+        <button type="button" class="pin-btn" data-panel-id="work_centers" title="Pin to top" aria-label="Pin">📌</button>
+        <span class="collapsible-chevron" aria-hidden="true">▾</span>
+      </summary>
+
+      <table class="wc-table">
+        <thead>
+          <tr>
+            <th>Work Center</th>
+            <th>Bay</th>
+            <th>Value Stream</th>
+            <th>Group</th>
+            <th>Required skills</th>
+            <th class="num">Min</th>
+            <th class="num">Max</th>
+            <th class="num">Goal</th>
+            <th>Breakdown</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in wc_rows %}
+            {% set p = 'wc__' ~ r.key ~ '__' %}
+            <tr>
+              <td>{{ r.name }}</td>
+              <td class="hint">{{ r.bay }}</td>
+              <td class="group-cell">
+                <select name="{{ p }}value_stream">
+                  <option value="" {% if not r.value_stream %}selected{% endif %}>—</option>
+                  {% for v in value_streams %}
+                    <option value="{{ v }}" {% if r.value_stream == v %}selected{% endif %}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="group-cell">
+                {% set current_group = r.groups[0] if r.groups else '' %}
+                <select name="{{ p }}group">
+                  <option value="" {% if not current_group %}selected{% endif %}>—</option>
+                  {% for g in groups_all %}
+                    <option value="{{ g }}" {% if current_group == g %}selected{% endif %}>{{ g }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td class="skills-cell">
+                <details class="skills-picker">
+                  <summary>{{ r.required_skills | join(', ') if r.required_skills else '—' }}</summary>
+                  <div class="skills-list">
+                    {% for s in skills_all %}
+                      <label>
+                        <input type="checkbox" name="{{ p }}required_skills" value="{{ s }}" {% if s in r.required_skills %}checked{% endif %}>
+                        {{ s }}
+                      </label>
+                    {% endfor %}
+                  </div>
+                </details>
+              </td>
+              <td class="num"><input type="number" name="{{ p }}min_ops" min="0" step="1" value="{{ r.min_ops }}"></td>
+              <td class="num"><input type="number" name="{{ p }}max_ops" min="0" step="1" value="{{ r.max_ops }}" placeholder="∞"></td>
+              <td class="num">
+                <input type="number" class="target-input" name="{{ p }}goal_per_day" min="0" step="1" value="{{ r.goal }}" data-fallback="{{ r.goal }}">
+              </td>
+              <td class="breakdown-cell"><div class="breakdown" data-breakdown></div></td>
+              <td class="note-cell">
+                <input type="text" name="{{ p }}note" value="{{ r.note }}" placeholder="—" maxlength="500">
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="note">Max blank = unlimited. Required skills gate who shows up in the scheduler dropdown (training mode bypasses). Value Stream + Cell are free-text — type new names or pick existing ones.</div>
+
+      <div class="group-summaries">
+        <!-- LEFT: Value Streams — fixed list, only goal editable -->
+        <section class="group-col">
+          <h3 class="section-title">Value Streams <span class="section-sub">fixed · pallets / day</span></h3>
+          <table>
+            <thead><tr><th>Value Stream</th><th class="num hint">WCs</th><th class="num">Auto</th><th class="num">Override</th></tr></thead>
+            <tbody>
+              {% for v in vs_rows %}
+              <tr>
+                <td>{{ v.name }}</td>
+                <td class="num hint">{{ v.count }}</td>
+                <td class="num hint">{{ v.auto }}</td>
+                <td class="num"><input type="number" name="group_override__value_stream__{{ v.name }}" min="0" step="1" value="{{ v.override }}" placeholder="{{ v.auto }}"></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <div class="note">Value Streams are fixed (New / Recycled / Transportation). Set a goal override, else the sum of member work center goals is used.</div>
+        </section>
+
+        <!-- RIGHT: Groups — user-managed, rename/delete/add + goal -->
+        <section class="group-col">
+          <h3 class="section-title">Groups <span class="section-sub">pallets / day · add, rename, or delete</span></h3>
+          <table>
+            <thead><tr><th>Group</th><th class="num hint">WCs</th><th class="num">Auto</th><th class="num">Override</th><th class="del-col">Del</th></tr></thead>
+            <tbody>
+              {% for g in group_rows %}
+              <tr>
+                <td><input type="text" name="group_rename__{{ g.name }}" value="{{ g.name }}" maxlength="80" class="group-name-input"></td>
+                <td class="num hint">{{ g.count }}</td>
+                <td class="num hint">{{ g.auto }}</td>
+                <td class="num"><input type="number" name="group_override__group__{{ g.name }}" min="0" step="1" value="{{ g.override }}" placeholder="{{ g.auto }}"></td>
+                <td class="del-col"><label class="del-check" title="Delete this group on save"><input type="checkbox" name="group_delete__{{ g.name }}" value="1"> ×</label></td>
+              </tr>
+              {% endfor %}
+              <tr class="add-row">
+                <td colspan="5">
+                  <input type="text" name="group_new" placeholder="+ add new group…" maxlength="80" class="group-name-input">
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note">Blank Override = sum of member work center goals. Clear a name to delete, or check the × box.</div>
+        </section>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Save</button>
+      </div>
+    </details>
+  </form>
+</main>
+
+<script>
+  const PROD_MIN = {{ productive_minutes }};
+  function fmt(n, dp) { return n.toFixed(dp).replace(/\.?0+$/, ''); }
+  function computeBreakdown(dailyStr, fallback) {
+    const daily = Number(dailyStr) || Number(fallback) || 0;
+    if (!daily || !PROD_MIN) return '';
+    const perHr   = daily / (PROD_MIN / 60);
+    const per15   = daily / (PROD_MIN / 15);
+    const perMin  = daily / PROD_MIN;
+    const cycleS  = (PROD_MIN * 60) / daily;
+    return `${fmt(perHr,1)}/hr · ${fmt(per15,1)}/15m · ${fmt(perMin,2)}/m · ${fmt(cycleS,1)}s`;
+  }
+  function renderFor(input) {
+    const row = input.closest('tr') || input.parentElement;
+    const box = row && row.querySelector('[data-breakdown]');
+    if (!box) return;
+    const text = computeBreakdown(input.value, input.dataset.fallback);
+    if (text) { box.textContent = text; box.classList.remove('empty'); }
+    else { box.textContent = '—'; box.classList.add('empty'); }
+  }
+  document.querySelectorAll('.target-input').forEach(inp => {
+    renderFor(inp);
+    inp.addEventListener('input', () => renderFor(inp));
+  });
+
+  // --- Pin panels to top + auto-expand on load ---
+  (function () {
+    const PINS_KEY = 'settings-pins';
+    const readPins = () => {
+      try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || '[]')); }
+      catch (_) { return new Set(); }
+    };
+    const writePins = (set) => localStorage.setItem(PINS_KEY, JSON.stringify([...set]));
+    const main = document.querySelector('main');
+
+    function applyPins() {
+      const pinned = readPins();
+      // Update button visuals
+      document.querySelectorAll('.pin-btn').forEach(btn => {
+        const id = btn.dataset.panelId;
+        const on = pinned.has(id);
+        btn.classList.toggle('pinned', on);
+        btn.title = on ? 'Unpin' : 'Pin to top';
+      });
+      // Reorder: pinned forms (in saved order) come first; others keep their original order.
+      const forms = [...main.querySelectorAll('form[data-panel-id]')];
+      const pinnedList = [...pinned].map(id => forms.find(f => f.dataset.panelId === id)).filter(Boolean);
+      const rest = forms.filter(f => !pinned.has(f.dataset.panelId));
+      [...pinnedList, ...rest].forEach(f => main.appendChild(f));
+      // Expand pinned panels; mark their form for visual accent
+      forms.forEach(f => {
+        const isPinned = pinned.has(f.dataset.panelId);
+        f.classList.toggle('pinned', isPinned);
+        if (isPinned) {
+          const d = f.querySelector('details.collapsible');
+          if (d) d.open = true;
+        }
+      });
+    }
+
+    document.querySelectorAll('.pin-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();  // don't toggle the <details>
+        const id = btn.dataset.panelId;
+        const pinned = readPins();
+        if (pinned.has(id)) pinned.delete(id); else pinned.add(id);
+        writePins(pinned);
+        applyPins();
+      });
+    });
+
+    applyPins();
+  })();
+
+  // --- Inline save-status next to the clicked Save button ---
+  function flashBesideButton(btn, msg, isError) {
+    if (!btn || !btn.parentElement) return;
+    let span = btn.previousElementSibling;
+    if (!span || !span.classList || !span.classList.contains('save-flash')) {
+      span = document.createElement('span');
+      span.className = 'save-flash';
+      btn.parentElement.insertBefore(span, btn);
+    }
+    span.textContent = msg;
+    span.classList.toggle('error', !!isError);
+    // force reflow then show
+    void span.offsetWidth;
+    span.classList.add('show');
+    clearTimeout(span._tid);
+    span._tid = setTimeout(() => span.classList.remove('show'), 1600);
+  }
+
+  // --- Intercept form submits: save via fetch, keep the page as-is ---
+  document.querySelectorAll('form[data-panel-id]').forEach(form => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      // Track which submit button was used (if any), else fall back to the first.
+      const btn = (e.submitter && e.submitter.tagName === 'BUTTON')
+        ? e.submitter
+        : form.querySelector('button[type=submit]');
+      const origText = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'Accept': 'application/json' },
+      }).then(r => {
+        flashBesideButton(btn, r.ok ? 'Saved' : 'Save failed', !r.ok);
+      }).catch(() => flashBesideButton(btn, 'Save failed', true))
+        .finally(() => {
+          if (btn) { btn.disabled = false; btn.textContent = origText; }
+        });
+    });
+  });
+
+  // Schedule editor: add/remove break rows, re-index field names so the POST parses cleanly.
+  (function () {
+    const list = document.getElementById('breaks-list');
+    if (!list) return;
+    function reindex() {
+      [...list.querySelectorAll('.break-row')].forEach((row, i) => {
+        row.querySelectorAll('input').forEach(inp => {
+          inp.name = inp.name.replace(/_\d+$/, '_' + i);
+        });
+      });
+    }
+    list.addEventListener('click', e => {
+      if (e.target.classList.contains('remove-btn')) {
+        e.target.closest('.break-row').remove();
+        reindex();
+      }
+    });
+    document.getElementById('add-break').addEventListener('click', () => {
+      const i = list.querySelectorAll('.break-row').length;
+      const row = document.createElement('div');
+      row.className = 'break-row';
+      row.innerHTML =
+        '<input type="time" name="break_start_' + i + '" step="300" required>'
+      + '<input type="time" name="break_end_'   + i + '" step="300" required>'
+      + '<input type="text" name="break_name_'  + i + '" placeholder="name (e.g. Lunch, Cleanup)">'
+      + '<button type="button" class="remove-btn" title="Remove">×</button>';
+      list.appendChild(row);
+    });
+  })();
+</script>
+</body>
+</html>
