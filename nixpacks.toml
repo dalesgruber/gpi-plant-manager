@@ -1,2 +1,0 @@
-[phases.build]
-cmds = ["/app/.venv/bin/pip install --no-deps ."]
