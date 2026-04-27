@@ -57,3 +57,27 @@ def attribute_for_day(
                 "days_worked": 1,
             }
     return out
+
+
+def attribute_for_range(
+    daily_attributions: list[dict[str, dict[str, dict[str, float]]]],
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Sum a list of per-day attribution dicts (output of attribute_for_day).
+
+    Adds the four numeric fields per (person, wc); days_worked counts the
+    number of input days that contained that (person, wc) pair.
+    """
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for daily in daily_attributions:
+        for person, wc_map in daily.items():
+            person_out = out.setdefault(person, {})
+            for wc_name, totals in wc_map.items():
+                acc = person_out.setdefault(
+                    wc_name,
+                    {"units": 0.0, "downtime": 0.0, "hours": 0.0, "days_worked": 0},
+                )
+                acc["units"] += totals["units"]
+                acc["downtime"] += totals["downtime"]
+                acc["hours"] += totals["hours"]
+                acc["days_worked"] += totals["days_worked"]
+    return out

@@ -82,3 +82,25 @@ def test_unmetered_wc_credits_day_but_zero_units():
     assert out["Lupe"]["Hand Build #1"]["downtime"] == 0.0
     assert out["Lupe"]["Hand Build #1"]["days_worked"] == 1
     assert out["Carlos"]["Hand Build #1"]["days_worked"] == 1
+
+
+from zira_dashboard.production_history import attribute_for_range
+
+
+def test_range_sums_units_and_days():
+    day1 = {
+        "Christian": {"Repair 1": {"units": 80.0, "downtime": 12.0, "hours": 8.0, "days_worked": 1}},
+    }
+    day2 = {
+        "Christian": {"Repair 1": {"units": 95.0, "downtime": 5.0,  "hours": 8.0, "days_worked": 1}},
+    }
+    day3 = {
+        "Christian": {"Repair 4": {"units": 70.0, "downtime": 0.0, "hours": 8.0, "days_worked": 1}},
+        "Adrian":    {"Repair 1": {"units": 75.0, "downtime": 8.0, "hours": 8.0, "days_worked": 1}},
+    }
+    out = attribute_for_range([day1, day2, day3])
+    assert out["Christian"]["Repair 1"]["units"] == 175.0
+    assert out["Christian"]["Repair 1"]["days_worked"] == 2
+    assert out["Christian"]["Repair 4"]["days_worked"] == 1
+    assert out["Adrian"]["Repair 1"]["days_worked"] == 1
+    assert out["Adrian"]["Repair 1"]["units"] == 75.0
