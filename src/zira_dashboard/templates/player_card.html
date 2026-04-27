@@ -1,0 +1,75 @@
+{% extends "_staffing_base.html" %}
+{% block title %}{{ name }}{% endblock %}
+
+{% block styles %}
+  .pc-header { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.5rem; }
+  .pc-header h2 { margin: 0; }
+  .pc-header form { display: inline-flex; gap: 0.4rem; align-items: center; }
+  .pc-header input[type=date] {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; color-scheme: dark;
+  }
+  .pc-header .preset {
+    color: var(--muted); text-decoration: none; font-size: 0.82rem;
+    border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.55rem;
+  }
+  .pc-header .preset:hover { color: var(--fg); border-color: var(--muted); }
+  .pc-skills { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.75rem; }
+  .pc-skills .lvl-3 { color: var(--accent); font-weight: 600; }
+  .pc-skills .lvl-2 { color: var(--fg); }
+  .pc-skills .lvl-1 { color: var(--warn); }
+  .pc-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+  .pc-totals .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem 0.9rem; }
+  .pc-totals .stat .lab { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pc-totals .stat .v { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 0.2rem; }
+  table.pc { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  table.pc th, table.pc td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
+  table.pc th { color: var(--muted); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  table.pc td.num { text-align: right; font-variant-numeric: tabular-nums; }
+{% endblock %}
+
+{% block content %}
+<div class="pc-header">
+  <h2>{{ name }}</h2>
+  <span class="pc-skills">
+    {% for s, lvl in skills %}<span class="lvl-{{ lvl }}">{{ s }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+    {% if not skills %}<span style="color:var(--muted)">— no trained skills</span>{% endif %}
+  </span>
+  <form method="get" style="margin-left:auto">
+    <label style="color:var(--muted);font-size:0.82rem">From</label>
+    <input type="date" name="start" value="{{ start }}" max="{{ today }}">
+    <label style="color:var(--muted);font-size:0.82rem">to</label>
+    <input type="date" name="end" value="{{ end }}" max="{{ today }}">
+    <button type="submit" style="background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-dim);border-radius:6px;padding:0.3rem 0.7rem;font:inherit;font-weight:600;cursor:pointer">Apply</button>
+    <a class="preset" href="?start={{ today[:7] }}-01&end={{ today }}">This month</a>
+    <a class="preset" href="?start={{ today }}&end={{ today }}">Today</a>
+  </form>
+</div>
+
+<div class="pc-totals">
+  <div class="stat"><div class="lab">Days worked</div><div class="v">{{ total_days }}</div></div>
+  <div class="stat"><div class="lab">Total units (split)</div><div class="v">{{ '{:,.0f}'.format(total_units) }}</div></div>
+  <div class="stat"><div class="lab">Total downtime (min)</div><div class="v">{{ '{:,.0f}'.format(total_downtime) }}</div></div>
+</div>
+
+{% if rows %}
+<table class="pc">
+  <thead>
+    <tr><th>Work Center</th><th class="num">Days</th><th class="num">Units</th><th class="num">Downtime (min)</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.wc }}</td>
+      <td class="num">{{ r.days_worked }}</td>
+      <td class="num">{{ '{:,.0f}'.format(r.units) }}</td>
+      <td class="num">{{ '{:,.0f}'.format(r.downtime) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p style="color:var(--muted);font-style:italic">No published-day production for {{ name }} in this range.</p>
+{% endif %}
+{% endblock %}
