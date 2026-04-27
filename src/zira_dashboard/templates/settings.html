@@ -254,32 +254,8 @@
   .default-people-picker .dp-reserves-count { color: var(--muted); font-weight: 500; margin-left: 0.15rem; font-size: 0.75rem; }
   .default-people-picker .dp-reserves .dd-item.untrained { display: flex; }
 
-  /* Save toast (top-center) — same look as the rest of the app. */
-  .save-toast-bd {
-    position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
-    z-index: 1100; pointer-events: none;
-  }
-  .save-toast {
-    pointer-events: auto;
-    background: var(--panel); color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 8px;
-    padding: 0.55rem 1rem;
-    font-size: 0.92rem; font-weight: 600;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    display: flex; align-items: center; gap: 0.85rem;
-    transition: opacity 0.25s ease, transform 0.25s ease;
-  }
-  .save-toast.error { color: var(--bad); border-color: var(--bad); }
-  .save-toast.fade  { opacity: 0; transform: translateY(-6px); }
-  .save-toast .undo-btn {
-    background: transparent; color: #60a5fa;
-    border: 1px solid #60a5fa; border-radius: 6px;
-    padding: 0.18rem 0.6rem;
-    font-size: 0.8rem; font-weight: 700; cursor: pointer;
-    margin: 0;
-  }
-  .save-toast .undo-btn:hover { background: rgba(96,165,250,0.12); }
+  /* Save toast (top-center) — shared with skills + staffing. */
+  {% include "_save_toast.html" %}
 
   /* External × button next to a native <select> (Group + Value Stream).
      Pickers (Required Skills + Default People) get an internal × in their

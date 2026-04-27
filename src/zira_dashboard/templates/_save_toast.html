@@ -1,0 +1,46 @@
+{# Shared CSS for the top-center "Saved" toast used by skills, staffing, and
+   settings.
+
+   Why CSS only (no shared JS)? The three pages use the same toast widget but
+   their autosave control flow diverges enough that sharing the JS would mean
+   bending the API. Specifically:
+     - skills.html      — one form, fire-and-forget autosave to form.action
+     - staffing.html    — one form, appends ?auto=1, has a "viewing-posted"
+                          read-only lock, and runs reapplyVisualState() to
+                          re-sync picker pills/summaries after each apply
+     - settings.html    — two forms behind an attachAutosaver factory + a
+                          single page-header Undo/Redo dispatcher
+
+   Each page's JS already names its functions consistently (serializeForm,
+   applyState, showSavedToast). Extracting the JS would force one shape onto
+   all three. The CSS, by contrast, is byte-identical across all three pages
+   and is the real win to dedupe. The per-page Undo/Redo button styling
+   (.toolbar, .title-bar, header .page-actions) varies in container selector
+   and is left in the pages.
+
+   Usage: {% include "_save_toast.html" %} inside the page's <style> block. #}
+.save-toast-bd {
+  position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  z-index: 1100; pointer-events: none;
+}
+.save-toast {
+  pointer-events: auto;
+  background: var(--panel); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 8px;
+  padding: 0.55rem 1rem;
+  font-size: 0.92rem; font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  display: flex; align-items: center; gap: 0.85rem;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.save-toast.error { color: var(--bad); border-color: var(--bad); }
+.save-toast.fade  { opacity: 0; transform: translateY(-6px); }
+.save-toast .undo-btn {
+  background: transparent; color: #60a5fa;
+  border: 1px solid #60a5fa; border-radius: 6px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  margin: 0;
+}
+.save-toast .undo-btn:hover { background: rgba(96,165,250,0.12); }
