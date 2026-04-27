@@ -4,96 +4,32 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-
-from zira_probe.client import ZiraClient
 
 from fastapi.responses import RedirectResponse
 
 from datetime import time as _time
 
 from . import layout_store, schedule_store, settings_store, shift_config, staffing, widget_customizer, work_centers_store
-from .leaderboard import StationTotal, leaderboard
+from .deps import (
+    _filter_stations,
+    _fmt_duration,
+    _iter_saved_schedule_files,
+    _parse_day,
+    _relative,
+    _state,
+    _window_dates,
+    client,
+    templates,
+)
+from .leaderboard import leaderboard
 from .progress import progress_buckets
 from .shift_config import shift_elapsed_minutes
 from .stations import CATEGORIES, STATIONS, Station, recycling_stations
 
-load_dotenv()
-
-_api_key = os.environ.get("ZIRA_API_KEY")
-if not _api_key:
-    raise RuntimeError("ZIRA_API_KEY missing. Set it in .env.")
-_base_url = os.environ.get("ZIRA_BASE_URL", "https://api.zira.us/public/")
-
-client = ZiraClient(api_key=_api_key, base_url=_base_url)
-
 app = FastAPI(title="Zira Station Dashboard")
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-RUNNING_STALENESS = timedelta(minutes=10)
-
-
-def _parse_day(day: str | None) -> date:
-    if not day:
-        return datetime.now(timezone.utc).date()
-    return date.fromisoformat(day)
-
-
-def _window_dates(window: str, today_d: date) -> tuple[date, date]:
-    """Return (start, end) inclusive for one of: week|month|quarter|year."""
-    if window == "month":
-        return today_d.replace(day=1), today_d
-    if window == "quarter":
-        q_start_month = ((today_d.month - 1) // 3) * 3 + 1
-        return today_d.replace(month=q_start_month, day=1), today_d
-    if window == "year":
-        return today_d.replace(month=1, day=1), today_d
-    # default: week (Monday → today)
-    monday = today_d - timedelta(days=today_d.weekday())
-    return monday, today_d
-
-
-def _filter_stations(category: str | None):
-    if not category or category == "All":
-        return list(STATIONS)
-    return [s for s in STATIONS if s.category == category]
-
-
-def _state(total: StationTotal, now: datetime, is_today: bool) -> str:
-    if total.last_reading_at is None:
-        return "Offline"
-    if not is_today:
-        return "—"
-    if now - total.last_reading_at > RUNNING_STALENESS:
-        return "Offline"
-    if total.last_status == "Working":
-        return "Running"
-    return "Stopped"
-
-
-def _relative(dt: datetime | None, now: datetime) -> str:
-    if dt is None:
-        return "no data today"
-    delta = now - dt
-    s = int(delta.total_seconds())
-    if s < 60:
-        return f"{s}s ago"
-    m = s // 60
-    if m < 60:
-        return f"{m} min ago"
-    h = m // 60
-    return f"{h}h {m % 60}m ago"
-
-
-def _fmt_duration(minutes: int) -> str:
-    if minutes < 60:
-        return f"{minutes}m"
-    return f"{minutes // 60}h {minutes % 60}m"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -900,21 +836,6 @@ def _next_working_day(d: date) -> date:
 
 
 # ---------------- Staffing sub-pages ----------------
-
-def _iter_saved_schedule_files():
-    """Yield (date, Schedule) for every saved schedule file, sorted newest first."""
-    d = staffing.SCHEDULES_DIR
-    if not d.exists():
-        return
-    files = sorted(d.glob("*.json"), reverse=True)
-    for p in files:
-        stem = p.stem
-        try:
-            day = date.fromisoformat(stem)
-        except ValueError:
-            continue
-        sched = staffing.load_schedule(day)
-        yield day, sched
 
 
 def _time_off_by_day() -> dict[date, list[str]]:
