@@ -1,0 +1,263 @@
+"""Settings page + save endpoints.
+
+Routes:
+  GET  /settings                  — render the full settings page
+  POST /settings/schedule         — save shift schedule + breaks
+  POST /settings/work_centers     — save WC rows, group registry, group/VS overrides
+  POST /settings                  — legacy global save (kept for backward compat)
+"""
+
+from __future__ import annotations
+
+from datetime import time as _time
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+from .. import schedule_store, settings_store, shift_config, staffing, work_centers_store
+from ..deps import templates
+from ..stations import CATEGORIES, STATIONS
+
+router = APIRouter()
+
+
+def _parse_hhmm(raw: str | None) -> _time | None:
+    if not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        hh, mm = raw.split(":")
+        return _time(int(hh), int(mm))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _loc_by_key(key: str):
+    for loc in staffing.LOCATIONS:
+        if (loc.meter_id or f"name:{loc.name}") == key:
+            return loc
+    return None
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, saved: int = Query(default=0)):
+    productive_min = shift_config.productive_minutes_per_day()
+
+    # Active roster (objects, not just names) so we can compute per-WC skill
+    # levels and reserve flags for the Default People picker.
+    roster = staffing.load_roster()
+    active_people_objs = [p for p in roster if p.active]
+    active_people = sorted((p.name for p in active_people_objs), key=str.lower)
+
+    # Per-work-center rows.
+    wc_rows = []
+    for loc in staffing.LOCATIONS:
+        eff = work_centers_store.effective(loc)
+        max_ops = eff["max_ops"]
+        required_skills = eff["required_skills"]
+        # Pool for the Default People picker, color-coded by min skill level
+        # across the WC's required skills (mirrors the scheduler's logic).
+        default_pool: list[dict] = []
+        for p in active_people_objs:
+            if required_skills:
+                lvl = min((p.level(s) for s in required_skills), default=0)
+            else:
+                lvl = 0
+            default_pool.append({"name": p.name, "level": lvl, "reserve": p.reserve})
+        default_pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
+        wc_rows.append(
+            {
+                "key": loc.meter_id or f"name:{loc.name}",
+                "name": loc.name,
+                "bay": loc.bay,
+                "department": loc.department,
+                "required_skills": required_skills,
+                "min_ops": eff["min_ops"],
+                "max_ops": max_ops if max_ops is not None else "",
+                "goal": eff["goal_per_day"],
+                "note": eff["note"],
+                "groups": eff["groups"],
+                "value_stream": eff["value_stream"],
+                "default_people": eff["default_people"],
+                "default_pool": default_pool,
+            }
+        )
+
+    def _group_summary(kind: str) -> list[dict]:
+        rows = []
+        for name in work_centers_store.all_group_names(kind):
+            members = work_centers_store.members(kind, name)
+            auto = work_centers_store.group_goal_auto(kind, name)
+            override = work_centers_store.group_goal_override(kind, name)
+            rows.append(
+                {
+                    "name": name,
+                    "count": len(members),
+                    "auto": auto,
+                    "override": "" if override is None else override,
+                    "effective": work_centers_store.group_goal(kind, name),
+                }
+            )
+        return rows
+
+    group_rows = _group_summary("group")
+    vs_rows = _group_summary("value_stream")
+    sched = schedule_store.current()
+    schedule_ctx = {
+        "shift_start": f"{sched.shift_start.hour:02d}:{sched.shift_start.minute:02d}",
+        "shift_end":   f"{sched.shift_end.hour:02d}:{sched.shift_end.minute:02d}",
+        "work_weekdays": sorted(sched.work_weekdays),
+        "weekday_names": schedule_store.WEEKDAY_NAMES,
+        "breaks": [
+            {
+                "start": f"{b.start.hour:02d}:{b.start.minute:02d}",
+                "end":   f"{b.end.hour:02d}:{b.end.minute:02d}",
+                "name": b.name,
+            }
+            for b in sched.breaks
+        ],
+    }
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "wc_rows": wc_rows,
+            "skills_all": list(staffing.SKILLS),
+            "value_streams": list(work_centers_store.VALUE_STREAMS),
+            "groups_all": work_centers_store.registered_groups(),
+            "group_rows": group_rows,
+            "vs_rows": vs_rows,
+            "active_people": active_people,
+            "saved": bool(saved),
+            "productive_minutes": productive_min,
+            "schedule": schedule_ctx,
+        },
+    )
+
+
+@router.post("/settings/schedule")
+async def settings_save_schedule(request: Request):
+    form = await request.form()
+    current = schedule_store.current()
+    shift_s = _parse_hhmm(form.get("shift_start")) or current.shift_start
+    shift_e = _parse_hhmm(form.get("shift_end")) or current.shift_end
+    if shift_e <= shift_s:
+        shift_e = current.shift_end
+    weekday_set = set()
+    for i in range(7):
+        if form.get(f"weekday_{i}"):
+            weekday_set.add(i)
+    if not weekday_set:
+        weekday_set = set(current.work_weekdays)
+    # Collect breaks from indexed form fields (start_N, end_N, name_N).
+    breaks_new: list[schedule_store.Break] = []
+    idx = 0
+    while True:
+        bs = _parse_hhmm(form.get(f"break_start_{idx}"))
+        be = _parse_hhmm(form.get(f"break_end_{idx}"))
+        bn = (form.get(f"break_name_{idx}") or "").strip() or "Break"
+        if bs is None and be is None and not form.get(f"break_name_{idx}"):
+            # No form fields at this index → stop scanning.
+            if idx > 50:
+                break
+            idx += 1
+            if idx > 50:
+                break
+            continue
+        if bs and be and be > bs:
+            breaks_new.append(schedule_store.Break(bs, be, bn[:40]))
+        idx += 1
+        if idx > 50:
+            break
+    breaks_new.sort(key=lambda b: b.start)
+    schedule_store.save(schedule_store.Schedule(
+        shift_start=shift_s,
+        shift_end=shift_e,
+        work_weekdays=frozenset(weekday_set),
+        breaks=tuple(breaks_new),
+    ))
+    if (request.headers.get("accept") or "").startswith("application/json"):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1#schedule", status_code=303)
+
+
+@router.post("/settings/work_centers")
+async def settings_save_work_centers(request: Request):
+    """Bulk save: group registry edits, WC rows, group/VS overrides."""
+    form = await request.form()
+
+    # 1. Group registry (delete, rename, add) — do first so WC save sees updated names.
+    for name in list(work_centers_store.registered_groups()):
+        if form.get(f"group_delete__{name}"):
+            work_centers_store.delete_group(name)
+    for name in list(work_centers_store.registered_groups()):
+        new_name = (form.get(f"group_rename__{name}") or "").strip()
+        if new_name and new_name != name:
+            work_centers_store.rename_group(name, new_name)
+    new_group = (form.get("group_new") or "").strip()
+    if new_group:
+        work_centers_store.add_group(new_group)
+
+    # 2. Work-center rows.
+    for loc in staffing.LOCATIONS:
+        key = loc.meter_id or f"name:{loc.name}"
+        prefix = f"wc__{key}__"
+        updates: dict = {}
+        for field in ("goal_per_day", "min_ops", "max_ops", "note", "value_stream"):
+            name = prefix + field
+            if name in form:
+                updates[field] = form.get(name) or ""
+        # Multi-valued: required_skills (checkbox list).
+        picked_skills = form.getlist(prefix + "required_skills")
+        if picked_skills:
+            updates["required_skills"] = picked_skills
+        # Single-value Group select (stored internally as a 1-element list in `groups`).
+        group_field = prefix + "group"
+        if group_field in form:
+            v = (form.get(group_field) or "").strip()
+            updates["groups"] = [v] if v else []
+        # Multi-select Default People checkbox list.
+        dp_present = prefix + "default_people_present"
+        if dp_present in form:
+            updates["default_people"] = form.getlist(prefix + "default_people")
+        if updates:
+            work_centers_store.save_one(loc, updates)
+
+    # 3. Group + VS overrides.
+    for kind in work_centers_store.GROUP_KINDS:
+        for name in work_centers_store.all_group_names(kind):
+            field = f"group_override__{kind}__{name}"
+            if field in form:
+                work_centers_store.save_group_override(kind, name, form.get(field) or "")
+    if (request.headers.get("accept") or "").startswith("application/json"):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1", status_code=303)
+
+
+@router.post("/settings")
+async def settings_save(request: Request):
+    """Save the Per-Group overrides. Work-center rows post to /settings/work_center/{key}."""
+    form = await request.form()
+    group_targets: dict[str, int] = {}
+    # Keep the legacy station_targets dict empty; goals are now stored in work_centers.json.
+    station_targets: dict[str, int] = {}
+    for s in STATIONS:
+        raw = (form.get(f"station_{s.meter_id}") or "").strip()
+        if raw:
+            try:
+                station_targets[s.meter_id] = max(0, int(raw))
+            except ValueError:
+                pass
+    for c in CATEGORIES:
+        raw = (form.get(f"group_{c}") or "").strip()
+        if raw:
+            try:
+                group_targets[c] = max(0, int(raw))
+            except ValueError:
+                pass
+    settings_store.save(station_targets, group_targets)
+    if (request.headers.get("accept") or "").startswith("application/json"):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1", status_code=303)
