@@ -35,4 +35,21 @@ def attribute_for_day(
         {person: {wc_name: {"units": float, "downtime": float, "hours": float,
                             "days_worked": int}}}
     """
-    return {}
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    hours = elapsed_minutes / 60.0
+    for wc_name, operators in assignments.items():
+        if not operators:
+            continue
+        units, downtime = wc_totals.get(wc_name, (0, 0))
+        n = len(operators)
+        per_units = units / n
+        per_downtime = downtime / n
+        for person in operators:
+            wc_map = out.setdefault(person, {})
+            wc_map[wc_name] = {
+                "units": per_units,
+                "downtime": per_downtime,
+                "hours": hours,
+                "days_worked": 1,
+            }
+    return out
