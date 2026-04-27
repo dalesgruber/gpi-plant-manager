@@ -69,3 +69,16 @@ def test_time_off_excluded():
     assert "Christian" in out
     assert "Iban" not in out
     assert "Lupe" not in out
+
+
+def test_unmetered_wc_credits_day_but_zero_units():
+    # Hand Build has no meter_id, so no entry in wc_totals.
+    out = attribute_for_day(
+        assignments={"Hand Build #1": ["Lupe", "Carlos"]},
+        wc_totals={},  # empty — no Zira data for this WC
+        elapsed_minutes=480,
+    )
+    assert out["Lupe"]["Hand Build #1"]["units"] == 0.0
+    assert out["Lupe"]["Hand Build #1"]["downtime"] == 0.0
+    assert out["Lupe"]["Hand Build #1"]["days_worked"] == 1
+    assert out["Carlos"]["Hand Build #1"]["days_worked"] == 1
