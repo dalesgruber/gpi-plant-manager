@@ -81,3 +81,58 @@ def attribute_for_range(
                 acc["hours"] += totals["hours"]
                 acc["days_worked"] += totals["days_worked"]
     return out
+
+
+def _fetch_wc_totals(client, day: date) -> dict[str, tuple[int, int]]:
+    """Returns {wc_name: (units, downtime_minutes)} for every metered WC.
+
+    Only consults staffing.LOCATIONS and pulls the WCs that have a meter_id.
+    Unmetered WCs return no entry; callers should treat missing entries as
+    zero output (which is what attribute_for_day does).
+    """
+    from . import staffing  # local import — staffing imports leaderboard.Station
+    from .leaderboard import leaderboard  # local — leaderboard pulls shift_config/tzdata
+    from .stations import Station
+
+    metered = [loc for loc in staffing.LOCATIONS if loc.meter_id]
+    if not metered:
+        return {}
+    stations = [
+        Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+        for loc in metered
+    ]
+    results = leaderboard(client, stations, day)
+    return {r.station.name: (r.units, r.downtime_minutes) for r in results}
+
+
+def _elapsed_minutes_for(d: date) -> int:
+    """Productive minutes available on day d, evaluated as of right now."""
+    from datetime import datetime, timezone
+    from .shift_config import shift_elapsed_minutes  # local — pulls tzdata
+    return shift_elapsed_minutes(d, datetime.now(timezone.utc))
+
+
+def attribution_for(d: date, client) -> dict[str, dict[str, dict[str, float]]]:
+    """Attribute production on a single published day. Returns {} for drafts."""
+    from . import staffing
+    sched = staffing.load_schedule(d)
+    if not sched.published:
+        return {}
+    wc_totals = _fetch_wc_totals(client, d)
+    elapsed = _elapsed_minutes_for(d)
+    return attribute_for_day(sched.assignments, wc_totals, elapsed)
+
+
+def attribution_range(
+    start: date,
+    end: date,
+    client,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Sum attribution_for() across [start, end] inclusive."""
+    from datetime import timedelta
+    daily: list[dict] = []
+    cursor = start
+    while cursor <= end:
+        daily.append(attribution_for(cursor, client))
+        cursor += timedelta(days=1)
+    return attribute_for_range(daily)

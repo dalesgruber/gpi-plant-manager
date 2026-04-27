@@ -104,3 +104,40 @@ def test_range_sums_units_and_days():
     assert out["Christian"]["Repair 4"]["days_worked"] == 1
     assert out["Adrian"]["Repair 1"]["days_worked"] == 1
     assert out["Adrian"]["Repair 1"]["units"] == 75.0
+
+
+def test_attribution_for_returns_empty_for_unpublished_day(monkeypatch):
+    """Drafts don't count for attribution history."""
+    from zira_dashboard import staffing
+    from zira_dashboard.production_history import attribution_for
+
+    fake_sched = staffing.Schedule(
+        day=date(2026, 4, 27),
+        published=False,
+        assignments={"Repair 1": ["Christian"]},
+    )
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: fake_sched)
+    out = attribution_for(date(2026, 4, 27), client=object())
+    assert out == {}
+
+
+def test_attribution_for_uses_published_assignments(monkeypatch):
+    from zira_dashboard import staffing, production_history
+    from zira_dashboard.production_history import attribution_for
+
+    fake_sched = staffing.Schedule(
+        day=date(2026, 4, 27),
+        published=True,
+        assignments={"Trim Saw 1": ["Iban", "Porfirio"]},
+    )
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: fake_sched)
+
+    # Stub the per-day Zira lookup so we don't hit the real API.
+    def fake_wc_totals(client, day):
+        return {"Trim Saw 1": (200, 6)}
+    monkeypatch.setattr(production_history, "_fetch_wc_totals", fake_wc_totals)
+    monkeypatch.setattr(production_history, "_elapsed_minutes_for", lambda d: 480)
+
+    out = attribution_for(date(2026, 4, 27), client=object())
+    assert out["Iban"]["Trim Saw 1"]["units"] == 100.0
+    assert out["Porfirio"]["Trim Saw 1"]["units"] == 100.0
