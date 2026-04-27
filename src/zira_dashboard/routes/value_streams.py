@@ -55,8 +55,6 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
     pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
 
-    top_units = max((r.units for r in active_results), default=0)
-
     dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
     dismantlers.sort(key=lambda r: r.station.name)
     repairs = [r for r in active_results if r.station.category == "Repair"]
@@ -69,7 +67,6 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     # can't possibly have triggered yet — that's the user-supplied "first 60
     # min fixed" rule for the progress charts.
     shift_start_local = datetime.combine(d, shift_config.shift_start(), tzinfo=shift_config.SITE_TZ)
-    shift_end_local   = datetime.combine(d, shift_config.shift_end(),   tzinfo=shift_config.SITE_TZ)
     grace_end_local   = shift_start_local + timedelta(minutes=60)
     grace_interval_utc = (
         shift_start_local.astimezone(timezone.utc),
@@ -205,8 +202,6 @@ def recycling(request: Request, day: str | None = Query(default=None)):
         light = 65.0 - step * 3.5        # 61.5% → 23%
         hue = 130 if delta > 0 else 0
         return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
-
-    elapsed_hours = elapsed / 60.0 if elapsed else 0.0
 
     def _bars(items: list) -> list[dict]:
         out = []

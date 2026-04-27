@@ -62,7 +62,6 @@ def staffing_page(
         sched.assignments = seeded
 
     active_people = [p for p in roster if p.active]
-    active_by_name = {p.name: p for p in active_people}
     all_by_name = {p.name: p for p in roster}
 
     def options_for(required: tuple[str, ...]) -> list[dict]:
