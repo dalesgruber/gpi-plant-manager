@@ -1,0 +1,77 @@
+{% extends "_staffing_base.html" %}
+{% block title %}Leaderboards{% endblock %}
+
+{% block styles %}
+  .lb-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; }
+  .lb-toolbar .group {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .lb-toolbar .group a {
+    padding: 0.3rem 0.7rem; color: var(--muted); text-decoration: none;
+    font-size: 0.82rem; font-weight: 600; border-right: 1px solid var(--border);
+  }
+  .lb-toolbar .group a:last-child { border-right: none; }
+  .lb-toolbar .group a.active { background: var(--accent-dim); color: var(--accent); }
+  .lb-toolbar .group a:hover { color: var(--fg); }
+  .lb-toolbar .range { color: var(--muted); font-size: 0.82rem; margin-left: auto; }
+
+  .lb-section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+  .lb-section h3 { margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 600; }
+  .lb-section h3 .sub { color: var(--muted); font-size: 0.75rem; font-weight: 400; margin-left: 0.4rem; }
+  .lb-section .empty { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+  table.lb { width: 100%; border-collapse: collapse; }
+  table.lb th, table.lb td { padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.88rem; }
+  table.lb th { color: var(--muted); font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  table.lb td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.lb td.rank { color: var(--muted); width: 2.5rem; font-variant-numeric: tabular-nums; }
+  table.lb td.name a { color: var(--fg); text-decoration: none; }
+  table.lb td.name a:hover { color: var(--accent); }
+{% endblock %}
+
+{% block content %}
+<div class="lb-toolbar">
+  <div class="group">
+    <a href="?window=week&metric={{ metric }}"    class="{% if window == 'week'    %}active{% endif %}">Week</a>
+    <a href="?window=month&metric={{ metric }}"   class="{% if window == 'month'   %}active{% endif %}">Month</a>
+    <a href="?window=quarter&metric={{ metric }}" class="{% if window == 'quarter' %}active{% endif %}">Quarter</a>
+    <a href="?window=year&metric={{ metric }}"    class="{% if window == 'year'    %}active{% endif %}">Year</a>
+  </div>
+  <div class="group">
+    <a href="?window={{ window }}&metric=pct"   class="{% if metric == 'pct'   %}active{% endif %}">% of target</a>
+    <a href="?window={{ window }}&metric=units" class="{% if metric == 'units' %}active{% endif %}">Raw units</a>
+  </div>
+  <div class="range">{{ start }} &rarr; {{ end }}</div>
+</div>
+
+{% for sec in sections %}
+<div class="lb-section">
+  <h3>Best {{ sec.category }}<span class="sub">— min 3 days</span></h3>
+  {% if sec.rows %}
+  <table class="lb">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Name</th>
+        <th class="num">% target</th>
+        <th class="num">Units</th>
+        <th class="num">Days</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in sec.rows %}
+      <tr>
+        <td class="rank">#{{ loop.index }}</td>
+        <td class="name"><a href="/staffing/people/{{ r.name | urlencode }}">{{ r.name }}</a></td>
+        <td class="num">{% if r.pct_of_target is not none %}{{ r.pct_of_target }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ '{:,.0f}'.format(r.units) }}</td>
+        <td class="num">{{ r.days_worked }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No qualifying operators yet — needs 3+ days at a {{ sec.category }} WC this {{ window }}.</div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}
