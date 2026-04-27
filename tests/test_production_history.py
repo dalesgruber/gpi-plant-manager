@@ -52,3 +52,20 @@ def test_three_operators_split_evenly():
     for n in ("A", "B", "C"):
         assert out[n]["Hand Build #1"]["units"] == 30.0
         assert out[n]["Hand Build #1"]["downtime"] == 3.0
+
+
+from zira_dashboard.staffing import TIME_OFF_KEY
+
+
+def test_time_off_excluded():
+    out = attribute_for_day(
+        assignments={
+            "Repair 1": ["Christian"],
+            TIME_OFF_KEY: ["Iban", "Lupe"],
+        },
+        wc_totals={"Repair 1": (80, 12)},
+        elapsed_minutes=480,
+    )
+    assert "Christian" in out
+    assert "Iban" not in out
+    assert "Lupe" not in out

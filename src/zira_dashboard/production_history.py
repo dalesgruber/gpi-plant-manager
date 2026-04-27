@@ -35,9 +35,13 @@ def attribute_for_day(
         {person: {wc_name: {"units": float, "downtime": float, "hours": float,
                             "days_worked": int}}}
     """
+    from .staffing import TIME_OFF_KEY  # local import avoids circular at module load
+
     out: dict[str, dict[str, dict[str, float]]] = {}
     hours = elapsed_minutes / 60.0
     for wc_name, operators in assignments.items():
+        if wc_name == TIME_OFF_KEY:
+            continue
         if not operators:
             continue
         units, downtime = wc_totals.get(wc_name, (0, 0))
