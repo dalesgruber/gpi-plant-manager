@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Recycling Cell — GPI Plant Manager</title>
+<title>Value Streams — Recycling — GPI Plant Manager</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <style>
   :root {
@@ -47,6 +47,20 @@
     border-radius: 6px;
   }
   nav a.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
+  /* Value Streams sub-nav */
+  .sub-nav { display: flex; gap: 0.25rem; padding: 0.55rem 1.25rem 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .sub-nav a {
+    color: var(--muted); text-decoration: none;
+    font-size: 0.88rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+  }
+  .sub-nav a:hover { color: var(--fg); }
+  .sub-nav a.active { color: var(--accent); background: var(--bg); border-color: var(--border); font-weight: 600; }
   form { display: flex; gap: 0.5rem; align-items: center; }
   label { color: var(--muted); font-size: 0.85rem; }
   input[type=date] {
@@ -439,7 +453,7 @@
     <h1>GPI Plant Manager</h1>
     <nav>
       <a href="/">Work Centers</a>
-      <a href="/recycling" class="active">Recycling Cell</a>
+      <a href="/recycling" class="active">Value Streams</a>
       <a href="/staffing">Staffing</a>
       <a href="/settings">Settings</a>
     </nav>
@@ -450,6 +464,7 @@
     <button type="submit">Update</button>
   </form>
 </header>
+{% include '_value_streams_subnav.html' %}
 {% macro widget_attrs(id, dx, dy, dw, dh) -%}
   {%- set l = layout.get(id, {'x': dx, 'y': dy, 'w': dw, 'h': dh}) -%}
   gs-id="{{ id }}" gs-x="{{ l.x }}" gs-y="{{ l.y }}" gs-w="{{ l.w }}" gs-h="{{ l.h }}"
@@ -536,7 +551,7 @@
     <div class="vbars">
       {% for b in items %}
         {% set fill_color = b.color or 'var(--good)' %}
-        <div class="vbar-col" title="{{ b.name }} — {{ b.units }} / {{ b.expected }} expected{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
+        <div class="vbar-col" title="{{ b.who if b.who else b.name }} — {{ b.units }} / {{ b.expected }} expected{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
           {% if numpos == 'widget' %}<div class="vbar-val">{{ b.units }}{% if b.expected %}<span class="pct"> / {{ b.expected }}</span>{% endif %}</div>{% endif %}
           <div class="vbar-track">
             <div class="vbar-fill" style="height: {{ b.pct }}%; background: {{ fill_color }}">
@@ -545,15 +560,15 @@
             </div>
             {% if b.target_pct is not none %}<div class="vbar-target-line" style="bottom: {{ b.target_pct }}%" title="goal {{ b.expected }}"></div>{% endif %}
           </div>
-          <div class="vbar-name">{{ b.name }}</div>
+          <div class="vbar-name">{{ b.who if b.who else b.name }}</div>
         </div>
       {% endfor %}
     </div>
   {% else %}
     {% for b in items %}
       {% set fill_color = b.color or 'var(--good)' %}
-      <div class="bar-row numpos-{{ numpos }}" title="{{ b.name }} — {{ b.units }} / {{ b.expected }} expected{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
-        <div class="name">{{ b.name }}</div>
+      <div class="bar-row numpos-{{ numpos }}" title="{{ b.who if b.who else b.name }} — {{ b.units }} / {{ b.expected }} expected{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
+        <div class="name">{{ b.who if b.who else b.name }}</div>
         <div class="bar-track">
           <div class="bar-fill" style="width: {{ b.pct }}%; background: {{ fill_color }}">
             {% if numpos == 'inside' %}<span class="in">{{ b.units }}</span>{% endif %}
