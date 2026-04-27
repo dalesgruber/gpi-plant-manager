@@ -21,7 +21,7 @@ from . import layout_store, schedule_store, settings_store, shift_config, staffi
 from .leaderboard import StationTotal, leaderboard
 from .progress import progress_buckets
 from .shift_config import shift_elapsed_minutes
-from .stations import CATEGORIES, STATIONS, recycling_stations
+from .stations import CATEGORIES, STATIONS, Station, recycling_stations
 
 load_dotenv()
 
@@ -236,6 +236,15 @@ def recycling(request: Request, day: str | None = Query(default=None)):
 
     elapsed_hours = elapsed / 60.0 if elapsed else 0.0
 
+    # Who's working each WC today, for widget labels. Drafts are accepted —
+    # we want operator names to show even before the day is published.
+    sched_for_labels = staffing.load_schedule(d)
+    who_by_wc: dict[str, str] = {}
+    for wc_name, ops in sched_for_labels.assignments.items():
+        if wc_name == staffing.TIME_OFF_KEY or not ops:
+            continue
+        who_by_wc[wc_name] = " + ".join(ops)
+
     def _bars(items: list) -> list[dict]:
         out = []
         for r in items:
@@ -245,6 +254,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             out.append(
                 {
                     "name": r.station.name,
+                    "who": who_by_wc.get(r.station.name, r.station.name),
                     "units": r.units,
                     "pct_of_target": round(pct_of_target, 1) if pct_of_target is not None else None,
                     "expected": int(round(expected)),
@@ -284,6 +294,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
         request,
         "recycling.html",
         {
+            "active_vs": "recycling",
             "day": d.isoformat(),
             "today": today.isoformat(),
             "is_today": is_today,
@@ -303,6 +314,102 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             "layout": layout_store.layout_map("recycling"),
             "customs": customs_all,
             "now_label": now_label,
+            "refreshed_at": now.strftime("%H:%M:%S UTC"),
+        },
+    )
+
+
+@app.get("/new-vs", response_class=HTMLResponse)
+def new_vs(request: Request, day: str | None = Query(default=None)):
+    """Value Streams → New subtab. Shows only work centers whose Settings
+    value_stream is "New" and that have a meter ID. Sparse data is the norm
+    here today since most "New" stations aren't metered yet."""
+    d = _parse_day(day)
+    today = datetime.now(timezone.utc).date()
+    is_today = d == today
+    now = datetime.now(timezone.utc)
+
+    new_locs = [
+        loc for loc in staffing.LOCATIONS
+        if work_centers_store.value_stream(loc) == "New" and loc.meter_id
+    ]
+    stations = [
+        Station(
+            meter_id=loc.meter_id,
+            name=loc.name,
+            category=loc.skill or "Other",
+            cell="New",
+        )
+        for loc in new_locs
+    ]
+    results = leaderboard(client, stations, d) if stations else []
+
+    total_units = sum(r.units for r in results)
+    total_downtime = sum(r.downtime_minutes for r in results)
+    elapsed = shift_elapsed_minutes(d, now)
+    available = elapsed * len(stations)
+    uptime_minutes = max(0, available - total_downtime)
+    uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
+    pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
+    elapsed_hours = elapsed / 60.0 if elapsed else 0.0
+
+    def _color(pct: float | None) -> str | None:
+        if pct is None:
+            return None
+        if abs(pct - 100.0) < 1.0:
+            return "#ffffff"
+        delta = max(-100.0, min(100.0, pct - 100.0))
+        step = min(12, max(1, round(abs(delta) / 100.0 * 12)))
+        sat = 55.0 + step * 2.0
+        light = 65.0 - step * 3.5
+        hue = 130 if delta > 0 else 0
+        return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
+
+    bars: list[dict] = []
+    for r in results:
+        station_tgt_hr = settings_store.station_target(r.station)
+        expected = station_tgt_hr * elapsed_hours
+        pct_of_target = (r.units / expected * 100.0) if expected > 0 else None
+        bars.append({
+            "name": r.station.name,
+            "units": r.units,
+            "expected": int(round(expected)),
+            "color": _color(pct_of_target),
+            "pct_of_target": round(pct_of_target, 1) if pct_of_target is not None else None,
+        })
+    base = max((max(b["units"], b["expected"]) for b in bars), default=0)
+    scale = (base * 1.1) if base > 0 else 1.0
+    for b in bars:
+        b["pct"] = (b["units"] / scale * 100.0) if scale else 0.0
+    bars.sort(key=lambda x: -x["units"])
+
+    downtime_rows = []
+    for r in results:
+        working = max(0, elapsed - r.downtime_minutes)
+        total = elapsed if elapsed else 1
+        downtime_rows.append({
+            "name": r.station.name,
+            "working": working,
+            "down": r.downtime_minutes,
+            "working_pct": working / total * 100.0,
+            "down_pct": r.downtime_minutes / total * 100.0,
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "new_vs.html",
+        {
+            "active_vs": "new",
+            "day": d.isoformat(),
+            "today": today.isoformat(),
+            "is_today": is_today,
+            "total_units": total_units,
+            "total_downtime_display": f"{total_downtime / 60:.1f} h",
+            "uptime_pct": round(uptime_pct, 1),
+            "pallets_per_hour": round(pallets_per_hour, 1),
+            "elapsed_minutes": elapsed,
+            "bars": bars,
+            "downtime_rows": downtime_rows,
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
@@ -352,7 +459,8 @@ def staffing_page(
     def options_for(required: tuple[str, ...]) -> list[dict]:
         """All active people, tagged with trained = (level >= 1 in ALL required skills).
         Untrained people are hidden client-side unless the WC's per-row Training
-        checkbox is ticked."""
+        checkbox is ticked. Reserves are tagged so they can be split into a
+        secondary picker section (office/manager pool, only used when short)."""
         rows = []
         for p in active_people:
             levels = [p.level(s) for s in required] if required else []
@@ -363,6 +471,7 @@ def staffing_page(
                 "level": min_lvl,
                 "color": staffing.skill_color(min_lvl),
                 "trained": trained,
+                "reserve": p.reserve,
             })
         return rows
 
@@ -381,15 +490,16 @@ def staffing_page(
             lvl = min((p.level(s) for s in required), default=0) if p else 0
             assigned.append({"name": n, "level": lvl, "color": staffing.skill_color(lvl)})
         pool = options_for(required)
-        pool.sort(key=lambda r: (-r["level"], r["name"].lower()))
+        # Reserves go last so the template can split them into the bottom group.
+        pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         assigned_set = {a["name"] for a in assigned}
         # Ensure currently-assigned people appear in pool even if below the filter.
         # (Assigned names are already in the pool since options_for returns everyone,
         # but inactive/deleted people might have been assigned historically.)
         for a in assigned:
             if not any(r["name"] == a["name"] for r in pool):
-                pool.append({"name": a["name"], "level": a["level"], "color": a["color"], "trained": a["level"] >= 1})
-        pool.sort(key=lambda r: (-r["level"], r["name"].lower()))
+                pool.append({"name": a["name"], "level": a["level"], "color": a["color"], "trained": a["level"] >= 1, "reserve": False})
+        pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         # Headcount status
         count = len(assigned)
         hc_status = "ok"
@@ -401,6 +511,10 @@ def staffing_page(
             hc_status = "over"
         # Default people for this WC (editable inline in the scheduler).
         defaults_list = work_centers_store.default_people(loc)
+        default_set = set(defaults_list)
+        # Auto-open the picker's reserves group when a reserve is currently chosen there.
+        has_selected_reserve = any(r["reserve"] and r["name"] in assigned_set for r in pool)
+        has_default_reserve = any(r["reserve"] and r["name"] in default_set for r in pool)
         row = {
             "loc": loc,
             "assigned": assigned,
@@ -411,7 +525,9 @@ def staffing_page(
             "max_ops_label": ("∞" if max_ops is None else str(max_ops)),
             "required_skills": list(required),
             "default_people": defaults_list,
-            "default_set": set(defaults_list),
+            "default_set": default_set,
+            "has_selected_reserve": has_selected_reserve,
+            "has_default_reserve": has_default_reserve,
             "hc_status": hc_status,
             "hc_badge": (
                 "needs " + str(min_ops) if hc_status == "under"
@@ -435,6 +551,13 @@ def staffing_page(
                         f"{r['loc'].name} requires {r['min_ops']} operators — currently {len(r['assigned'])}."
                     )
 
+    # Per-WC default operators (set in Settings → Work Centers). Exposed as a
+    # plain dict for the scheduler's "Reset to defaults" button.
+    defaults_by_loc = {
+        loc.name: list(work_centers_store.default_people(loc))
+        for loc in staffing.LOCATIONS
+    }
+
     # Time Off list (stored under TIME_OFF_KEY in assignments).
     time_off_names = sched.assignments.get(staffing.TIME_OFF_KEY, [])
     time_off_set = set(time_off_names)
@@ -447,7 +570,8 @@ def staffing_page(
     ]
     time_off_pool.sort(key=lambda r: r["name"].lower())
 
-    # Unscheduled = active people not in any location assignment AND not in time off.
+    # Unscheduled = active non-reserve people with no station and not on time off.
+    # Reserves (office staff / managers) live in their own list regardless of state.
     assigned_today = {
         n
         for key, names in sched.assignments.items()
@@ -457,8 +581,9 @@ def staffing_page(
     unassigned = [
         p.name
         for p in active_people
-        if p.name not in assigned_today and p.name not in time_off_set
+        if not p.reserve and p.name not in assigned_today and p.name not in time_off_set
     ]
+    reserves = [p.name for p in active_people if p.reserve]
 
     return templates.TemplateResponse(
         request,
@@ -477,6 +602,8 @@ def staffing_page(
             "time_off_names": sorted(time_off_names),
             "time_off_pool": time_off_pool,
             "unassigned": sorted(unassigned),
+            "reserves": sorted(reserves),
+            "defaults_by_loc": defaults_by_loc,
             "skill_labels": staffing.SKILL_LABELS,
             "has_snapshot": has_snapshot,
             "viewing_posted": viewing_posted,
@@ -502,9 +629,11 @@ async def staffing_save(
         clean = [n.strip() for n in picked if n and n.strip()]
         if clean:
             assignments[loc.name] = clean
-        # Default-people per WC (inline editor in the staffing page).
-        defaults_field_present = f"default_present__{loc.name}"
-        if defaults_field_present in form:
+        # Default-people per WC: only persist when the JS marks this WC dirty
+        # (i.e., the user actually touched its Defaults picker). Otherwise
+        # scheduled-only autosaves would re-write defaults from form state on
+        # every keystroke, risking accidental clears.
+        if form.get(f"defaults_dirty__{loc.name}") == "1":
             picked_defaults = form.getlist(f"default__{loc.name}")
             clean_defaults = [n.strip() for n in picked_defaults if n and n.strip()]
             work_centers_store.save_one(loc, {"default_people": clean_defaults})
@@ -771,6 +900,8 @@ async def staffing_skills_save(request: Request):
         name = person.name
         if form.get(f"active_present__{name}"):
             person.active = form.get(f"active__{name}") in ("on", "1", "true")
+        if form.get(f"reserve_present__{name}"):
+            person.reserve = form.get(f"reserve__{name}") in ("on", "1", "true")
         for s in staffing.SKILLS:
             v = form.get(f"skill__{name}__{s}")
             if v is not None:
@@ -945,18 +1076,35 @@ def staffing_past(
 def settings_page(request: Request, saved: int = Query(default=0)):
     productive_min = shift_config.productive_minutes_per_day()
 
+    # Active roster (objects, not just names) so we can compute per-WC skill
+    # levels and reserve flags for the Default People picker.
+    roster = staffing.load_roster()
+    active_people_objs = [p for p in roster if p.active]
+    active_people = sorted((p.name for p in active_people_objs), key=str.lower)
+
     # Per-work-center rows.
     wc_rows = []
     for loc in staffing.LOCATIONS:
         eff = work_centers_store.effective(loc)
         max_ops = eff["max_ops"]
+        required_skills = eff["required_skills"]
+        # Pool for the Default People picker, color-coded by min skill level
+        # across the WC's required skills (mirrors the scheduler's logic).
+        default_pool: list[dict] = []
+        for p in active_people_objs:
+            if required_skills:
+                lvl = min((p.level(s) for s in required_skills), default=0)
+            else:
+                lvl = 0
+            default_pool.append({"name": p.name, "level": lvl, "reserve": p.reserve})
+        default_pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         wc_rows.append(
             {
                 "key": loc.meter_id or f"name:{loc.name}",
                 "name": loc.name,
                 "bay": loc.bay,
                 "department": loc.department,
-                "required_skills": eff["required_skills"],
+                "required_skills": required_skills,
                 "min_ops": eff["min_ops"],
                 "max_ops": max_ops if max_ops is not None else "",
                 "goal": eff["goal_per_day"],
@@ -964,11 +1112,9 @@ def settings_page(request: Request, saved: int = Query(default=0)):
                 "groups": eff["groups"],
                 "value_stream": eff["value_stream"],
                 "default_people": eff["default_people"],
+                "default_pool": default_pool,
             }
         )
-
-    # Active people for the Default People multi-picker.
-    active_people = sorted({p.name for p in staffing.load_roster() if p.active}, key=str.lower)
 
     def _group_summary(kind: str) -> list[dict]:
         rows = []
