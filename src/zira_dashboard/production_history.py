@@ -136,3 +136,47 @@ def attribution_range(
         daily.append(attribution_for(cursor, client))
         cursor += timedelta(days=1)
     return attribute_for_range(daily)
+
+
+def rank_by_category(
+    range_attribution: dict[str, dict[str, dict[str, float]]],
+    category_wcs: list[str],
+    expected_units_per_day_by_wc: dict[str, int],
+    min_days: int = 3,
+) -> list[dict]:
+    """Build a leaderboard for one WC category.
+
+    Each row has: name, units (sum within the category), downtime,
+    days_worked (sum of day-credits across category WCs),
+    pct_of_target (sum_units / sum_expected * 100, or None if expected is 0).
+    Rows are sorted by pct_of_target desc, ties broken by units desc.
+    Rows below min_days are filtered out before ranking.
+    """
+    cat_set = set(category_wcs)
+    rows: list[dict] = []
+    for person, wc_map in range_attribution.items():
+        units = 0.0
+        downtime = 0.0
+        days = 0
+        expected = 0.0
+        for wc_name, totals in wc_map.items():
+            if wc_name not in cat_set:
+                continue
+            units += totals["units"]
+            downtime += totals["downtime"]
+            days += totals["days_worked"]
+            per_day = expected_units_per_day_by_wc.get(wc_name, 0)
+            expected += per_day * totals["days_worked"]
+        if days < min_days:
+            continue
+        pct = (units / expected * 100.0) if expected > 0 else None
+        rows.append({
+            "name": person,
+            "units": round(units, 1),
+            "downtime": round(downtime, 1),
+            "days_worked": days,
+            "pct_of_target": round(pct, 1) if pct is not None else None,
+            "expected": round(expected, 1),
+        })
+    rows.sort(key=lambda r: (-(r["pct_of_target"] or -1), -r["units"]))
+    return rows

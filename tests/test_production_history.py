@@ -141,3 +141,28 @@ def test_attribution_for_uses_published_assignments(monkeypatch):
     out = attribution_for(date(2026, 4, 27), client=object())
     assert out["Iban"]["Trim Saw 1"]["units"] == 100.0
     assert out["Porfirio"]["Trim Saw 1"]["units"] == 100.0
+
+
+from zira_dashboard.production_history import rank_by_category
+
+
+def test_rank_by_category_filters_to_category_wcs_and_threshold():
+    range_out = {
+        "Christian": {"Repair 1": {"units": 480.0, "downtime": 30.0, "hours": 40.0, "days_worked": 5}},
+        "Adrian":    {"Repair 1": {"units": 250.0, "downtime": 10.0, "hours": 16.0, "days_worked": 2}},  # below threshold
+        "Eulogio":   {"Repair 4": {"units": 385.0, "downtime": 18.0, "hours": 40.0, "days_worked": 5}},
+        "Iban":      {"Trim Saw 1": {"units": 600.0, "downtime": 12.0, "hours": 40.0, "days_worked": 5}},  # different category
+    }
+    expected_per_wc = {"Repair 1": 100, "Repair 4": 100}
+
+    rows = rank_by_category(
+        range_out,
+        category_wcs=["Repair 1", "Repair 2", "Repair 3", "Repair 4", "Repair 5"],
+        expected_units_per_day_by_wc=expected_per_wc,
+        min_days=3,
+    )
+    names = [r["name"] for r in rows]
+    assert names == ["Christian", "Eulogio"]
+    assert "Adrian" not in names
+    assert "Iban" not in names
+    assert rows[0]["pct_of_target"] == 96.0
