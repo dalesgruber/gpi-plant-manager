@@ -99,6 +99,7 @@ TIME_OFF_KEY = "__time_off"  # pseudo-location for day-off list; not in LOCATION
 class Person:
     name: str
     active: bool = True
+    reserve: bool = False
     skills: dict[str, int] = field(default_factory=dict)
 
     def level(self, skill: str) -> int:
@@ -218,6 +219,7 @@ def load_roster() -> list[Person]:
                     Person(
                         name=p["name"],
                         active=bool(p.get("active", True)),
+                        reserve=bool(p.get("reserve", False)),
                         skills={s: int(p.get("skills", {}).get(s, 0)) for s in SKILLS},
                     )
                     for p in data
@@ -239,7 +241,7 @@ def load_roster() -> list[Person]:
 def save_roster(people: list[Person]) -> None:
     with _lock:
         payload = [
-            {"name": p.name, "active": p.active, "skills": p.skills}
+            {"name": p.name, "active": p.active, "reserve": p.reserve, "skills": p.skills}
             for p in people
         ]
         ROSTER_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")

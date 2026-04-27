@@ -133,11 +133,12 @@
     font-variant-numeric: tabular-nums;
   }
   details.collapsible > summary .collapsible-chevron {
-    margin-left: auto;
     color: var(--muted);
     font-size: 0.95rem;
     transition: transform 0.15s ease;
   }
+  /* Pin pushes itself + chevron to the right edge of the summary. */
+  details.collapsible > summary .pin-btn { margin-left: auto; }
   details.collapsible[open] > summary .collapsible-chevron { transform: rotate(180deg); }
   /* Pin button */
   .pin-btn {
@@ -154,6 +155,209 @@
   }
   .pin-btn:hover { color: var(--fg); border-color: var(--border); opacity: 1; }
   .pin-btn.pinned { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); opacity: 1; }
+
+  /* Page-level toolbar: Undo / Redo / Pin buttons live in the top-right of
+     the page header rather than in each panel summary. */
+  header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  header .page-actions { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; }
+  header .page-actions .undo-btn,
+  header .page-actions .redo-btn {
+    background: transparent; color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    font: inherit; font-size: 1.05rem; font-weight: 700;
+    line-height: 1; cursor: pointer;
+  }
+  header .page-actions .undo-btn:hover:not(:disabled),
+  header .page-actions .redo-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; }
+  header .page-actions .undo-btn:disabled,
+  header .page-actions .redo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  header .page-actions .pin-btn { margin-left: 0.2rem; }
+
+  /* Default People picker — same dropdown look as the Scheduled picker on the
+     scheduler. Native checkboxes hidden; row clicks toggle them. List opens
+     as a popup, not inline. */
+  .skills-picker > summary .lvl-0 { color: var(--bad); }
+  .skills-picker > summary .lvl-1 { color: var(--warn); }
+  .skills-picker > summary .lvl-2 { color: var(--fg); }
+  .skills-picker > summary .lvl-3 { color: var(--accent); font-weight: 600; }
+  .default-people-picker { display: block; position: relative; max-width: 18rem; }
+  .default-people-picker > summary {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.88rem;
+    min-height: 2rem;
+    max-width: none;
+    overflow: hidden;
+    white-space: nowrap; line-height: 1.3;
+  }
+  .default-people-picker[open] > summary { background: var(--panel-3); }
+  .default-people-picker > summary .dd-summary-text {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .default-people-picker > summary .dd-summary-text .empty { color: var(--muted); font-style: italic; }
+  .default-people-picker > summary .dd-chev {
+    color: var(--muted); font-size: 0.85rem; margin-left: auto;
+    transition: transform 0.12s;
+  }
+  .default-people-picker[open] > summary .dd-chev { transform: rotate(180deg); }
+  .default-people-picker .skills-list {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    margin-top: 0;
+    padding: 0.25rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    max-height: 18rem; overflow-y: auto; z-index: 50;
+    min-width: 12rem;
+  }
+  .default-people-picker .skills-list .dd-item {
+    display: flex; align-items: center;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.88rem;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .default-people-picker .skills-list .dd-item input[type=checkbox] { display: none; }
+  .default-people-picker .skills-list .dd-item:hover { background: var(--panel-2); }
+  .default-people-picker .skills-list .dd-item:has(input:checked) { background: #1e40af; }
+  .default-people-picker .skills-list .dd-item:has(input:checked) .dd-item-text { color: #fff; font-weight: 600; }
+  .default-people-picker .skills-list .dd-item.lvl-0 .dd-item-text { color: var(--bad); }
+  .default-people-picker .skills-list .dd-item.lvl-1 .dd-item-text { color: var(--warn); }
+  .default-people-picker .skills-list .dd-item.lvl-2 .dd-item-text { color: var(--fg); }
+  .default-people-picker .skills-list .dd-item.lvl-3 .dd-item-text { color: var(--accent); font-weight: 600; }
+  /* Untrained people hidden by default; a selected one stays visible. */
+  .default-people-picker .skills-list .dd-item.untrained { display: none; }
+  .default-people-picker .skills-list .dd-item.untrained:has(input:checked) { display: flex; }
+  /* Reserves group at bottom of default-people picker (always visible items inside). */
+  .default-people-picker .dp-reserves {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--border);
+  }
+  .default-people-picker .dp-reserves > summary {
+    list-style: none;
+    cursor: pointer;
+    color: #a78bfa;
+    font-size: 0.78rem; font-weight: 600;
+    padding: 0.2rem 0;
+    user-select: none;
+  }
+  .default-people-picker .dp-reserves > summary::-webkit-details-marker { display: none; }
+  .default-people-picker .dp-reserves > summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 0.3rem;
+    transition: transform 0.12s;
+  }
+  .default-people-picker .dp-reserves[open] > summary::before { transform: rotate(90deg); }
+  .default-people-picker .dp-reserves > summary:hover { color: #c4b5fd; }
+  .default-people-picker .dp-reserves-count { color: var(--muted); font-weight: 500; margin-left: 0.15rem; font-size: 0.75rem; }
+  .default-people-picker .dp-reserves .dd-item.untrained { display: flex; }
+
+  /* Save toast (top-center) — same look as the rest of the app. */
+  .save-toast-bd {
+    position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    z-index: 1100; pointer-events: none;
+  }
+  .save-toast {
+    pointer-events: auto;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 0.55rem 1rem;
+    font-size: 0.92rem; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: flex; align-items: center; gap: 0.85rem;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .save-toast.error { color: var(--bad); border-color: var(--bad); }
+  .save-toast.fade  { opacity: 0; transform: translateY(-6px); }
+  .save-toast .undo-btn {
+    background: transparent; color: #60a5fa;
+    border: 1px solid #60a5fa; border-radius: 6px;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.8rem; font-weight: 700; cursor: pointer;
+    margin: 0;
+  }
+  .save-toast .undo-btn:hover { background: rgba(96,165,250,0.12); }
+
+  /* External × button next to a native <select> (Group + Value Stream).
+     Pickers (Required Skills + Default People) get an internal × in their
+     summary instead — see .dd-clear below. Both fade in on cell hover. */
+  .picker-wrap { display: flex; align-items: center; gap: 0.3rem; }
+  .picker-wrap > select { flex: 1 1 auto; min-width: 0; }
+  .picker-wrap > .picker-clear {
+    flex: 0 0 auto;
+    background: transparent; color: var(--muted);
+    border: none; border-radius: 4px;
+    width: 1.2rem; height: 1.2rem;
+    font-size: 1.05rem; line-height: 1; font-weight: 700;
+    cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: color 0.12s, opacity 0.12s;
+  }
+  .wc-table tbody tr:hover .picker-wrap > .picker-clear,
+  .picker-wrap:hover > .picker-clear { opacity: 0.55; }
+  .picker-wrap > .picker-clear:hover { color: var(--bad); opacity: 1; }
+  /* × inside the summary of pickers (Required Skills + Default People). */
+  .skills-picker > summary .dd-clear {
+    flex: 0 0 auto;
+    background: transparent; color: var(--muted);
+    border: none; border-radius: 4px;
+    width: 1.1rem; height: 1.1rem;
+    font-size: 1rem; font-weight: 700; line-height: 1;
+    cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: color 0.12s, opacity 0.12s;
+  }
+  .wc-table tbody tr:hover .skills-picker > summary .dd-clear,
+  .skills-picker:hover > summary .dd-clear,
+  .skills-picker[open] > summary .dd-clear { opacity: 0.55; }
+  .skills-picker > summary .dd-clear:hover { color: var(--bad); opacity: 1; }
+  .skills-picker > summary .dd-chev {
+    color: var(--muted); font-size: 0.85rem;
+    transition: transform 0.12s;
+    flex: 0 0 auto;
+  }
+  .skills-picker[open] > summary .dd-chev { transform: rotate(180deg); }
+  /* Make all skills-pickers (req-skills + default-people) summaries flex so
+     × and chevron sit on the right edge of the summary, mirroring scheduler. */
+  .skills-picker > summary {
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .skills-picker > summary .dd-summary-text {
+    flex: 1 1 auto; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .skills-picker > summary .dd-summary-text .empty { color: var(--muted); font-style: italic; }
+
+  /* Over/under-staff popup, ported from the scheduler. */
+  .popover-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1200;
+  }
+  .popover-backdrop.show { display: flex; }
+  .popover {
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem 1.25rem; max-width: 28rem;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+  }
+  .popover h4 { margin: 0 0 0.45rem; font-size: 0.95rem; font-weight: 700; color: var(--warn); }
+  .popover p { margin: 0.25rem 0; font-size: 0.88rem; line-height: 1.45; }
+  .popover .actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.8rem; }
+  .popover button {
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.35rem 0.8rem;
+    font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  .popover button.primary  { background: var(--panel-2); color: var(--fg); }
+  .popover button.override { background: var(--warn); color: #0e1116; border-color: var(--warn); }
+  .popover button:hover { filter: brightness(1.08); }
   form.pinned > details.collapsible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
 
   /* Inline save-status text next to the Save button */
@@ -305,14 +509,18 @@
   <h1>GPI Plant Manager</h1>
   <nav>
     <a href="/">Work Centers</a>
-    <a href="/recycling">Recycling Cell</a>
+    <a href="/recycling">Value Streams</a>
     <a href="/staffing">Staffing</a>
     <a href="/settings" class="active">Settings</a>
   </nav>
+  <div class="page-actions">
+    <button type="button" class="undo-btn" id="page-undo-btn" title="Undo last save" aria-label="Undo" disabled>↶</button>
+    <button type="button" class="redo-btn" id="page-redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
+  </div>
 </header>
 <main>
   <!-- Company Schedule -->
-  <form method="post" action="/settings/schedule" id="schedule" data-panel-id="schedule">
+  <form method="post" action="/settings/schedule" id="schedule-form" data-panel-id="schedule">
     <details class="panel collapsible">
       <summary>
         <h2 style="display:inline;margin:0">Company Schedule</h2>
@@ -352,17 +560,11 @@
         <button type="button" class="add-break-btn" id="add-break">+ Add break</button>
       </div>
 
-      <div class="actions">
-        <button type="submit">Save schedule</button>
-      </div>
     </details>
   </form>
 
-  <form method="post" action="/settings">
-  </form>
-
   <!-- Unified Work Centers & Goals -->
-  <form method="post" action="/settings/work_centers" data-panel-id="work_centers">
+  <form method="post" action="/settings/work_centers" id="wc-form" data-panel-id="work_centers">
     <details class="panel collapsible">
       <summary>
         <h2>Work Centers &amp; Goals</h2>
@@ -379,8 +581,9 @@
             <th>Value Stream</th>
             <th>Group</th>
             <th>Required skills</th>
-            <th class="num">Min</th>
-            <th class="num">Max</th>
+            <th>Default people</th>
+            <th class="num">Min people</th>
+            <th class="num">Max people</th>
             <th class="num">Goal</th>
             <th>Breakdown</th>
             <th>Note</th>
@@ -393,32 +596,101 @@
               <td>{{ r.name }}</td>
               <td class="hint">{{ r.bay }}</td>
               <td class="group-cell">
-                <select name="{{ p }}value_stream">
-                  <option value="" {% if not r.value_stream %}selected{% endif %}>—</option>
-                  {% for v in value_streams %}
-                    <option value="{{ v }}" {% if r.value_stream == v %}selected{% endif %}>{{ v }}</option>
-                  {% endfor %}
-                </select>
+                <details class="skills-picker single-picker">
+                  <summary>
+                    <span class="dd-summary-text">{% if r.value_stream %}{{ r.value_stream }}{% else %}<span class="empty">—</span>{% endif %}</span>
+                    <button type="button" class="dd-clear" title="Clear" aria-label="Clear">×</button>
+                    <span class="dd-chev">▾</span>
+                  </summary>
+                  <div class="skills-list">
+                    <label class="dd-item">
+                      <input type="radio" name="{{ p }}value_stream" value="" {% if not r.value_stream %}checked{% endif %}>
+                      <span class="dd-item-text"><span class="empty">—</span></span>
+                    </label>
+                    {% for v in value_streams %}
+                      <label class="dd-item">
+                        <input type="radio" name="{{ p }}value_stream" value="{{ v }}" {% if r.value_stream == v %}checked{% endif %}>
+                        <span class="dd-item-text">{{ v }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </details>
               </td>
               <td class="group-cell">
                 {% set current_group = r.groups[0] if r.groups else '' %}
-                <select name="{{ p }}group">
-                  <option value="" {% if not current_group %}selected{% endif %}>—</option>
-                  {% for g in groups_all %}
-                    <option value="{{ g }}" {% if current_group == g %}selected{% endif %}>{{ g }}</option>
-                  {% endfor %}
-                </select>
-              </td>
-              <td class="skills-cell">
-                <details class="skills-picker">
-                  <summary>{{ r.required_skills | join(', ') if r.required_skills else '—' }}</summary>
+                <details class="skills-picker single-picker">
+                  <summary>
+                    <span class="dd-summary-text">{% if current_group %}{{ current_group }}{% else %}<span class="empty">—</span>{% endif %}</span>
+                    <button type="button" class="dd-clear" title="Clear" aria-label="Clear">×</button>
+                    <span class="dd-chev">▾</span>
+                  </summary>
                   <div class="skills-list">
-                    {% for s in skills_all %}
-                      <label>
-                        <input type="checkbox" name="{{ p }}required_skills" value="{{ s }}" {% if s in r.required_skills %}checked{% endif %}>
-                        {{ s }}
+                    <label class="dd-item">
+                      <input type="radio" name="{{ p }}group" value="" {% if not current_group %}checked{% endif %}>
+                      <span class="dd-item-text"><span class="empty">—</span></span>
+                    </label>
+                    {% for g in groups_all %}
+                      <label class="dd-item">
+                        <input type="radio" name="{{ p }}group" value="{{ g }}" {% if current_group == g %}checked{% endif %}>
+                        <span class="dd-item-text">{{ g }}</span>
                       </label>
                     {% endfor %}
+                  </div>
+                </details>
+              </td>
+              <td class="skills-cell">
+                <details class="skills-picker req-skills-picker">
+                  <summary>
+                    <span class="dd-summary-text">{% if r.required_skills %}{{ r.required_skills | join(', ') }}{% else %}<span class="empty">—</span>{% endif %}</span>
+                    <button type="button" class="dd-clear" title="Clear" aria-label="Clear">×</button>
+                    <span class="dd-chev">▾</span>
+                  </summary>
+                  <div class="skills-list">
+                    {% for s in skills_all %}
+                      <label class="dd-item" data-name="{{ s }}">
+                        <input type="checkbox" name="{{ p }}required_skills" value="{{ s }}" {% if s in r.required_skills %}checked{% endif %}>
+                        <span class="dd-item-text">{{ s }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </details>
+              </td>
+              <td class="skills-cell">
+                <input type="hidden" name="{{ p }}default_people_present" value="1">
+                <details class="skills-picker default-people-picker"
+                         data-loc="{{ r.name }}"
+                         data-min="{{ r.min_ops }}"
+                         data-max="{{ r.max_ops if r.max_ops != '' else '' }}">
+                  <summary>
+                    <span class="dd-summary-text">
+                      {% if r.default_people %}
+                        {%- set lvls = {} -%}
+                        {%- for o in r.default_pool -%}{%- set _ = lvls.update({o.name: o.level}) -%}{%- endfor -%}
+                        {% for n in r.default_people %}<span class="lvl-{{ lvls.get(n, 2) }}">{{ n }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                      {% else %}<span class="empty">—</span>{% endif %}
+                    </span>
+                    <button type="button" class="dd-clear" title="Clear" aria-label="Clear">×</button>
+                    <span class="dd-chev">▾</span>
+                  </summary>
+                  <div class="skills-list">
+                    {% for o in r.default_pool if not o.reserve %}
+                      <label class="dd-item lvl-{{ o.level }} {% if o.level < 1 %}untrained{% endif %}" data-level="{{ o.level }}" data-name="{{ o.name }}">
+                        <input type="checkbox" name="{{ p }}default_people" value="{{ o.name }}" {% if o.name in r.default_people %}checked{% endif %}>
+                        <span class="dd-item-text">{{ o.name }}</span>
+                      </label>
+                    {% endfor %}
+                    {% set reserve_pool = r.default_pool | selectattr('reserve') | list %}
+                    {% if reserve_pool %}
+                      <details class="dp-reserves">
+                        <summary>Reserves <span class="dp-reserves-count">({{ reserve_pool|length }})</span></summary>
+                        {% for o in reserve_pool %}
+                          <label class="dd-item lvl-{{ o.level }} {% if o.level < 1 %}untrained{% endif %}">
+                            <input type="checkbox" name="{{ p }}default_people" value="{{ o.name }}" {% if o.name in r.default_people %}checked{% endif %}>
+                            <span class="dd-item-text">{{ o.name }}</span>
+                          </label>
+                        {% endfor %}
+                      </details>
+                    {% endif %}
                   </div>
                 </details>
               </td>
@@ -435,7 +707,7 @@
           {% endfor %}
         </tbody>
       </table>
-      <div class="note">Max blank = unlimited. Required skills gate who shows up in the scheduler dropdown (training mode bypasses). Value Stream + Cell are free-text — type new names or pick existing ones.</div>
+      <div class="note">Max blank = unlimited. Required skills gate who shows up in the scheduler dropdown (training mode bypasses). Default people are pre-loaded into the Scheduled column whenever a brand-new day is opened, and on click of "Reset to defaults" in the scheduler.</div>
 
       <div class="group-summaries">
         <!-- LEFT: Value Streams — fixed list, only goal editable -->
@@ -483,9 +755,6 @@
         </section>
       </div>
 
-      <div class="actions">
-        <button type="submit">Save</button>
-      </div>
     </details>
   </form>
 </main>
@@ -635,6 +904,334 @@
       list.appendChild(row);
     });
   })();
+
+  // ---------- Autosave + Undo/Redo + top-center toast ----------
+  // Same pattern as the People Matrix and Plant Scheduler. One factory wires
+  // up each form independently — they post to different endpoints and have
+  // their own undo history.
+  function _serializeForm(form) {
+    const map = {};
+    for (const [k, v] of new FormData(form).entries()) {
+      if (!(k in map)) map[k] = [];
+      map[k].push(v);
+    }
+    return map;
+  }
+  function _applyState(form, snap) {
+    for (const el of form.querySelectorAll('input, select, textarea')) {
+      if (!el.name) continue;
+      const vals = snap[el.name] || [];
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        el.checked = vals.includes(el.value);
+      } else if (el instanceof HTMLSelectElement) {
+        if (el.multiple) Array.from(el.options).forEach(o => { o.selected = vals.includes(o.value); });
+        else el.value = vals[0] ?? '';
+      } else {
+        el.value = vals[0] ?? '';
+      }
+    }
+  }
+  function showSavedToast(message, undoSnap, onUndo) {
+    let bd = document.getElementById('save-toast-bd');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'save-toast-bd';
+      bd.className = 'save-toast-bd';
+      document.body.appendChild(bd);
+    }
+    const el = document.createElement('div');
+    const isErr = message === 'Save failed';
+    el.className = 'save-toast' + (isErr ? ' error' : '');
+    const label = document.createElement('span');
+    label.textContent = message;
+    el.appendChild(label);
+    if (undoSnap && onUndo) {
+      const u = document.createElement('button');
+      u.type = 'button';
+      u.className = 'undo-btn';
+      u.textContent = 'Undo';
+      u.onclick = () => { onUndo(undoSnap); el.remove(); };
+      el.appendChild(u);
+    }
+    bd.appendChild(el);
+    setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 300); }, 5000);
+  }
+
+  // Single pair of Undo/Redo buttons in the page header drives whichever form
+  // most recently saved. Each form's history stays separate; the buttons just
+  // dispatch to the active form.
+  const __pageUndoBtn = document.getElementById('page-undo-btn');
+  const __pageRedoBtn = document.getElementById('page-redo-btn');
+  let __activeForm = null;
+  function refreshPageBtns() {
+    const f = __activeForm;
+    const s = (f && f._undoState) ? f._undoState() : { hasUndo: false, hasRedo: false };
+    __pageUndoBtn.disabled = !s.hasUndo;
+    __pageRedoBtn.disabled = !s.hasRedo;
+    __pageUndoBtn.title = f ? `Undo (${f.id})` : 'Undo';
+    __pageRedoBtn.title = f ? `Redo (${f.id})` : 'Redo';
+  }
+  __pageUndoBtn.addEventListener('click', () => {
+    if (__activeForm && __activeForm._performUndo) __activeForm._performUndo();
+  });
+  __pageRedoBtn.addEventListener('click', () => {
+    if (__activeForm && __activeForm._performRedo) __activeForm._performRedo();
+  });
+
+  function attachAutosaver(form, url) {
+    if (!form) return;
+    let snapshot = _serializeForm(form);
+    let lastUndo = null;
+    let lastRedo = null;
+    let saving = false;
+    let timer = null;
+
+    function notify() { __activeForm = form; refreshPageBtns(); }
+    function schedule() { clearTimeout(timer); timer = setTimeout(save, 600); }
+    function save() {
+      timer = null;
+      if (saving) { schedule(); return; }
+      saving = true;
+      const before = snapshot;
+      const after = _serializeForm(form);
+      fetch(url, { method: 'POST', body: new FormData(form), headers: {'Accept':'application/json'} })
+        .then(r => {
+          if (r.ok) {
+            snapshot = after;
+            lastUndo = before;
+            lastRedo = null;
+            notify();
+            showSavedToast('Saved', before, () => performUndo(before));
+          } else {
+            showSavedToast('Save failed');
+          }
+        })
+        .catch(() => showSavedToast('Save failed'))
+        .finally(() => { saving = false; });
+    }
+    function performUndo(snap) {
+      if (!snap || saving) return;
+      const beforeRevert = _serializeForm(form);
+      _applyState(form, snap);
+      clearTimeout(timer);
+      timer = null;
+      saving = true;
+      fetch(url, { method: 'POST', body: new FormData(form), headers: {'Accept':'application/json'} })
+        .finally(() => {
+          snapshot = _serializeForm(form);
+          lastUndo = null;
+          lastRedo = beforeRevert;
+          notify();
+          saving = false;
+          showSavedToast('Reverted');
+        });
+    }
+    function performRedo(snap) {
+      if (!snap || saving) return;
+      const beforeRedo = _serializeForm(form);
+      _applyState(form, snap);
+      clearTimeout(timer);
+      timer = null;
+      saving = true;
+      fetch(url, { method: 'POST', body: new FormData(form), headers: {'Accept':'application/json'} })
+        .finally(() => {
+          snapshot = _serializeForm(form);
+          lastUndo = beforeRedo;
+          lastRedo = null;
+          notify();
+          saving = false;
+          showSavedToast('Redone');
+        });
+    }
+
+    // Expose for the global page-header buttons.
+    form._performUndo = () => performUndo(lastUndo);
+    form._performRedo = () => performRedo(lastRedo);
+    form._undoState = () => ({ hasUndo: !!lastUndo, hasRedo: !!lastRedo });
+
+    form.addEventListener('change', schedule);
+    form.addEventListener('input', (e) => {
+      if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) schedule();
+    });
+    window.addEventListener('beforeunload', () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      timer = null;
+      if (navigator.sendBeacon) navigator.sendBeacon(url, new FormData(form));
+    });
+  }
+
+  attachAutosaver(document.getElementById('schedule-form'), '/settings/schedule');
+  attachAutosaver(document.getElementById('wc-form'), '/settings/work_centers');
+
+  // ---------- Picker helpers: summary refresh, × clear, max/min guards ----------
+  function refreshPickerSummary(picker) {
+    const text = picker.querySelector(':scope > summary > .dd-summary-text');
+    if (!text) return;
+    // Single-select pickers (radio inputs) — Group + Value Stream.
+    if (picker.classList.contains('single-picker')) {
+      const checked = picker.querySelector('input[type=radio]:checked');
+      if (!checked || !checked.value) {
+        text.innerHTML = '<span class="empty">—</span>';
+      } else {
+        text.textContent = checked.value;
+      }
+      return;
+    }
+    // Multi-select pickers (checkbox inputs) — Required Skills + Default People.
+    const checked = [...picker.querySelectorAll('.dd-item input[type=checkbox]:checked')];
+    if (!checked.length) {
+      text.innerHTML = '<span class="empty">—</span>';
+      return;
+    }
+    const parts = checked.map(cb => {
+      const item = cb.closest('.dd-item');
+      const lvl = item.dataset.level;
+      const name = cb.value;
+      return lvl != null
+        ? '<span class="lvl-' + lvl + '">' + name + '</span>'
+        : name;
+    });
+    text.innerHTML = parts.join(', ');
+  }
+
+  // × inside picker summary — clears the picker. For single-select pickers
+  // (Group + Value Stream), this means selecting the empty radio. For
+  // multi-select pickers, all checkboxes are unchecked.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.skills-picker > summary > .dd-clear');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const picker = btn.closest('.skills-picker');
+    let changed = false;
+    if (picker.classList.contains('single-picker')) {
+      const empty = picker.querySelector('input[type=radio][value=""]');
+      if (empty && !empty.checked) { empty.checked = true; changed = true; }
+    } else {
+      picker.querySelectorAll('.dd-item input[type=checkbox]:checked').forEach(cb => {
+        cb.checked = false;
+        changed = true;
+      });
+    }
+    if (!changed) return;
+    refreshPickerSummary(picker);
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  // Single-select pickers auto-close after a choice and refresh their summary.
+  document.querySelectorAll('details.single-picker').forEach(picker => {
+    picker.addEventListener('change', (e) => {
+      if (!e.target.matches('input[type=radio]')) return;
+      refreshPickerSummary(picker);
+      picker.open = false;
+    });
+  });
+
+  // Generic popup, mirrors scheduler's showPopup.
+  function showPopup({ title, msg, overrideLabel = 'Override', cancelLabel = 'Cancel', onOverride, onCancel }) {
+    let bd = document.getElementById('settings-popover-bd');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'settings-popover-bd';
+      bd.className = 'popover-backdrop';
+      bd.innerHTML =
+        '<div class="popover">'
+      + '  <h4 data-role="title"></h4>'
+      + '  <p data-role="msg"></p>'
+      + '  <div class="actions">'
+      + '    <button type="button" class="primary"  data-role="cancel"></button>'
+      + '    <button type="button" class="override" data-role="override"></button>'
+      + '  </div>'
+      + '</div>';
+      document.body.appendChild(bd);
+    }
+    bd.querySelector('[data-role=title]').textContent = title;
+    bd.querySelector('[data-role=msg]').textContent = msg;
+    bd.querySelector('[data-role=cancel]').textContent = cancelLabel;
+    bd.querySelector('[data-role=override]').textContent = overrideLabel;
+    bd.classList.add('show');
+    const close = () => bd.classList.remove('show');
+    bd.querySelector('[data-role=cancel]').onclick   = () => { close(); if (onCancel)   onCancel(); };
+    bd.querySelector('[data-role=override]').onclick = () => { close(); if (onOverride) onOverride(); };
+  }
+
+  // Default-people picker — block adding past max (with override popup), and
+  // auto-close once max is reached. Click intercepts before native toggle.
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('.default-people-picker .dd-item');
+    if (!item) return;
+    if (e.target.closest('.dd-clear')) return;
+    const cb = item.querySelector('input[type=checkbox]');
+    if (!cb || cb.checked) return;  // unchecking always allowed
+    const picker = item.closest('.default-people-picker');
+    const max = parseInt(picker.dataset.max, 10);
+    if (!max) return;
+    const current = picker.querySelectorAll('.dd-item input[type=checkbox]:checked').length;
+    if (current + 1 <= max) return;  // within limit
+    e.preventDefault();
+    e.stopPropagation();
+    const loc = picker.dataset.loc;
+    showPopup({
+      title: loc + ' · More than max',
+      msg: 'Max is ' + max + ' at ' + loc + ' and you already have ' + current + '. The default crew is what pre-loads each new day, so going over max means every day starts overstaffed. Override to add anyway.',
+      overrideLabel: 'Add anyway',
+      onOverride: () => {
+        cb.checked = true;
+        refreshPickerSummary(picker);
+        picker.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    });
+  }, true);
+
+  // Auto-close at max + under-min warning on close.
+  document.querySelectorAll('details.default-people-picker').forEach(picker => {
+    picker.addEventListener('change', (e) => {
+      if (!e.target.matches('.dd-item input[type=checkbox]')) return;
+      refreshPickerSummary(picker);
+      const max = parseInt(picker.dataset.max, 10);
+      const checked = picker.querySelectorAll('.dd-item input[type=checkbox]:checked').length;
+      if (max && checked === max) picker.open = false;
+    });
+    picker.addEventListener('toggle', () => {
+      if (picker.open) return;
+      const min = parseInt(picker.dataset.min, 10) || 0;
+      const checked = picker.querySelectorAll('.dd-item input[type=checkbox]:checked').length;
+      if (min >= 2 && checked > 0 && checked < min) {
+        const loc = picker.dataset.loc;
+        showPopup({
+          title: loc + ' · Fewer than min',
+          msg: loc + ' needs at least ' + min + ' operators but only ' + checked + ' default(s) are set. New days will start understaffed at this WC.',
+          overrideLabel: 'OK',
+          cancelLabel: 'Re-open picker',
+          onCancel: () => { picker.open = true; },
+        });
+      }
+    });
+  });
+
+  // Required-skills picker also keeps its summary in sync on change.
+  document.querySelectorAll('details.req-skills-picker').forEach(picker => {
+    picker.addEventListener('change', (e) => {
+      if (!e.target.matches('.dd-item input[type=checkbox]')) return;
+      // Render plain comma list, no level coloring on skills.
+      const text = picker.querySelector(':scope > summary > .dd-summary-text');
+      const checked = [...picker.querySelectorAll('.dd-item input[type=checkbox]:checked')];
+      text.innerHTML = checked.length
+        ? checked.map(cb => cb.value).join(', ')
+        : '<span class="empty">—</span>';
+    });
+  });
+
+  // Only one <details> open at a time (covers all pickers and panels).
+  document.addEventListener('toggle', (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLDetailsElement) || !t.open) return;
+    document.querySelectorAll('details[open]').forEach(d => {
+      if (d === t || d.contains(t)) return;
+      d.open = false;
+    });
+  }, true);
 </script>
 </body>
 </html>

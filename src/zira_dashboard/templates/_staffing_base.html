@@ -61,7 +61,7 @@
     <h1>GPI Plant Manager</h1>
     <nav>
       <a href="/">Work Centers</a>
-      <a href="/recycling">Recycling Cell</a>
+      <a href="/recycling">Value Streams</a>
       <a href="/staffing" class="active">Staffing</a>
       <a href="/settings">Settings</a>
     </nav>
@@ -71,6 +71,18 @@
 <main>
   {% block content %}{% endblock %}
 </main>
+<script>
+// Only one <details> open at a time across the page. Skips ancestors of the
+// just-opened element so opening a nested group doesn't collapse its parent.
+document.addEventListener('toggle', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLDetailsElement) || !t.open) return;
+  document.querySelectorAll('details[open]').forEach(d => {
+    if (d === t || d.contains(t)) return;
+    d.open = false;
+  });
+}, true);
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

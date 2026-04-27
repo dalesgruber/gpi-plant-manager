@@ -199,25 +199,156 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     results = leaderboard(client, stations, d)
     now = datetime.now(timezone.utc)
 
-    total_units = sum(r.units for r in results)
-    total_downtime = sum(r.downtime_minutes for r in results)
+    # Load schedule first so we can decide which WCs were "active" today.
+    # A WC is active iff someone was scheduled to it OR it produced more than
+    # the noise floor (5 units). Inactive WCs are dropped from every roll-up:
+    # uptime, group goals, bars, downtime — so the dashboard reflects only
+    # the staffing and stations that actually ran today.
+    sched_for_labels = staffing.load_schedule(d)
+    who_by_wc: dict[str, str] = {}
+    for wc_name, ops in sched_for_labels.assignments.items():
+        if wc_name == staffing.TIME_OFF_KEY or not ops:
+            continue
+        who_by_wc[wc_name] = " + ".join(ops)
+
+    ACTIVE_UNITS_THRESHOLD = 5
+    active_wc_names: set[str] = set(who_by_wc.keys())
+    for r in results:
+        if r.units > ACTIVE_UNITS_THRESHOLD:
+            active_wc_names.add(r.station.name)
+
+    active_results = [r for r in results if r.station.name in active_wc_names]
+    active_stations = [s for s in stations if s.name in active_wc_names]
+
+    total_units = sum(r.units for r in active_results)
+    total_downtime = sum(r.downtime_minutes for r in active_results)
     elapsed = shift_elapsed_minutes(d, now)
-    available = elapsed * len(stations)
+    available = elapsed * len(active_stations)
     uptime_minutes = max(0, available - total_downtime)
     uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
     pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
 
-    top_units = max((r.units for r in results), default=0)
+    top_units = max((r.units for r in active_results), default=0)
 
-    dismantlers = [r for r in results if r.station.category == "Dismantler"]
+    dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
     dismantlers.sort(key=lambda r: r.station.name)
-    repairs = [r for r in results if r.station.category == "Repair"]
+    repairs = [r for r in active_results if r.station.category == "Repair"]
     repairs.sort(key=lambda r: r.station.name)
 
-    dism_progress = progress_buckets(dismantlers, d, now)
-    repair_progress = progress_buckets(repairs, d, now)
-    dism_group_target = settings_store.group_target("Dismantler")
-    repair_group_target = settings_store.group_target("Repair")
+    # ---- Productive intervals per WC ----
+    # active_intervals (from leaderboard's transfer rule) = time the WC was
+    # producing or in its 60-min grace tail. We also count the first 60 min of
+    # the shift as productive for any *scheduled* WC, since the 60-min rule
+    # can't possibly have triggered yet — that's the user-supplied "first 60
+    # min fixed" rule for the progress charts.
+    shift_start_local = datetime.combine(d, shift_config.shift_start(), tzinfo=shift_config.SITE_TZ)
+    shift_end_local   = datetime.combine(d, shift_config.shift_end(),   tzinfo=shift_config.SITE_TZ)
+    grace_end_local   = shift_start_local + timedelta(minutes=60)
+    grace_interval_utc = (
+        shift_start_local.astimezone(timezone.utc),
+        grace_end_local.astimezone(timezone.utc),
+    )
+    people_by_wc: dict[str, int] = {
+        wc: len(ops) for wc, ops in sched_for_labels.assignments.items()
+        if wc != staffing.TIME_OFF_KEY and ops
+    }
+
+    def _merge(intervals):
+        if not intervals:
+            return []
+        intervals = sorted(intervals, key=lambda x: x[0])
+        out = [intervals[0]]
+        for s, e in intervals[1:]:
+            if s <= out[-1][1]:
+                out[-1] = (out[-1][0], max(out[-1][1], e))
+            else:
+                out.append((s, e))
+        return out
+
+    # Break windows in UTC for the day — subtracted from productive intervals
+    # so a station "productive all day" sums to *productive shift hours* (not
+    # wall-clock), matching the settings goal which is daily / productive_hours.
+    breaks_utc: list[tuple[datetime, datetime]] = []
+    for b in shift_config.breaks():
+        bs = datetime.combine(d, b.start, tzinfo=shift_config.SITE_TZ).astimezone(timezone.utc)
+        be = datetime.combine(d, b.end,   tzinfo=shift_config.SITE_TZ).astimezone(timezone.utc)
+        if be > bs:
+            breaks_utc.append((bs, be))
+
+    def _subtract_breaks(intervals):
+        if not breaks_utc:
+            return intervals
+        chunks = list(intervals)
+        for b_s, b_e in breaks_utc:
+            new_chunks = []
+            for c_s, c_e in chunks:
+                if b_e <= c_s or b_s >= c_e:
+                    new_chunks.append((c_s, c_e))
+                    continue
+                if c_s < b_s:
+                    new_chunks.append((c_s, b_s))
+                if c_e > b_e:
+                    new_chunks.append((b_e, c_e))
+            chunks = new_chunks
+        return chunks
+
+    productive_by_wc: dict[str, list[tuple[datetime, datetime]]] = {}
+    for r in active_results:
+        ints = list(r.active_intervals)
+        if r.station.name in people_by_wc:
+            ints.append(grace_interval_utc)
+        productive_by_wc[r.station.name] = _subtract_breaks(_merge(ints))
+
+    def _productive_minutes(name: str) -> float:
+        return sum((b - a).total_seconds() / 60.0 for a, b in productive_by_wc.get(name, []))
+
+    # ---- Per-bucket target for progress chart ----
+    # First 60 min of shift: goal is sum across SCHEDULED WCs of
+    # (hourly_target × people_scheduled × bucket_fraction). After that:
+    # standard productive-interval-overlap math, so the dotted goal line steps
+    # up/down as stations transfer off and back on.
+    def _make_target_fn(group):
+        def fn(b_start_local: datetime, b_end_local: datetime) -> float:
+            bucket_min = (b_end_local - b_start_local).total_seconds() / 60.0
+            if b_end_local <= grace_end_local:
+                tot = 0.0
+                for r in group:
+                    name = r.station.name
+                    if name not in people_by_wc:
+                        continue
+                    tot += settings_store.station_target(r.station) * people_by_wc[name] * bucket_min / 60.0
+                return tot
+            tot = 0.0
+            for r in group:
+                hr = settings_store.station_target(r.station)
+                if hr <= 0:
+                    continue
+                for ai_s_utc, ai_e_utc in productive_by_wc.get(r.station.name, []):
+                    ai_s = ai_s_utc.astimezone(shift_config.SITE_TZ)
+                    ai_e = ai_e_utc.astimezone(shift_config.SITE_TZ)
+                    o_s = max(ai_s, b_start_local)
+                    o_e = min(ai_e, b_end_local)
+                    if o_e > o_s:
+                        tot += hr * (o_e - o_s).total_seconds() / 60.0 / 60.0
+            return tot
+        return fn
+
+    dism_progress = progress_buckets(dismantlers, d, now, target_fn=_make_target_fn(dismantlers))
+    repair_progress = progress_buckets(repairs, d, now, target_fn=_make_target_fn(repairs))
+
+    # Group hourly target shown in the legend: total productive expected for
+    # the shift so far, averaged over elapsed hours.
+    elapsed_hours_for_avg = (elapsed / 60.0) if elapsed else 0.0
+    def _group_goal(rows):
+        if elapsed_hours_for_avg <= 0:
+            return 0.0
+        total_expected = sum(
+            settings_store.station_target(r.station) * (_productive_minutes(r.station.name) / 60.0)
+            for r in rows
+        )
+        return total_expected / elapsed_hours_for_avg
+    dism_group_target = _group_goal(dismantlers)
+    repair_group_target = _group_goal(repairs)
 
     customs_all = widget_customizer.load_all("recycling")
 
@@ -250,20 +381,16 @@ def recycling(request: Request, day: str | None = Query(default=None)):
 
     elapsed_hours = elapsed / 60.0 if elapsed else 0.0
 
-    # Who's working each WC today, for widget labels. Drafts are accepted —
-    # we want operator names to show even before the day is published.
-    sched_for_labels = staffing.load_schedule(d)
-    who_by_wc: dict[str, str] = {}
-    for wc_name, ops in sched_for_labels.assignments.items():
-        if wc_name == staffing.TIME_OFF_KEY or not ops:
-            continue
-        who_by_wc[wc_name] = " + ".join(ops)
-
     def _bars(items: list) -> list[dict]:
         out = []
         for r in items:
             station_tgt_hr = settings_store.station_target(r.station)  # pallets/hr
-            expected = station_tgt_hr * elapsed_hours
+            # Per-WC expected uses the station's *productive* time (active
+            # intervals + first-60-min grace if scheduled). A WC scheduled and
+            # producing all day reaches the full settings goal; a WC
+            # transferred away after 2h sees expected sized to its 2h of work.
+            station_active_hours = _productive_minutes(r.station.name) / 60.0
+            expected = station_tgt_hr * station_active_hours
             pct_of_target = (r.units / expected * 100.0) if expected > 0 else None
             out.append(
                 {
@@ -1000,7 +1127,7 @@ def staffing_leaderboards(
             range_out,
             category_wcs=wc_names,
             expected_units_per_day_by_wc=expected_per_day_by_wc,
-            min_days=3,
+            min_days=1,  # TEMP: lowered from 3 for early testing — restore to 3 once there's enough history
         )
         if metric == "units":
             rows = sorted(rows, key=lambda r: -r["units"])

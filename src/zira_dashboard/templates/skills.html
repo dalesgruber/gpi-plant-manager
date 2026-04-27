@@ -26,6 +26,8 @@
   .skills-table thead th.sort-asc::after  { content: ' ▲'; color: var(--accent); }
   .skills-table thead th.sort-desc::after { content: ' ▼'; color: var(--accent); }
   .skills-table tbody td { background: var(--panel); }
+  .skills-table tbody tr:hover td,
+  .skills-table tbody tr:hover td.name { background: var(--panel-3); }
   .skills-table tbody tr.inactive td { opacity: 0.45; }
   .skills-table td.name {
     text-align: left;
@@ -35,6 +37,13 @@
     background: var(--panel);
     z-index: 1;
     padding-left: 0.55rem;
+  }
+  .skills-table td.name .name-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
   }
 
   .skill-sel {
@@ -59,17 +68,48 @@
   .skill-sel option { background: var(--panel); color: var(--fg); font-weight: normal; }
 
   .active-check { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; cursor: pointer; }
+  .reserve-check { accent-color: #a78bfa; width: 1.05rem; height: 1.05rem; cursor: pointer; }
 
   .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
   .toolbar .counts { color: var(--muted); font-size: 0.82rem; }
-  .toolbar .save-flash { display: inline-block; color: var(--accent); font-weight: 600; font-size: 0.85rem; opacity: 0; transition: opacity 0.15s; pointer-events: none; }
-  .toolbar .save-flash.show { opacity: 1; }
-  .toolbar button.save-btn {
-    background: var(--accent); color: #0e1116;
-    border: 1px solid var(--accent); border-radius: 6px;
-    padding: 0.4rem 0.95rem; font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+  /* Top-center save toast */
+  .save-toast-bd {
+    position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    z-index: 1100; pointer-events: none;
   }
-  .toolbar button.save-btn:hover { filter: brightness(1.08); }
+  .save-toast {
+    pointer-events: auto;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 0.55rem 1rem;
+    font-size: 0.92rem; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    display: flex; align-items: center; gap: 0.85rem;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .save-toast.error { color: var(--bad); border-color: var(--bad); }
+  .save-toast.fade  { opacity: 0; transform: translateY(-6px); }
+  .save-toast .undo-btn {
+    background: transparent; color: #60a5fa;
+    border: 1px solid #60a5fa; border-radius: 6px;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.8rem; font-weight: 700; cursor: pointer;
+  }
+  .save-toast .undo-btn:hover { background: rgba(96,165,250,0.12); }
+  .toolbar button.undo-btn,
+  .toolbar button.redo-btn {
+    background: transparent; color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+    font: inherit; font-size: 1.15rem; font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .toolbar button.undo-btn:hover:not(:disabled),
+  .toolbar button.redo-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; }
+  .toolbar button.undo-btn:disabled,
+  .toolbar button.redo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
   .legend { display: flex; gap: 0.6rem; align-items: center; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.75rem; flex-wrap: wrap; }
   .legend span.swatch { display: inline-block; width: 1.25rem; height: 1rem; border-radius: 4px; text-align: center; font-weight: 700; font-size: 0.75rem; line-height: 1rem; vertical-align: middle; margin-right: 0.3rem; }
@@ -102,14 +142,18 @@
     padding: 0.35rem 0.9rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
 
-  /* Delete button in each row */
-  .del-btn {
+  /* Trash icon — only visible when hovering the row */
+  .skills-table td.name .del-btn {
     background: transparent; color: var(--muted);
-    border: 1px solid var(--border); border-radius: 4px;
-    padding: 0.08rem 0.4rem; font-size: 0.75rem; cursor: pointer;
+    border: none; border-radius: 4px;
+    padding: 0.15rem 0.3rem; cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s, background 0.1s;
+    flex: 0 0 auto;
   }
-  .del-btn:hover { color: var(--bad); border-color: var(--bad); }
-  .skills-table td.del-cell { padding: 0.15rem 0.35rem; }
+  .skills-table td.name .del-btn svg { width: 0.95rem; height: 0.95rem; display: block; }
+  .skills-table tbody tr:hover td.name .del-btn { opacity: 1; }
+  .skills-table td.name .del-btn:hover { color: var(--bad); background: var(--bad-dim); }
 
   /* Confirmation popup (reuse staffing.html's popover style) */
   .popover-backdrop {
@@ -136,8 +180,8 @@
     <div style="margin-left:auto;display:flex;gap:0.75rem;align-items:center">
       <input type="search" id="wheel-filter" placeholder="Filter people…">
       <label class="active-toggle"><input type="checkbox" id="hide-inactive" checked> Active only</label>
-      <span class="save-flash" id="save-flash"></span>
-      <button type="submit" class="save-btn">Save</button>
+      <button type="button" class="undo-btn" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
+      <button type="button" class="redo-btn" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
     </div>
   </div>
 
@@ -161,17 +205,34 @@
         <tr>
           <th class="name" style="text-align:left">Name</th>
           <th>Active</th>
+          <th>Reserve</th>
           {% for s in skills %}<th>{{ s }}</th>{% endfor %}
-          <th></th>
         </tr>
       </thead>
       <tbody>
         {% for p in people %}
         <tr class="{% if not p.active %}inactive{% endif %}" data-active="{{ '1' if p.active else '0' }}">
-          <td class="name">{{ p.name }}</td>
+          <td class="name">
+            <div class="name-inner">
+              <span>{{ p.name }}</span>
+              <button type="button" class="del-btn" data-person="{{ p.name }}" title="Remove from roster" aria-label="Remove {{ p.name }}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"></path>
+                  <path d="M10 11v6"></path>
+                  <path d="M14 11v6"></path>
+                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </td>
           <td>
             <input type="hidden" name="active_present__{{ p.name }}" value="1">
             <input class="active-check" type="checkbox" name="active__{{ p.name }}" {% if p.active %}checked{% endif %}>
+          </td>
+          <td>
+            <input type="hidden" name="reserve_present__{{ p.name }}" value="1">
+            <input class="reserve-check" type="checkbox" name="reserve__{{ p.name }}" {% if p.reserve %}checked{% endif %}>
           </td>
           {% for s in skills %}
             {% set lvl = p.skills.get(s, 0) %}
@@ -181,7 +242,6 @@
               </select>
             </td>
           {% endfor %}
-          <td class="del-cell"><button type="button" class="del-btn" data-person="{{ p.name }}" title="Remove from roster">×</button></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -259,25 +319,157 @@
     });
   });
 
-  // Save via fetch — no reload
+  // ---------- Autosave + Undo + top-center toast ----------
   const form = document.getElementById('skills-form');
-  const flash = document.getElementById('save-flash');
-  function toast(msg, err) {
-    flash.textContent = msg;
-    flash.style.color = err ? 'var(--bad)' : 'var(--accent)';
-    flash.classList.add('show');
-    setTimeout(() => flash.classList.remove('show'), 1600);
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
+
+  function serializeForm(f) {
+    const map = {};
+    for (const [k, v] of new FormData(f).entries()) {
+      if (!(k in map)) map[k] = [];
+      map[k].push(v);
+    }
+    return map;
   }
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const btn = form.querySelector('button.save-btn');
-    const orig = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Saving…';
+  function applyState(f, snap) {
+    for (const el of f.querySelectorAll('input, select, textarea')) {
+      if (!el.name) continue;
+      const vals = snap[el.name] || [];
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        el.checked = vals.includes(el.value);
+      } else {
+        el.value = vals[0] ?? '';
+      }
+    }
+  }
+  function reapplyVisualState() {
+    document.querySelectorAll('input.active-check').forEach(cb => {
+      const row = cb.closest('tr');
+      row.classList.toggle('inactive', !cb.checked);
+      row.dataset.active = cb.checked ? '1' : '0';
+    });
+    document.querySelectorAll('.skill-sel').forEach(sel => {
+      sel.classList.remove('lvl-0', 'lvl-1', 'lvl-2', 'lvl-3');
+      sel.classList.add('lvl-' + sel.value);
+    });
+    apply();
+  }
+
+  let __undoSnapshot = serializeForm(form);
+  let __lastUndoSnap = null;
+  let __lastRedoSnap = null;
+  let __saveTimer = null;
+  let __saving = false;
+
+  function updateBtns() {
+    undoBtn.disabled = !__lastUndoSnap;
+    redoBtn.disabled = !__lastRedoSnap;
+  }
+
+  function doSave() {
+    if (__saving) { scheduleAutosave(); return; }
+    __saving = true;
+    const before = __undoSnapshot;
+    const after = serializeForm(form);
     fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
-      .then(r => toast(r.ok ? 'Saved' : 'Save failed', !r.ok))
-      .catch(() => toast('Save failed', true))
-      .finally(() => { btn.disabled = false; btn.textContent = orig; });
+      .then(r => {
+        if (r.ok) {
+          __undoSnapshot = after;
+          __lastUndoSnap = before;
+          __lastRedoSnap = null;  // new save branches the history
+          updateBtns();
+          showSavedToast(before);
+        } else {
+          showSavedToast(null, 'Save failed');
+        }
+      })
+      .catch(() => showSavedToast(null, 'Save failed'))
+      .finally(() => { __saving = false; });
+  }
+  function scheduleAutosave() {
+    clearTimeout(__saveTimer);
+    __saveTimer = setTimeout(doSave, 600);
+  }
+
+  function performUndo(snap) {
+    if (!snap) return;
+    const beforeRevert = serializeForm(form);
+    applyState(form, snap);
+    reapplyVisualState();
+    clearTimeout(__saveTimer);
+    __saving = true;
+    fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
+      .finally(() => {
+        __undoSnapshot = serializeForm(form);
+        __lastUndoSnap = null;
+        __lastRedoSnap = beforeRevert;  // enable redo to put it back
+        updateBtns();
+        __saving = false;
+        showSavedToast(null, 'Reverted');
+      });
+  }
+  function performRedo(snap) {
+    if (!snap) return;
+    const beforeRedo = serializeForm(form);
+    applyState(form, snap);
+    reapplyVisualState();
+    clearTimeout(__saveTimer);
+    __saving = true;
+    fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
+      .finally(() => {
+        __undoSnapshot = serializeForm(form);
+        __lastRedoSnap = null;
+        __lastUndoSnap = beforeRedo;  // re-arm undo
+        updateBtns();
+        __saving = false;
+        showSavedToast(null, 'Redone');
+      });
+  }
+
+  undoBtn.addEventListener('click', () => performUndo(__lastUndoSnap));
+  redoBtn.addEventListener('click', () => performRedo(__lastRedoSnap));
+
+  // Don't actually submit — Enter in the search box would otherwise GET the page.
+  form.addEventListener('submit', (e) => e.preventDefault());
+
+  // Autosave only on real data changes — search box and "Active only" toggle have
+  // no `name` attr and live outside the matrix table.
+  document.getElementById('skills-table').addEventListener('change', scheduleAutosave);
+
+  // Flush any pending debounced save before the page unloads. Without this, a
+  // recent toggle is lost because the 600ms autosave timer never fires.
+  window.addEventListener('beforeunload', () => {
+    if (!__saveTimer) return;
+    clearTimeout(__saveTimer);
+    __saveTimer = null;
+    if (navigator.sendBeacon) navigator.sendBeacon(form.action, new FormData(form));
   });
+
+  function showSavedToast(undoSnap, errorMsg) {
+    let bd = document.getElementById('save-toast-bd');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'save-toast-bd';
+      bd.className = 'save-toast-bd';
+      document.body.appendChild(bd);
+    }
+    const el = document.createElement('div');
+    el.className = 'save-toast' + (errorMsg ? ' error' : '');
+    const label = document.createElement('span');
+    label.textContent = errorMsg || 'Saved';
+    el.appendChild(label);
+    if (!errorMsg && undoSnap) {
+      const u = document.createElement('button');
+      u.type = 'button';
+      u.className = 'undo-btn';
+      u.textContent = 'Undo';
+      u.onclick = () => { performUndo(undoSnap); el.remove(); };
+      el.appendChild(u);
+    }
+    bd.appendChild(el);
+    setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 300); }, 5000);
+  }
 
   // --- Add person ---
   document.getElementById('add-person-btn').addEventListener('click', () => {

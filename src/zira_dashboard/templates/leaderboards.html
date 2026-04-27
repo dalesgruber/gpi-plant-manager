@@ -22,7 +22,7 @@
   table.lb { width: 100%; border-collapse: collapse; }
   table.lb th, table.lb td { padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.88rem; }
   table.lb th { color: var(--muted); font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-  table.lb td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.lb th.num, table.lb td.num { text-align: right; font-variant-numeric: tabular-nums; }
   table.lb td.rank { color: var(--muted); width: 2.5rem; font-variant-numeric: tabular-nums; }
   table.lb td.name a { color: var(--fg); text-decoration: none; }
   table.lb td.name a:hover { color: var(--accent); }
@@ -45,7 +45,7 @@
 
 {% for sec in sections %}
 <div class="lb-section">
-  <h3>Best {{ sec.category }}<span class="sub">— min 3 days</span></h3>
+  <h3>Best {{ sec.category }}<span class="sub">— testing mode (no minimum)</span></h3>
   {% if sec.rows %}
   <table class="lb">
     <thead>
@@ -70,7 +70,7 @@
     </tbody>
   </table>
   {% else %}
-  <div class="empty">No qualifying operators yet — needs 3+ days at a {{ sec.category }} WC this {{ window }}.</div>
+  <div class="empty">No published-day production yet for any operator at a {{ sec.category }} WC this {{ window }}.</div>
   {% endif %}
 </div>
 {% endfor %}

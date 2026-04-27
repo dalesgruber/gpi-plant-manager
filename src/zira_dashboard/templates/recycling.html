@@ -402,6 +402,7 @@
     flex-direction: column-reverse;  /* bar grows from bottom up */
     height: 100%;
     min-width: 0;
+    position: relative;  /* anchor for the per-bucket target tick */
   }
   .progress .col .bar {
     width: 100%;
@@ -410,6 +411,15 @@
   .progress .col.hit  .bar { background: var(--hit, var(--good)); }
   .progress .col.miss .bar { background: var(--bad); }
   .progress .col.in-progress .bar { opacity: 0.55; }
+  /* Per-bucket target — a dashed segment per col so the goal line steps up
+     and down as stations get transferred away or come back online. */
+  .progress .col .target-tick {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 1px dashed var(--muted);
+    pointer-events: none;
+  }
+  .progress.no-target .col .target-tick { display: none; }
   .progress .target-line {
     position: absolute;
     left: 0;
@@ -656,6 +666,7 @@
     {% set max_val = namespace(v=bucket_target) %}
     {% for b in buckets %}
       {% if b.actual > max_val.v %}{% set max_val.v = b.actual %}{% endif %}
+      {% if b.target > max_val.v %}{% set max_val.v = b.target %}{% endif %}
     {% endfor %}
     {% set scale = max_val.v if max_val.v > 0 else 1 %}
     <div class="progress {% if not show_legend %}no-legend{% endif %} {% if not show_target %}no-target{% endif %}">
@@ -669,13 +680,14 @@
           {% for b in buckets %}
             {% set hit = b.actual >= b.target and not b.in_progress %}
             {% set h = (b.actual / scale * 100.0) if scale else 0 %}
+            {% set t_h = (b.target / scale * 100.0) if (scale and b.target) else 0 %}
             <div class="col {% if hit %}hit{% else %}{% if b.in_progress %}hit{% else %}miss{% endif %}{% endif %} {% if b.in_progress %}in-progress{% endif %}"
                  title="{{ b.label }} · {{ b.actual }} pallets (goal {{ b.target }})">
               <div class="bar" style="height: {{ h }}%"></div>
+              {% if not b.in_progress and b.target %}<div class="target-tick" style="bottom: {{ t_h }}%"></div>{% endif %}
             </div>
           {% endfor %}
         </div>
-        <div class="target-line" data-label="goal {{ bucket_target }}" style="bottom: {{ (bucket_target / scale * 100.0) if scale else 0 }}%"></div>
       </div>
       <div class="x-ticks">
         {% for b in buckets %}
