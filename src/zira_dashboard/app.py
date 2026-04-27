@@ -365,6 +365,13 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         hue = 130 if delta > 0 else 0
         return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
 
+    sched_for_labels = staffing.load_schedule(d)
+    who_by_wc: dict[str, str] = {}
+    for wc_name, ops in sched_for_labels.assignments.items():
+        if wc_name == staffing.TIME_OFF_KEY or not ops:
+            continue
+        who_by_wc[wc_name] = " + ".join(ops)
+
     bars: list[dict] = []
     for r in results:
         station_tgt_hr = settings_store.station_target(r.station)
@@ -372,6 +379,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         pct_of_target = (r.units / expected * 100.0) if expected > 0 else None
         bars.append({
             "name": r.station.name,
+            "who": who_by_wc.get(r.station.name, r.station.name),
             "units": r.units,
             "expected": int(round(expected)),
             "color": _color(pct_of_target),

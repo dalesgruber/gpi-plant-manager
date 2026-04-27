@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Value Streams — New — GPI Plant Manager</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c232c;
+    --border: #30363d;
+    --fg: #e6edf3;
+    --muted: #8b949e;
+    --good: #4ade80;
+    --bad: #ef4444;
+    --accent: #4ade80;
+    --accent-dim: #14532d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); }
+  header { padding: 0.9rem 1.25rem; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; }
+  h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+  nav { display: flex; gap: 0.5rem; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.6rem; border-radius: 6px; }
+  nav a.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+
+  .sub-nav { display: flex; gap: 0.25rem; padding: 0.55rem 1.25rem 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .sub-nav a { color: var(--muted); text-decoration: none; font-size: 0.88rem; padding: 0.5rem 0.85rem; border-radius: 8px 8px 0 0; border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; }
+  .sub-nav a:hover { color: var(--fg); }
+  .sub-nav a.active { color: var(--accent); background: var(--bg); border-color: var(--border); font-weight: 600; }
+
+  form { display: flex; gap: 0.5rem; align-items: center; }
+  label { color: var(--muted); font-size: 0.85rem; }
+  input[type=date] { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.55rem; font: inherit; }
+  button { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 6px; padding: 0.4rem 0.8rem; font: inherit; cursor: pointer; font-weight: 600; }
+
+  main { padding: 1rem 1.25rem 1.25rem; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; }
+  .kpi .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+  .kpi .val { font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--good); margin-top: 0.25rem; line-height: 1.05; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; margin-top: 0.9rem; }
+  .panel h3 { margin: 0 0 0.75rem; font-size: 0.95rem; font-weight: 600; }
+  .panel .sub { font-size: 0.7rem; color: var(--muted); margin-left: 0.4rem; font-weight: 400; }
+
+  .bar-row { display: grid; grid-template-columns: 9rem 1fr 5.5rem; align-items: center; gap: 0.75rem; padding: 0.35rem 0; }
+  .bar-row .name { font-size: 0.88rem; }
+  .bar-row .val  { font-size: 0.92rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-row .val .pct { color: var(--muted); font-weight: 400; font-size: 0.85em; margin-left: 0.1em; }
+  .bar-track { height: 22px; background: var(--panel-2); border-radius: 4px; overflow: hidden; position: relative; }
+  .bar-fill  { height: 100%; background: var(--good); border-radius: 4px; }
+
+  .stacked-track { height: 22px; display: flex; border-radius: 4px; overflow: hidden; background: var(--panel-2); }
+  .stacked-track .good { background: var(--good); height: 100%; }
+  .stacked-track .bad  { background: var(--bad);  height: 100%; }
+
+  .empty-state { color: var(--muted); font-style: italic; padding: 0.5rem 0; font-size: 0.9rem; }
+  .empty-state a { color: var(--accent); }
+  .footer { color: var(--muted); font-size: 0.75rem; margin-top: 1.5rem; text-align: center; padding-bottom: 1rem; }
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;gap:1.25rem;align-items:center">
+    <h1>GPI Plant Manager</h1>
+    <nav>
+      <a href="/">Work Centers</a>
+      <a href="/recycling" class="active">Value Streams</a>
+      <a href="/staffing">Staffing</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </div>
+  <form method="get" action="/new-vs">
+    <label for="day">Day</label>
+    <input id="day" type="date" name="day" value="{{ day }}" max="{{ today }}">
+    <button type="submit">Update</button>
+  </form>
+</header>
+{% include '_value_streams_subnav.html' %}
+
+<main>
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="label">Total Pallets Processed</div>
+      <div class="val">{{ '{:,}'.format(total_units) }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Up Time</div>
+      <div class="val">{{ uptime_pct }} %</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Total Downtime</div>
+      <div class="val">{{ total_downtime_display }}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Pallets / hr</div>
+      <div class="val">{{ pallets_per_hour }}</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Pallets by Work Center<span class="sub">— New value stream</span></h3>
+    {% if bars %}
+      {% for b in bars %}
+        <div class="bar-row" title="{{ b.who if b.who else b.name }} — {{ b.units }}{% if b.expected %} / {{ b.expected }} expected{% endif %}{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
+          <div class="name">{{ b.who if b.who else b.name }}</div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: {{ b.pct }}%;{% if b.color %} background: {{ b.color }};{% endif %}"></div>
+          </div>
+          <div class="val">{{ b.units }}{% if b.expected %}<span class="pct">/{{ b.expected }}</span>{% endif %}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        No work centers in the &ldquo;New&rdquo; value stream have telemetry meters configured.
+        Tag work centers as <em>New</em> in <a href="/settings">Settings</a> and assign their meter IDs.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3>Downtime Report<span class="sub">— green = working, red = down (shift-scoped)</span></h3>
+    {% if elapsed_minutes == 0 %}
+      <div class="empty-state">No elapsed shift minutes on this day (weekend or before 7:00 AM).</div>
+    {% elif downtime_rows %}
+      {% for d in downtime_rows %}
+        <div class="bar-row">
+          <div class="name">{{ d.name }}</div>
+          <div class="stacked-track">
+            <div class="good" style="width: {{ d.working_pct }}%" title="Working {{ d.working }}m"></div>
+            <div class="bad"  style="width: {{ d.down_pct }}%"    title="Down {{ d.down }}m"></div>
+          </div>
+          <div class="val">{{ d.down }}m</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">No downtime data.</div>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    Refreshed {{ refreshed_at }}{% if is_today %} · auto-refresh 60s{% endif %}
+    {% if elapsed_minutes > 0 %} · shift elapsed: {{ elapsed_minutes }}m{% endif %}
+  </div>
+</main>
+
+{% if is_today %}
+<script>setTimeout(() => location.reload(), 60000);</script>
+{% endif %}
+</body>
+</html>
