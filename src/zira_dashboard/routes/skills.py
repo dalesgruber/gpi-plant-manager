@@ -27,13 +27,20 @@ def staffing_skills(request: Request):
     roster = staffing.load_roster()
     roster.sort(key=lambda p: (not p.active, p.name.lower()))
     active_count = sum(1 for p in roster if p.active)
+    # Skill columns come from the synced roster — every person has the same
+    # keys (sync writes a uniform skills dict per Odoo column). Falls back to
+    # legacy SKILLS only if roster is empty (e.g., first run before any sync).
+    if roster and roster[0].skills:
+        columns = list(roster[0].skills.keys())
+    else:
+        columns = list(staffing.SKILLS)
     return templates.TemplateResponse(
         request,
         "skills.html",
         {
             "active": "skills",
             "people": roster,
-            "skills": list(staffing.SKILLS),
+            "skills": columns,
             "active_count": active_count,
             "inactive_count": len(roster) - active_count,
             "sync_ok": sync_result.ok,
