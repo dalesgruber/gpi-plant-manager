@@ -1,43 +1,9 @@
-"""Persistent per-page widget layouts for the dashboard (Gridstack positions)."""
+"""Per-page widget layouts (Gridstack positions). Backed by `widget_layouts`
+in Postgres — one row per page, layout stored as JSONB."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from threading import RLock
-
-LAYOUTS_PATH = Path("layouts.json")
-_lock = RLock()
-
-
-def load(page: str) -> list[dict]:
-    with _lock:
-        if not LAYOUTS_PATH.exists():
-            return []
-        try:
-            data = json.loads(LAYOUTS_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(data, dict):
-            return []
-        items = data.get(page) or []
-        if not isinstance(items, list):
-            return []
-        return [_normalize(i) for i in items if isinstance(i, dict) and i.get("id")]
-
-
-def save(page: str, layout: list[dict]) -> None:
-    with _lock:
-        blob: dict = {}
-        if LAYOUTS_PATH.exists():
-            try:
-                loaded = json.loads(LAYOUTS_PATH.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    blob = loaded
-            except json.JSONDecodeError:
-                blob = {}
-        blob[page] = [_normalize(i) for i in layout if isinstance(i, dict) and i.get("id")]
-        LAYOUTS_PATH.write_text(json.dumps(blob, indent=2), encoding="utf-8")
 
 
 def _normalize(item: dict) -> dict:
@@ -48,6 +14,33 @@ def _normalize(item: dict) -> dict:
         "w": int(item.get("w", 1) or 1),
         "h": int(item.get("h", 1) or 1),
     }
+
+
+def load(page: str) -> list[dict]:
+    from . import db
+    rows = db.query("SELECT layout FROM widget_layouts WHERE page = %s", (page,))
+    if not rows:
+        return []
+    raw = rows[0]["layout"]
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(raw, list):
+        return []
+    return [_normalize(i) for i in raw if isinstance(i, dict) and i.get("id")]
+
+
+def save(page: str, layout: list[dict]) -> None:
+    from . import db
+    items = [_normalize(i) for i in (layout or []) if isinstance(i, dict) and i.get("id")]
+    db.execute(
+        "INSERT INTO widget_layouts (page, layout, updated_at) "
+        "VALUES (%s, %s::jsonb, now()) "
+        "ON CONFLICT (page) DO UPDATE SET layout = EXCLUDED.layout, updated_at = now()",
+        (page, json.dumps(items)),
+    )
 
 
 def layout_map(page: str) -> dict[str, dict]:

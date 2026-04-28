@@ -1,14 +1,10 @@
-"""Per-widget visual customization (title, color, etc.) persisted to JSON."""
+"""Per-widget visual customization (title, color, etc.) backed by Postgres
+`widget_customizations` (page, widget_id) -> JSONB."""
 
 from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
-from threading import RLock
-
-CUSTOM_PATH = Path("widget_customizations.json")
-_lock = RLock()
 
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
@@ -18,32 +14,35 @@ SORTS = {"preset", "desc", "asc", "alpha"}
 ALIGNS = {"left", "center", "right"}
 
 
-def _read_all() -> dict:
-    if not CUSTOM_PATH.exists():
-        return {}
-    try:
-        data = json.loads(CUSTOM_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _write_all(data: dict) -> None:
-    CUSTOM_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+def _decode(raw) -> dict:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def load_all(page: str) -> dict[str, dict]:
-    with _lock:
-        data = _read_all()
-        page_data = data.get(page)
-        return dict(page_data) if isinstance(page_data, dict) else {}
+    from . import db
+    rows = db.query(
+        "SELECT widget_id, customizations FROM widget_customizations WHERE page = %s",
+        (page,),
+    )
+    return {r["widget_id"]: _decode(r["customizations"]) for r in rows}
 
 
 def load_one(page: str, widget_id: str) -> dict:
-    return load_all(page).get(widget_id, {})
+    from . import db
+    rows = db.query(
+        "SELECT customizations FROM widget_customizations WHERE page = %s AND widget_id = %s",
+        (page, widget_id),
+    )
+    return _decode(rows[0]["customizations"]) if rows else {}
 
 
 def save_one(page: str, widget_id: str, config: dict) -> dict:
+    from . import db
     clean: dict = {}
     title = config.get("title")
     if isinstance(title, str) and title.strip():
@@ -64,23 +63,24 @@ def save_one(page: str, widget_id: str, config: dict) -> dict:
         if key in config:
             clean[key] = bool(config[key])
 
-    with _lock:
-        data = _read_all()
-        page_data = data.get(page) if isinstance(data.get(page), dict) else {}
-        if clean:
-            page_data[widget_id] = clean
-        else:
-            page_data.pop(widget_id, None)
-        data[page] = page_data
-        _write_all(data)
+    if clean:
+        db.execute(
+            "INSERT INTO widget_customizations (page, widget_id, customizations) "
+            "VALUES (%s, %s, %s::jsonb) "
+            "ON CONFLICT (page, widget_id) DO UPDATE SET customizations = EXCLUDED.customizations",
+            (page, widget_id, json.dumps(clean)),
+        )
+    else:
+        db.execute(
+            "DELETE FROM widget_customizations WHERE page = %s AND widget_id = %s",
+            (page, widget_id),
+        )
     return clean
 
 
 def reset_one(page: str, widget_id: str) -> None:
-    with _lock:
-        data = _read_all()
-        page_data = data.get(page)
-        if isinstance(page_data, dict):
-            page_data.pop(widget_id, None)
-            data[page] = page_data
-            _write_all(data)
+    from . import db
+    db.execute(
+        "DELETE FROM widget_customizations WHERE page = %s AND widget_id = %s",
+        (page, widget_id),
+    )

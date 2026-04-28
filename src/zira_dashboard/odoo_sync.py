@@ -1,25 +1,22 @@
-"""Odoo to roster.json sync with TTL cache.
+"""Odoo → Postgres sync with TTL cache.
 
 Single public entrypoint: sync(force=False). Returns SyncResult.
-On TTL hit (default 1 hour), no Odoo call is made and the existing
-roster file is left alone. On force or stale, fetches employees + skills
-from Odoo and atomically rewrites roster.json. The local `reserve` flag
-on existing entries is preserved across syncs.
+On TTL hit (default 1 hour), no Odoo call is made. On force or stale,
+fetches employees + skills from Odoo and upserts into the `people`,
+`skills`, `person_skills` tables. The local `reserve` flag is preserved
+because we never write to it from sync.
+
+Last-sync timestamp is stored in app_settings under key 'odoo_last_sync'.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from . import odoo_client
 
-ROSTER_PATH = Path("roster.json")
-LAST_SYNC_PATH = Path(".odoo_last_sync")
-SKILL_META_PATH = Path("skill_columns_meta.json")
 TTL = timedelta(hours=1)
 
 
@@ -34,23 +31,36 @@ class SyncResult:
 
 
 def _read_last_sync() -> datetime | None:
-    if not LAST_SYNC_PATH.exists():
+    from . import db
+    rows = db.query("SELECT value FROM app_settings WHERE key = 'odoo_last_sync'")
+    if not rows:
         return None
+    raw = rows[0]["value"]
+    if isinstance(raw, str):
+        try:
+            return datetime.fromisoformat(raw.strip('"'))
+        except ValueError:
+            return None
+    if isinstance(raw, (int, float)):
+        return None
+    # JSONB-decoded as Python obj — unwrap if it's a JSON string
     try:
-        return datetime.fromisoformat(LAST_SYNC_PATH.read_text().strip())
-    except (ValueError, OSError):
-        return None
+        s = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(s, str):
+            return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
-def _read_existing_reserves() -> dict[str, bool]:
-    if not ROSTER_PATH.exists():
-        return {}
-    try:
-        rows = json.loads(ROSTER_PATH.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return {r["name"]: bool(r.get("reserve", False))
-            for r in rows if isinstance(r, dict) and r.get("name")}
+def _write_last_sync(now: datetime) -> None:
+    from . import db
+    db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) "
+        "VALUES ('odoo_last_sync', %s::jsonb, now()) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+        (json.dumps(now.isoformat()),),
+    )
 
 
 def sync(force: bool = False) -> SyncResult:
@@ -68,40 +78,64 @@ def sync(force: bool = False) -> SyncResult:
         emp_skills = odoo_client.fetch_skills_for(emp_ids)
         columns_meta = odoo_client.fetch_skill_columns_with_types()
         buckets = odoo_client.fetch_skill_level_buckets()
-    except Exception as e:  # OdooConfigError, OdooAuthError, network, etc.
+    except Exception as e:
         return SyncResult(
             ok=False, refreshed=False, employee_count=0,
             skill_column_count=0, last_sync_at=last, error=str(e),
         )
 
+    from . import db
     columns = [c["name"] for c in columns_meta]
-    reserves = _read_existing_reserves()
-    rows = []
-    for emp in employees:
-        skills_for_emp = {col: 0 for col in columns}
-        for s in emp_skills.get(emp["id"], []):
-            if s["skill_name"] in skills_for_emp:
-                skills_for_emp[s["skill_name"]] = buckets.get(s["level_id"], 0)
-        rows.append({
-            "name": emp["name"],
-            "active": bool(emp.get("active", True)),
-            "reserve": reserves.get(emp["name"], False),
-            "skills": skills_for_emp,
-            "employee_id": emp["id"],
-        })
-    rows.sort(key=lambda r: r["name"].lower())
+    pulled_at = now
+    with db.cursor() as cur:
+        # Skills first (employees + person_skills FK them).
+        for i, m in enumerate(columns_meta):
+            cur.execute(
+                "INSERT INTO skills (name, skill_type, sort_order, last_pulled_at) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (name) DO UPDATE SET skill_type = EXCLUDED.skill_type, "
+                "sort_order = EXCLUDED.sort_order, last_pulled_at = EXCLUDED.last_pulled_at",
+                (m["name"], m.get("type", ""), i, pulled_at),
+            )
+        # Employees: upsert by odoo_id (stable across renames).
+        seen_employee_ids = set()
+        for emp in employees:
+            seen_employee_ids.add(emp["id"])
+            cur.execute(
+                "INSERT INTO people (odoo_id, name, active, last_pulled_at) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON CONFLICT (odoo_id) DO UPDATE SET name = EXCLUDED.name, "
+                "active = EXCLUDED.active, last_pulled_at = EXCLUDED.last_pulled_at",
+                (emp["id"], emp["name"], bool(emp.get("active", True)), pulled_at),
+            )
+        # Refresh person_skills: for each employee, replace their skill levels
+        # with the Odoo set. We use DELETE + INSERT inside one transaction so
+        # a person who lost a skill in Odoo also drops it locally.
+        for emp in employees:
+            cur.execute(
+                "DELETE FROM person_skills WHERE person_id = "
+                "(SELECT id FROM people WHERE odoo_id = %s) "
+                "AND local_dirty = FALSE",
+                (emp["id"],),
+            )
+            for s in emp_skills.get(emp["id"], []):
+                if s["skill_name"] not in columns:
+                    continue
+                level = buckets.get(s["level_id"], 0)
+                if level <= 0:
+                    continue
+                cur.execute(
+                    "INSERT INTO person_skills (person_id, skill_id, level, last_pulled_at) "
+                    "SELECT pe.id, sk.id, %s, %s FROM people pe, skills sk "
+                    "WHERE pe.odoo_id = %s AND sk.name = %s "
+                    "ON CONFLICT (person_id, skill_id) DO UPDATE SET "
+                    "  level = EXCLUDED.level, last_pulled_at = EXCLUDED.last_pulled_at",
+                    (level, pulled_at, emp["id"], s["skill_name"]),
+                )
 
-    tmp = ROSTER_PATH.with_suffix(ROSTER_PATH.suffix + ".tmp")
-    tmp.write_text(json.dumps(rows, indent=2))
-    os.replace(tmp, ROSTER_PATH)
-    # Write the skill columns metadata so the matrix can render type groups
-    # in the filter UI without re-fetching from Odoo on every page load.
-    meta_tmp = SKILL_META_PATH.with_suffix(SKILL_META_PATH.suffix + ".tmp")
-    meta_tmp.write_text(json.dumps(columns_meta, indent=2))
-    os.replace(meta_tmp, SKILL_META_PATH)
-    LAST_SYNC_PATH.write_text(now.isoformat())
+    _write_last_sync(pulled_at)
 
     return SyncResult(
-        ok=True, refreshed=True, employee_count=len(rows),
-        skill_column_count=len(columns), last_sync_at=now,
+        ok=True, refreshed=True, employee_count=len(employees),
+        skill_column_count=len(columns), last_sync_at=pulled_at,
     )

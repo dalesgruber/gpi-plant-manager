@@ -64,10 +64,12 @@ def shutdown_pool() -> None:
 
 
 def _get_pool() -> ThreadedConnectionPool:
+    """Lazy-init: if no one has called init_pool() yet (CLI scripts, tests),
+    do it now. App startup calls init_pool() explicitly via the lifespan
+    hook for predictable pool sizing."""
     if _pool is None:
-        raise RuntimeError(
-            "Connection pool not initialized. Call db.init_pool() first."
-        )
+        init_pool()
+    assert _pool is not None
     return _pool
 
 

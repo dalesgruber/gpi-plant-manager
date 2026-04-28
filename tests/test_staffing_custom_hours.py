@@ -1,5 +1,15 @@
-from datetime import date
-from zira_dashboard.staffing import Schedule
+"""Custom-hours round-trip via the public load_schedule / save_schedule API.
+
+These tests exercise the Postgres-backed Schedule storage. They skip
+when DATABASE_URL is not set (e.g., CI without a Postgres available).
+"""
+
+import os
+from datetime import date, time
+
+import pytest
+
+from zira_dashboard.staffing import Schedule, load_schedule, save_schedule
 
 
 def test_schedule_custom_hours_defaults_to_none():
@@ -7,25 +17,39 @@ def test_schedule_custom_hours_defaults_to_none():
     assert s.custom_hours is None
 
 
-import json
-from zira_dashboard import staffing
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="needs Postgres",
+)
 
 
-def test_load_schedule_reads_custom_hours(tmp_path, monkeypatch):
-    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
-    d = date(2026, 4, 28)
-    payload = {
-        "day": d.isoformat(),
-        "published": True,
-        "assignments": {"Repair 1": ["Jose"]},
-        "custom_hours": {
+@pytest.fixture(autouse=True)
+def _clean_schedule(request):
+    """Wipe the test day's schedule before/after so tests are isolated."""
+    if request.node.get_closest_marker("skipif"):
+        # Setup: skip the cleanup if the test is skipped via marker.
+        pass
+    from zira_dashboard import db
+    d = date(2099, 12, 31)
+    db.execute("DELETE FROM schedules WHERE day = %s", (d,))
+    yield
+    db.execute("DELETE FROM schedules WHERE day = %s", (d,))
+
+
+def test_load_schedule_reads_custom_hours():
+    d = date(2099, 12, 31)
+    sched_in = Schedule(
+        day=d,
+        published=True,
+        assignments={},
+        custom_hours={
             "start": "09:00",
             "end": "13:00",
             "breaks": [{"start": "11:00", "end": "11:15", "name": "Stand-up"}],
         },
-    }
-    (tmp_path / f"{d.isoformat()}.json").write_text(json.dumps(payload), encoding="utf-8")
-    sched = staffing.load_schedule(d)
+    )
+    save_schedule(sched_in)
+    sched = load_schedule(d)
     assert sched.custom_hours == {
         "start": "09:00",
         "end": "13:00",
@@ -33,36 +57,29 @@ def test_load_schedule_reads_custom_hours(tmp_path, monkeypatch):
     }
 
 
-def test_load_schedule_treats_missing_custom_hours_as_none(tmp_path, monkeypatch):
-    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
-    d = date(2026, 4, 28)
-    (tmp_path / f"{d.isoformat()}.json").write_text(
-        json.dumps({"day": d.isoformat(), "published": False, "assignments": {}}),
-        encoding="utf-8",
-    )
-    sched = staffing.load_schedule(d)
+def test_load_schedule_treats_missing_custom_hours_as_none():
+    d = date(2099, 12, 31)
+    save_schedule(Schedule(day=d, published=False, assignments={}, custom_hours=None))
+    sched = load_schedule(d)
     assert sched.custom_hours is None
 
 
-def test_save_schedule_writes_custom_hours(tmp_path, monkeypatch):
-    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
-    d = date(2026, 4, 28)
-    sched = staffing.Schedule(
+def test_save_schedule_writes_custom_hours():
+    d = date(2099, 12, 31)
+    sched = Schedule(
         day=d,
         published=False,
-        assignments={"Repair 1": ["Jose"]},
+        assignments={},
         custom_hours={"start": "09:00", "end": "13:00", "breaks": []},
     )
-    staffing.save_schedule(sched)
-    raw = (tmp_path / f"{d.isoformat()}.json").read_text(encoding="utf-8")
-    parsed = json.loads(raw)
-    assert parsed["custom_hours"] == {"start": "09:00", "end": "13:00", "breaks": []}
+    save_schedule(sched)
+    out = load_schedule(d)
+    assert out.custom_hours == {"start": "09:00", "end": "13:00", "breaks": []}
 
 
-def test_save_schedule_omits_custom_hours_when_none(tmp_path, monkeypatch):
-    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
-    d = date(2026, 4, 28)
-    sched = staffing.Schedule(day=d, published=False, assignments={}, custom_hours=None)
-    staffing.save_schedule(sched)
-    parsed = json.loads((tmp_path / f"{d.isoformat()}.json").read_text(encoding="utf-8"))
-    assert "custom_hours" not in parsed or parsed["custom_hours"] is None
+def test_save_schedule_omits_custom_hours_when_none():
+    d = date(2099, 12, 31)
+    sched = Schedule(day=d, published=False, assignments={}, custom_hours=None)
+    save_schedule(sched)
+    out = load_schedule(d)
+    assert out.custom_hours is None

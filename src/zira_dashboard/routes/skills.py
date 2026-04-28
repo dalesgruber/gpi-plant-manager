@@ -35,14 +35,10 @@ def staffing_skills(request: Request):
         columns = list(roster[0].skills.keys())
     else:
         columns = list(staffing.SKILLS)
-    # Type metadata for filter UI grouping.
-    columns_meta = []
-    if odoo_sync.SKILL_META_PATH.exists():
-        try:
-            columns_meta = json.loads(odoo_sync.SKILL_META_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            columns_meta = []
-    type_by_skill = {c["name"]: c.get("type", "") for c in columns_meta if isinstance(c, dict) and "name" in c}
+    # Type metadata for filter UI grouping — direct from the skills table.
+    from .. import db
+    type_rows = db.query("SELECT name, skill_type FROM skills")
+    type_by_skill = {r["name"]: r["skill_type"] for r in type_rows}
     hidden = set(skill_filter_store.load_hidden())
     return templates.TemplateResponse(
         request,

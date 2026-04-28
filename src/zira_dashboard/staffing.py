@@ -212,50 +212,64 @@ def _default_assignments_from_plant_scheduler() -> dict[str, list[str]]:
 # ---------- roster ----------
 
 def load_roster() -> list[Person]:
-    with _lock:
-        if ROSTER_PATH.exists():
-            try:
-                data = json.loads(ROSTER_PATH.read_text(encoding="utf-8"))
-                return [
-                    Person(
-                        name=p["name"],
-                        active=bool(p.get("active", True)),
-                        reserve=bool(p.get("reserve", False)),
-                        # Accept whatever skill keys are in the JSON — the
-                        # sync owns column structure (Odoo source of truth)
-                        # and the legacy SKILLS constant is only a fallback
-                        # for first-run before any sync.
-                        skills={
-                            str(k): int(v) for k, v in (p.get("skills") or {}).items()
-                            if isinstance(v, (int, float))
-                        },
-                        employee_id=p.get("employee_id"),
-                    )
-                    for p in data
-                ]
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass
-        # First-run bootstrap: prefer skill-matrix CSV if present, else seed.
-        imported: list[Person] | None = None
-        for candidate in (Path("roster.csv"), Path("skills.csv")):
-            if candidate.exists():
-                imported = _import_skill_matrix_csv(candidate)
-                if imported:
-                    break
-        roster = imported if imported else _seed_roster()
-        save_roster(roster)
-        return roster
+    """Load all people + their skill levels from Postgres. Inactive people
+    are returned too (sorted to the bottom)."""
+    from . import db
+    rows = db.query(
+        "SELECT p.id, p.name, p.active, p.reserve, p.odoo_id, "
+        "  COALESCE(json_object_agg(s.name, ps.level) "
+        "           FILTER (WHERE s.name IS NOT NULL), '{}'::json)::text AS skills_json "
+        "FROM people p "
+        "LEFT JOIN person_skills ps ON ps.person_id = p.id "
+        "LEFT JOIN skills s ON s.id = ps.skill_id "
+        "GROUP BY p.id "
+        "ORDER BY (NOT p.active), lower(p.name)"
+    )
+    out: list[Person] = []
+    for r in rows:
+        out.append(Person(
+            name=r["name"],
+            active=r["active"],
+            reserve=r["reserve"],
+            skills={k: int(v) for k, v in (json.loads(r["skills_json"]) or {}).items()},
+            employee_id=r["odoo_id"],
+        ))
+    return out
 
 
 def save_roster(people: list[Person]) -> None:
-    with _lock:
-        payload = []
+    """Upsert each person + their skill levels. Skills not in p.skills are
+    left untouched (sync owns server-mastered fields); levels at 0 are
+    deleted from person_skills."""
+    from . import db
+    with db.cursor() as cur:
         for p in people:
-            row: dict = {"name": p.name, "active": p.active, "reserve": p.reserve, "skills": p.skills}
-            if p.employee_id is not None:
-                row["employee_id"] = p.employee_id
-            payload.append(row)
-        ROSTER_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            cur.execute(
+                "INSERT INTO people (name, active, reserve, odoo_id, local_dirty) "
+                "VALUES (%s, %s, %s, %s, TRUE) "
+                "ON CONFLICT (name) DO UPDATE SET active = EXCLUDED.active, "
+                "reserve = EXCLUDED.reserve, "
+                "odoo_id = COALESCE(EXCLUDED.odoo_id, people.odoo_id), "
+                "local_dirty = TRUE",
+                (p.name, p.active, p.reserve, p.employee_id),
+            )
+            for skill_name, level in (p.skills or {}).items():
+                if level > 0:
+                    cur.execute(
+                        "INSERT INTO person_skills (person_id, skill_id, level, local_dirty) "
+                        "SELECT pe.id, sk.id, %s, TRUE FROM people pe, skills sk "
+                        "WHERE pe.name = %s AND sk.name = %s "
+                        "ON CONFLICT (person_id, skill_id) DO UPDATE SET "
+                        "  level = EXCLUDED.level, local_dirty = TRUE",
+                        (level, p.name, skill_name),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM person_skills WHERE "
+                        "person_id = (SELECT id FROM people WHERE name = %s) AND "
+                        "skill_id = (SELECT id FROM skills WHERE name = %s)",
+                        (p.name, skill_name),
+                    )
 
 
 # ---------- daily schedule ----------
@@ -288,55 +302,108 @@ def snapshot_of(sched: "Schedule") -> dict:
     }
 
 
-def _schedule_path(day: date) -> Path:
-    return SCHEDULES_DIR / f"{day.isoformat()}.json"
-
-
 def load_schedule(day: date) -> Schedule:
-    with _lock:
-        p = _schedule_path(day)
-        if not p.exists():
-            return Schedule(day=day, published=False, assignments={})
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            assignments = {str(k): [str(x) for x in v] for k, v in (data.get("assignments") or {}).items()}
-            notes = data.get("notes")
-            wc_notes_raw = data.get("wc_notes") or {}
-            wc_notes = {str(k): str(v) for k, v in wc_notes_raw.items() if isinstance(v, str) and v} if isinstance(wc_notes_raw, dict) else {}
-            snap_raw = data.get("published_snapshot")
-            snap = snap_raw if isinstance(snap_raw, dict) else None
-            ch_raw = data.get("custom_hours")
-            custom_hours = ch_raw if isinstance(ch_raw, dict) else None
-            return Schedule(
-                day=day,
-                published=bool(data.get("published", False)),
-                assignments=assignments,
-                notes=str(notes) if isinstance(notes, str) else "",
-                wc_notes=wc_notes,
-                testing_day=bool(data.get("testing_day", False)),
-                published_snapshot=snap,
-                custom_hours=custom_hours,
-            )
-        except (json.JSONDecodeError, KeyError, TypeError):
-            return Schedule(day=day, published=False, assignments={})
+    """Hydrate a Schedule from Postgres (schedules + schedule_assignments
+    + schedule_time_off + schedule_wc_notes). Returns an empty Schedule
+    if the day has no row yet."""
+    from . import db
+    rows = db.query(
+        "SELECT day, published, testing_day, notes, custom_hours, published_snapshot "
+        "FROM schedules WHERE day = %s",
+        (day,),
+    )
+    if not rows:
+        return Schedule(day=day, published=False, assignments={})
+    r = rows[0]
+    asg_rows = db.query(
+        "SELECT wc.name AS wc_name, pe.name AS person_name "
+        "FROM schedule_assignments sa "
+        "JOIN work_centers wc ON wc.id = sa.wc_id "
+        "JOIN people pe ON pe.id = sa.person_id "
+        "WHERE sa.day = %s ORDER BY sa.wc_id, sa.sort_order",
+        (day,),
+    )
+    assignments: dict[str, list[str]] = {}
+    for a in asg_rows:
+        assignments.setdefault(a["wc_name"], []).append(a["person_name"])
+    to_rows = db.query(
+        "SELECT pe.name FROM schedule_time_off s "
+        "JOIN people pe ON pe.id = s.person_id WHERE s.day = %s ORDER BY pe.name",
+        (day,),
+    )
+    if to_rows:
+        assignments[TIME_OFF_KEY] = [t["name"] for t in to_rows]
+    notes_rows = db.query(
+        "SELECT wc.name AS wc_name, sn.note "
+        "FROM schedule_wc_notes sn JOIN work_centers wc ON wc.id = sn.wc_id "
+        "WHERE sn.day = %s",
+        (day,),
+    )
+    wc_notes = {n["wc_name"]: n["note"] for n in notes_rows}
+    return Schedule(
+        day=day,
+        published=r["published"],
+        assignments=assignments,
+        notes=r["notes"] or "",
+        wc_notes=wc_notes,
+        testing_day=r["testing_day"],
+        custom_hours=r["custom_hours"],
+        published_snapshot=r["published_snapshot"],
+    )
 
 
 def save_schedule(schedule: Schedule) -> None:
-    with _lock:
-        SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "day": schedule.day.isoformat(),
-            "published": schedule.published,
-            "assignments": schedule.assignments,
-            "notes": schedule.notes or "",
-            "wc_notes": {k: v for k, v in (schedule.wc_notes or {}).items() if v},
-            "testing_day": bool(schedule.testing_day),
-        }
-        if schedule.published_snapshot:
-            payload["published_snapshot"] = schedule.published_snapshot
-        if schedule.custom_hours is not None:
-            payload["custom_hours"] = schedule.custom_hours
-        _schedule_path(schedule.day).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    """Upsert the day's schedule + replace its assignments / time off /
+    wc_notes atomically (delete-then-insert inside one transaction)."""
+    from . import db
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO schedules (day, published, testing_day, notes, "
+            "custom_hours, published_snapshot, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, now()) "
+            "ON CONFLICT (day) DO UPDATE SET "
+            "  published = EXCLUDED.published, "
+            "  testing_day = EXCLUDED.testing_day, "
+            "  notes = EXCLUDED.notes, "
+            "  custom_hours = EXCLUDED.custom_hours, "
+            "  published_snapshot = EXCLUDED.published_snapshot, "
+            "  updated_at = now()",
+            (
+                schedule.day,
+                schedule.published,
+                bool(schedule.testing_day),
+                schedule.notes or "",
+                json.dumps(schedule.custom_hours) if schedule.custom_hours else None,
+                json.dumps(schedule.published_snapshot) if schedule.published_snapshot else None,
+            ),
+        )
+        cur.execute("DELETE FROM schedule_assignments WHERE day = %s", (schedule.day,))
+        cur.execute("DELETE FROM schedule_time_off WHERE day = %s", (schedule.day,))
+        cur.execute("DELETE FROM schedule_wc_notes WHERE day = %s", (schedule.day,))
+        for wc_name, names in (schedule.assignments or {}).items():
+            if wc_name == TIME_OFF_KEY:
+                for n in names or []:
+                    cur.execute(
+                        "INSERT INTO schedule_time_off (day, person_id) "
+                        "SELECT %s, pe.id FROM people pe WHERE pe.name = %s",
+                        (schedule.day, n),
+                    )
+                continue
+            for i, n in enumerate(names or []):
+                cur.execute(
+                    "INSERT INTO schedule_assignments (day, wc_id, person_id, sort_order) "
+                    "SELECT %s, wc.id, pe.id, %s FROM work_centers wc, people pe "
+                    "WHERE wc.name = %s AND pe.name = %s",
+                    (schedule.day, i, wc_name, n),
+                )
+        for wc_name, note in (schedule.wc_notes or {}).items():
+            if not note:
+                continue
+            cur.execute(
+                "INSERT INTO schedule_wc_notes (day, wc_id, note) "
+                "SELECT %s, wc.id, %s FROM work_centers wc WHERE wc.name = %s",
+                (schedule.day, note, wc_name),
+            )
 
 
 def default_assignments() -> dict[str, list[str]]:

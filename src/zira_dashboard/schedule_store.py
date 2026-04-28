@@ -1,14 +1,11 @@
-"""Plant work schedule: shift hours, work days, breaks. Persisted to schedule.json."""
+"""Plant work schedule: shift hours, work days, breaks. Persisted in the
+`global_schedule` table (singleton row id=1)."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from datetime import time
-from pathlib import Path
-from threading import RLock
-
-SCHEDULE_PATH = Path("schedule.json")
 
 WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -41,15 +38,13 @@ DEFAULT_SCHEDULE = Schedule(
 )
 
 
-_lock = RLock()
-_cached: Schedule | None = None
-
-
-def _parse_time(s: str | None) -> time | None:
+def _parse_time(s) -> time | None:
+    if isinstance(s, time):
+        return s
     if not isinstance(s, str):
         return None
     try:
-        hh, mm = s.split(":")
+        hh, mm = s.split(":")[:2]
         return time(int(hh), int(mm))
     except (ValueError, AttributeError):
         return None
@@ -59,71 +54,60 @@ def _format_time(t: time) -> str:
     return f"{t.hour:02d}:{t.minute:02d}"
 
 
-def _from_dict(d: dict) -> Schedule | None:
-    try:
-        start = _parse_time(d.get("shift_start")) or DEFAULT_SCHEDULE.shift_start
-        end = _parse_time(d.get("shift_end")) or DEFAULT_SCHEDULE.shift_end
-        wd_raw = d.get("work_weekdays") or []
-        wd = frozenset(int(x) for x in wd_raw if isinstance(x, (int, str)) and str(x).strip().lstrip("-").isdigit() and 0 <= int(x) <= 6)
-        if not wd:
-            wd = DEFAULT_SCHEDULE.work_weekdays
-        brk_raw = d.get("breaks") or []
-        brks = []
-        for b in brk_raw:
-            if not isinstance(b, dict):
-                continue
-            bs = _parse_time(b.get("start"))
-            be = _parse_time(b.get("end"))
-            if not (bs and be) or be <= bs:
-                continue
-            name = str(b.get("name") or "Break")[:40]
-            brks.append(Break(bs, be, name))
-        brks.sort(key=lambda b: b.start)
-        return Schedule(start, end, wd, tuple(brks))
-    except (TypeError, ValueError):
-        return None
-
-
-def _to_dict(s: Schedule) -> dict:
-    return {
-        "shift_start": _format_time(s.shift_start),
-        "shift_end": _format_time(s.shift_end),
-        "work_weekdays": sorted(s.work_weekdays),
-        "breaks": [
-            {"start": _format_time(b.start), "end": _format_time(b.end), "name": b.name}
-            for b in s.breaks
-        ],
-    }
-
-
-def _load_from_disk() -> Schedule:
-    if not SCHEDULE_PATH.exists():
-        return DEFAULT_SCHEDULE
-    try:
-        raw = json.loads(SCHEDULE_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return DEFAULT_SCHEDULE
-    sched = _from_dict(raw) if isinstance(raw, dict) else None
-    return sched or DEFAULT_SCHEDULE
+def _row_to_schedule(row: dict) -> Schedule:
+    start = _parse_time(row.get("shift_start")) or DEFAULT_SCHEDULE.shift_start
+    end = _parse_time(row.get("shift_end")) or DEFAULT_SCHEDULE.shift_end
+    wd_raw = row.get("work_weekdays") or []
+    wd = frozenset(int(x) for x in wd_raw if isinstance(x, int) and 0 <= x <= 6)
+    if not wd:
+        wd = DEFAULT_SCHEDULE.work_weekdays
+    brks: list[Break] = []
+    for b in (row.get("breaks") or []):
+        if not isinstance(b, dict):
+            continue
+        bs = _parse_time(b.get("start"))
+        be = _parse_time(b.get("end"))
+        if not (bs and be) or be <= bs:
+            continue
+        name = str(b.get("name") or "Break")[:40]
+        brks.append(Break(bs, be, name))
+    brks.sort(key=lambda b: b.start)
+    return Schedule(start, end, wd, tuple(brks))
 
 
 def current() -> Schedule:
-    global _cached
-    with _lock:
-        if _cached is None:
-            _cached = _load_from_disk()
-        return _cached
+    """Read the singleton global_schedule row. Falls back to DEFAULT_SCHEDULE
+    if the table has no row yet (first-run before migration)."""
+    from . import db
+    rows = db.query(
+        "SELECT shift_start, shift_end, work_weekdays, breaks FROM global_schedule WHERE id = 1"
+    )
+    if not rows:
+        return DEFAULT_SCHEDULE
+    return _row_to_schedule(rows[0])
 
 
 def save(sched: Schedule) -> None:
-    global _cached
-    with _lock:
-        SCHEDULE_PATH.write_text(json.dumps(_to_dict(sched), indent=2), encoding="utf-8")
-        _cached = sched
+    from . import db
+    db.execute(
+        "INSERT INTO global_schedule (id, shift_start, shift_end, work_weekdays, breaks, updated_at) "
+        "VALUES (1, %s, %s, %s, %s::jsonb, now()) "
+        "ON CONFLICT (id) DO UPDATE SET shift_start = EXCLUDED.shift_start, "
+        "shift_end = EXCLUDED.shift_end, work_weekdays = EXCLUDED.work_weekdays, "
+        "breaks = EXCLUDED.breaks, updated_at = now()",
+        (
+            sched.shift_start,
+            sched.shift_end,
+            sorted(sched.work_weekdays),
+            json.dumps([
+                {"start": _format_time(b.start), "end": _format_time(b.end), "name": b.name}
+                for b in sched.breaks
+            ]),
+        ),
+    )
 
 
 def reload() -> Schedule:
-    global _cached
-    with _lock:
-        _cached = _load_from_disk()
-        return _cached
+    """Compatibility shim — Postgres has no in-process cache, so this is
+    just a fresh read."""
+    return current()
