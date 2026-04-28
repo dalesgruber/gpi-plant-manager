@@ -76,6 +76,18 @@ def shift_start_for(day: date) -> time:
     return shift_start()
 
 
+def shift_end_for(day: date) -> time:
+    from . import staffing
+    sched = staffing.load_schedule(day)
+    ch = sched.custom_hours
+    if ch and isinstance(ch.get("end"), str):
+        try:
+            return time.fromisoformat(ch["end"])
+        except ValueError:
+            pass
+    return shift_end()
+
+
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
     """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
     if day.weekday() not in work_weekdays():
