@@ -43,6 +43,10 @@ def _loc_by_key(key: str):
 
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, saved: int = Query(default=0)):
+    from .. import odoo_sync
+    # TTL-checked sync so /settings self-heals after a Railway redeploy
+    # where the ephemeral roster.json got reset to the legacy seed.
+    odoo_sync.sync(force=False)
     productive_min = shift_config.productive_minutes_per_day()
 
     # Active roster (objects, not just names) so we can compute per-WC skill
