@@ -715,7 +715,7 @@
       </div>
       <div class="x-ticks">
         {% for b in buckets %}
-          {% if loop.index0 % 4 == 0 %}<span>{{ b.label }}</span>{% else %}<span></span>{% endif %}
+          {% if loop.index0 % 2 == 0 %}<span>{{ b.label }}</span>{% else %}<span></span>{% endif %}
         {% endfor %}
       </div>
     </div>
