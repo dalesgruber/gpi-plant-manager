@@ -361,3 +361,49 @@ async def staffing_save(
         return RedirectResponse(f"/staffing?day={next_day.isoformat()}", status_code=303)
 
     return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
+
+
+@router.post("/staffing/hours")
+async def staffing_hours_save(request: Request):
+    """Persist a per-day shift override (or clear it via reset=1).
+
+    Body fields (multipart/form-data):
+      day:          ISO date (required)
+      reset:        "1" -> clear custom_hours and exit
+      start, end:   "HH:MM" shift bookends
+      break_start, break_end, break_name: parallel lists, one entry per break
+    """
+    form = await request.form()
+    day_raw = (form.get("day") or "").strip()
+    try:
+        d = date.fromisoformat(day_raw)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "bad day"}, status_code=400)
+
+    sched = staffing.load_schedule(d)
+
+    if form.get("reset") == "1":
+        sched.custom_hours = None
+        staffing.save_schedule(sched)
+        return JSONResponse({"ok": True, "reset": True})
+
+    start_s = (form.get("start") or "").strip()
+    end_s = (form.get("end") or "").strip()
+    if not start_s or not end_s or start_s >= end_s:
+        return JSONResponse({"ok": False, "error": "shift start must be before end"}, status_code=400)
+
+    starts = form.getlist("break_start")
+    ends   = form.getlist("break_end")
+    names  = form.getlist("break_name")
+    breaks_out: list[dict] = []
+    for bs, be, bn in zip(starts, ends, names):
+        bs, be = bs.strip(), be.strip()
+        if not bs or not be or bs >= be:
+            return JSONResponse({"ok": False, "error": f"bad break: {bs}-{be}"}, status_code=400)
+        if bs < start_s or be > end_s:
+            return JSONResponse({"ok": False, "error": f"break {bs}-{be} outside shift"}, status_code=400)
+        breaks_out.append({"start": bs, "end": be, "name": (bn or "Break").strip()[:40]})
+
+    sched.custom_hours = {"start": start_s, "end": end_s, "breaks": breaks_out}
+    staffing.save_schedule(sched)
+    return JSONResponse({"ok": True})
