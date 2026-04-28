@@ -294,6 +294,8 @@ def load_schedule(day: date) -> Schedule:
             wc_notes = {str(k): str(v) for k, v in wc_notes_raw.items() if isinstance(v, str) and v} if isinstance(wc_notes_raw, dict) else {}
             snap_raw = data.get("published_snapshot")
             snap = snap_raw if isinstance(snap_raw, dict) else None
+            ch_raw = data.get("custom_hours")
+            custom_hours = ch_raw if isinstance(ch_raw, dict) else None
             return Schedule(
                 day=day,
                 published=bool(data.get("published", False)),
@@ -302,6 +304,7 @@ def load_schedule(day: date) -> Schedule:
                 wc_notes=wc_notes,
                 testing_day=bool(data.get("testing_day", False)),
                 published_snapshot=snap,
+                custom_hours=custom_hours,
             )
         except (json.JSONDecodeError, KeyError, TypeError):
             return Schedule(day=day, published=False, assignments={})
