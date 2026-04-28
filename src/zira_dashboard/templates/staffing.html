@@ -56,7 +56,8 @@
 
 
   /* Main layout */
-  .layout { padding: 1rem 1.5rem; display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 1rem; }
+  .layout { padding: 1rem 1.5rem; display: grid; grid-template-columns: 200px minmax(0, 1fr) 280px; gap: 1rem; }
+  .day-context { min-width: 0; }
   .side .section h3 {
     margin: 0 0 0.55rem;
     font-size: 0.82rem;
@@ -472,7 +473,7 @@
   .override-btn:hover { filter: brightness(1.08); }
 
   /* Daily notes */
-  .day-notes { margin-top: 0.75rem; }
+  .day-notes { margin-top: 0; }
   .day-notes .notes-label { display: block; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem; }
   .day-notes .notes-label .hint { color: var(--muted); font-style: italic; text-transform: none; letter-spacing: 0; font-size: 0.75rem; }
   .day-notes textarea {
@@ -486,8 +487,9 @@
 
   .hint { color: var(--muted); font-size: 0.75rem; text-align: center; padding: 0 1.5rem 1rem; }
 
-  @media (max-width: 960px) {
+  @media (max-width: 1100px) {
     .layout { grid-template-columns: 1fr; }
+    .day-context { order: 3; }
   }
 
   /* Hours pill — shows effective hours for the day, accent-colored when an
@@ -811,19 +813,22 @@
     </table>
   </main>
 
-</div>
+  <!-- RIGHT: Notes for the day + custom-hours banner -->
+  <aside class="day-context">
+    <div class="day-notes">
+      {% if has_custom_hours %}
+      <div class="custom-hours-banner">
+        <b>Custom hours today:</b> {{ eff_hours_start }}–{{ eff_hours_end }}
+        {% if eff_breaks %}· {{ eff_breaks|length }} break{{ eff_breaks|length != 1 and 's' or '' }}:
+        {% for b in eff_breaks %}{{ b.name }} ({{ b.start }}–{{ b.end }}){% if not loop.last %}, {% endif %}{% endfor %}
+        {% endif %}
+      </div>
+      {% endif %}
+      <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
+      <textarea id="notes-textarea" name="notes" rows="6" placeholder="e.g. Rush order on Bay 4. Isidro to train Jose O on Repair 1 after lunch.">{{ notes }}</textarea>
+    </div>
+  </aside>
 
-<div class="day-notes" style="max-width:1100px;margin:0 auto;padding:0 1.25rem">
-  {% if has_custom_hours %}
-  <div class="custom-hours-banner">
-    <b>Custom hours today:</b> {{ eff_hours_start }}–{{ eff_hours_end }}
-    {% if eff_breaks %}· {{ eff_breaks|length }} break{{ eff_breaks|length != 1 and 's' or '' }}:
-    {% for b in eff_breaks %}{{ b.name }} ({{ b.start }}–{{ b.end }}){% if not loop.last %}, {% endif %}{% endfor %}
-    {% endif %}
-  </div>
-  {% endif %}
-  <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
-  <textarea id="notes-textarea" name="notes" rows="3" placeholder="e.g. Rush order on Bay 4. Isidro to train Jose O on Repair 1 after lunch.">{{ notes }}</textarea>
 </div>
 </form>
 
