@@ -261,6 +261,10 @@ class Schedule:
     # When the user edits a previously-posted day, we snapshot the posted version here
     # so they can toggle between draft and posted in the UI. Cleared on re-publish.
     published_snapshot: dict | None = None
+    # Per-day shift override: {"start": "HH:MM", "end": "HH:MM",
+    # "breaks": [{"start": "HH:MM", "end": "HH:MM", "name": "..."}, ...]}.
+    # None means "use the global schedule from schedule_store".
+    custom_hours: dict | None = None
 
 
 def snapshot_of(sched: "Schedule") -> dict:
