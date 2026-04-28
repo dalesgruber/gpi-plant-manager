@@ -256,6 +256,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             out.append(
                 {
                     "name": r.station.name,
+                    "who": who_by_wc.get(r.station.name),
                     "working": working,
                     "down": r.downtime_minutes,
                     "working_pct": working / total * 100.0,

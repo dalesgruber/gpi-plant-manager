@@ -74,3 +74,25 @@ def test_recycling_bar_row_no_assignment_fallback(monkeypatch):
         html = client.get("/recycling").text
     assert "(no assignment)" in html
     assert "Repair-1" in html
+
+
+def test_recycling_downtime_row_renders_person_and_wc_stacked(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
+        day=d, published=True,
+        assignments={"Repair-1": ["Alice"]},
+    ))
+    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+        from zira_dashboard.leaderboard import StationTotal
+        from zira_dashboard.stations import Station
+        s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
+        lb.return_value = [
+            StationTotal(s1, units=5, reading_count=1, truncated=False, downtime_minutes=12,
+                         active_minutes=48, last_reading_at=None, last_status=None,
+                         samples=(), active_intervals=()),
+        ]
+        client = TestClient(app)
+        html = client.get("/recycling").text
+    # Both Alice and Repair-1 appear in the rendered HTML; with 12 downtime minutes
+    # the WC qualifies as active so we expect at least 2 occurrences (bar widget + downtime row).
+    assert html.count("Alice") >= 2
+    assert html.count("Repair-1") >= 2

@@ -760,7 +760,15 @@
             {% set dnumpos = customs.get('downtime-report', {}).get('number_position', 'widget') %}
             {% for d in downtime_rows %}
               <div class="bar-row numpos-{{ dnumpos }}">
-                <div class="name">{{ d.name }}</div>
+                <div class="name">
+                  {% if d.who and d.who != d.name %}
+                    <span class="name-primary">{{ d.who }}</span>
+                    <span class="name-secondary">{{ d.name }}</span>
+                  {% else %}
+                    <span class="name-primary">{{ d.name }}</span>
+                    <span class="name-secondary"><em>(no assignment)</em></span>
+                  {% endif %}
+                </div>
                 <div class="stacked-track">
                   <div class="good" style="width: {{ d.working_pct }}%" title="Working {{ d.working }}m"></div>
                   <div class="bad"  style="width: {{ d.down_pct }}%"    title="Down {{ d.down }}m">
