@@ -60,6 +60,22 @@ def in_shift(local_dt: datetime) -> bool:
     return True
 
 
+def shift_start_for(day: date) -> time:
+    """Return the shift start for `day`, honoring per-day custom_hours
+    overrides set in the per-day schedule. Falls back to the global
+    schedule when no override is set."""
+    # Lazy import to avoid the shift_config → staffing → schedule_store cycle.
+    from . import staffing
+    sched = staffing.load_schedule(day)
+    ch = sched.custom_hours
+    if ch and isinstance(ch.get("start"), str):
+        try:
+            return time.fromisoformat(ch["start"])
+        except ValueError:
+            pass
+    return shift_start()
+
+
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
     """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
     if day.weekday() not in work_weekdays():
