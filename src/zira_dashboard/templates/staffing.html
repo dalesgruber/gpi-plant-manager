@@ -1332,6 +1332,89 @@
   // Initial pass on page load so people already double-booked from prior data
   // are filtered out of the pickers right away.
   refreshPickerVisibility();
+
+  // ---------- Custom hours editor ----------
+  (function() {
+    const pill   = document.getElementById('hours-pill');
+    const editor = document.getElementById('hours-editor');
+    const list   = document.getElementById('hours-breaks-list');
+    const addBtn = document.getElementById('hours-add-break');
+    const cancel = document.getElementById('hours-cancel');
+    const reset  = document.getElementById('hours-reset');
+    const save   = document.getElementById('hours-save');
+    if (!pill || !editor) return;
+
+    function open()  { editor.hidden = false; }
+    function close() { editor.hidden = true; }
+    pill.addEventListener('click', open);
+    cancel.addEventListener('click', close);
+
+    addBtn.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = 'break-row';
+      row.innerHTML =
+        '<input type="time" class="b-start" step="60">'
+      + '<input type="time" class="b-end"   step="60">'
+      + '<input type="text" class="b-name" placeholder="Name" maxlength="40">'
+      + '<button type="button" class="remove-btn" title="Remove">×</button>';
+      list.appendChild(row);
+    });
+
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('.remove-btn');
+      if (!btn) return;
+      btn.closest('.break-row').remove();
+    });
+
+    reset.addEventListener('click', () => {
+      // Reset clears the override entirely on save. Mark a flag and trigger save.
+      save.dataset.resetMode = '1';
+      save.click();
+    });
+
+    function collect() {
+      const start = document.getElementById('hours-start').value;
+      const end   = document.getElementById('hours-end').value;
+      const breaks = [...list.querySelectorAll('.break-row')].map(r => ({
+        start: r.querySelector('.b-start').value,
+        end:   r.querySelector('.b-end').value,
+        name:  r.querySelector('.b-name').value.trim() || 'Break',
+      })).filter(b => b.start && b.end);
+      return { start, end, breaks };
+    }
+
+    save.addEventListener('click', async () => {
+      const reset_mode = save.dataset.resetMode === '1';
+      save.dataset.resetMode = '';
+      const body = new FormData();
+      const day = '{{ day }}';
+      body.append('day', day);
+      if (reset_mode) {
+        body.append('reset', '1');
+      } else {
+        const c = collect();
+        if (!c.start || !c.end || c.start >= c.end) {
+          alert('Shift start must be before shift end.');
+          return;
+        }
+        for (const b of c.breaks) {
+          if (b.start >= b.end) { alert('Each break must start before it ends.'); return; }
+          if (b.start < c.start || b.end > c.end) { alert('Breaks must fall within the shift.'); return; }
+        }
+        body.append('start', c.start);
+        body.append('end',   c.end);
+        for (const b of c.breaks) {
+          body.append('break_start', b.start);
+          body.append('break_end',   b.end);
+          body.append('break_name',  b.name);
+        }
+      }
+
+      const r = await fetch('/staffing/hours', { method: 'POST', body });
+      if (r.ok) location.reload();
+      else alert('Save failed: ' + (await r.text()));
+    });
+  })();
 </script>
 </body>
 </html>
