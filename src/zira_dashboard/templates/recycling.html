@@ -346,6 +346,8 @@
     margin-left: -0.5px;
     background: var(--muted);
   }
+  .axis-tick.axis-start { transform: translateX(0); }
+  .axis-tick.axis-start::before { left: 0; margin-left: 0; }
   .widget-total {
     flex: 0 0 auto;
     margin-top: 0.45rem;
@@ -593,6 +595,7 @@
       <div class="bar-row axis-row numpos-{{ numpos }}">
         <div></div>
         <div class="axis-track">
+          {% if shift_start_label %}<div class="axis-tick axis-start" style="left: 0%">start · {{ shift_start_label }}</div>{% endif %}
           <div class="axis-tick" style="left: {{ widget_target_pct }}%">now · {{ now_label }}</div>
         </div>
         {% if numpos == 'widget' %}<div></div>{% endif %}
@@ -624,7 +627,7 @@
       ('kpi-pallets',   'Total Pallets Processed', '{:,}'.format(total_units)),
       ('kpi-uptime',    'Up Time',                 uptime_pct ~ ' %'),
       ('kpi-downtime',  'Total Downtime',          total_downtime_display),
-      ('kpi-palletshr', 'Pallets / hr',            pallets_per_hour),
+      ('kpi-palletshr', 'pallets/hr/person',       pph_per_person),
     ] %}
     {% for k in kpi_defs %}
       {% set kid = k[0] %}{% set ktitle = k[1] %}{% set kval = k[2] %}

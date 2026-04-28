@@ -23,8 +23,8 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     today = datetime.now(timezone.utc).date()
     is_today = d == today
     stations = recycling_stations()
-    results = leaderboard(client, stations, d)
     now = datetime.now(timezone.utc)
+    results = leaderboard(client, stations, d, now_utc=now if is_today else None)
 
     # Load schedule first so we can decide which WCs were "active" today.
     # A WC is active iff someone was scheduled to it OR it produced more than
@@ -54,6 +54,13 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     uptime_minutes = max(0, available - total_downtime)
     uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
     pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
+    people_count = sum(
+        len(ops) for wc, ops in sched_for_labels.assignments.items()
+        if wc != staffing.TIME_OFF_KEY and ops and wc in active_wc_names
+    )
+    pph_per_person = (
+        pallets_per_hour / people_count if people_count > 0 else 0.0
+    )
 
     dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
     dismantlers.sort(key=lambda r: r.station.name)
@@ -68,9 +75,12 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     # min fixed" rule for the progress charts.
     shift_start_local = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
     grace_end_local   = shift_start_local + timedelta(minutes=60)
+    # Cap grace at `now` for today, so a freshly-started shift doesn't bill
+    # the full 60-min grace as productive when only a few minutes have passed.
+    grace_end_capped_local = min(grace_end_local, now.astimezone(shift_config.SITE_TZ)) if is_today else grace_end_local
     grace_interval_utc = (
         shift_start_local.astimezone(timezone.utc),
-        grace_end_local.astimezone(timezone.utc),
+        grace_end_capped_local.astimezone(timezone.utc),
     )
     people_by_wc: dict[str, int] = {
         wc: len(ops) for wc, ops in sched_for_labels.assignments.items()
@@ -116,10 +126,11 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             chunks = new_chunks
         return chunks
 
+    grace_has_duration = grace_interval_utc[1] > grace_interval_utc[0]
     productive_by_wc: dict[str, list[tuple[datetime, datetime]]] = {}
     for r in active_results:
         ints = list(r.active_intervals)
-        if r.station.name in people_by_wc:
+        if r.station.name in people_by_wc and grace_has_duration:
             ints.append(grace_interval_utc)
         productive_by_wc[r.station.name] = _subtract_breaks(_merge(ints))
 
@@ -266,6 +277,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             "total_downtime_display": f"{total_downtime / 60:.1f} h",
             "uptime_pct": round(uptime_pct, 1),
             "pallets_per_hour": round(pallets_per_hour, 1),
+            "pph_per_person": round(pph_per_person, 1),
             "elapsed_minutes": elapsed,
             "dismantler_bars": _sorted_bars(_bars(dismantlers), "dismantler-bars"),
             "repair_bars": _sorted_bars(_bars(repairs), "repair-bars"),
@@ -277,6 +289,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             "layout": layout_store.layout_map("recycling"),
             "customs": customs_all,
             "now_label": now_label,
+            "shift_start_label": shift_start_local.strftime("%H:%M"),
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
@@ -305,7 +318,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         )
         for loc in new_locs
     ]
-    results = leaderboard(client, stations, d) if stations else []
+    results = leaderboard(client, stations, d, now_utc=now if is_today else None) if stations else []
 
     total_units = sum(r.units for r in results)
     total_downtime = sum(r.downtime_minutes for r in results)
@@ -315,6 +328,16 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
     uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
     pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
     elapsed_hours = elapsed / 60.0 if elapsed else 0.0
+
+    sched_for_labels = staffing.load_schedule(d)
+    station_names = {s.name for s in stations}
+    people_count = sum(
+        len(ops) for wc, ops in sched_for_labels.assignments.items()
+        if wc != staffing.TIME_OFF_KEY and ops and wc in station_names
+    )
+    pph_per_person = (
+        pallets_per_hour / people_count if people_count > 0 else 0.0
+    )
 
     def _color(pct: float | None) -> str | None:
         if pct is None:
@@ -328,7 +351,6 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         hue = 130 if delta > 0 else 0
         return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
 
-    sched_for_labels = staffing.load_schedule(d)
     who_by_wc: dict[str, str] = {}
     for wc_name, ops in sched_for_labels.assignments.items():
         if wc_name == staffing.TIME_OFF_KEY or not ops:
@@ -378,6 +400,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
             "total_downtime_display": f"{total_downtime / 60:.1f} h",
             "uptime_pct": round(uptime_pct, 1),
             "pallets_per_hour": round(pallets_per_hour, 1),
+            "pph_per_person": round(pph_per_person, 1),
             "elapsed_minutes": elapsed,
             "bars": bars,
             "downtime_rows": downtime_rows,
