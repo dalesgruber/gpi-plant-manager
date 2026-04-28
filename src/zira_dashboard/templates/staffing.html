@@ -1323,7 +1323,7 @@
       // Mutual exclusion: pull this person out of any WC they were scheduled at.
       const removedFrom = removeFromAllScheduledWcs(name);
       if (removedFrom.length) {
-        showSavedToast(null, name + ' removed from ' + removedFrom.join(', '), null);
+        showSavedToast(null, null, name + ' removed from ' + removedFrom.join(', '));
       }
       refreshTimeOffCount();
       refreshPickerVisibility();
