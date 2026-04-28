@@ -9,7 +9,7 @@ from typing import Any
 
 from zira_probe.client import ZiraClient
 
-from .shift_config import SITE_TZ, in_shift, shift_end
+from .shift_config import SITE_TZ, in_shift, shift_end_for
 from .stations import Station
 
 PAGE_SIZE = 500
@@ -168,7 +168,7 @@ def fetch_station_day(
     # expected on the bar widgets) by up to 60 min.
     end_of_day = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
     day_local = end_of_day.astimezone(SITE_TZ).date()
-    shift_end_local = datetime.combine(day_local, shift_end(), tzinfo=SITE_TZ)
+    shift_end_local = datetime.combine(day_local, shift_end_for(day_local), tzinfo=SITE_TZ)
     eval_end = min(shift_end_local.astimezone(timezone.utc), end_of_day)
     intervals = _active_intervals(samples, eval_end)
     active_minutes = int(sum((b - a).total_seconds() / 60.0 for a, b in intervals))
