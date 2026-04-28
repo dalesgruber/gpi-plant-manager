@@ -87,3 +87,21 @@ def test_productive_minutes_for_half_day_with_one_break(monkeypatch):
             },
         ))
     assert shift_config.productive_minutes_for(date(2026, 4, 28)) == 210
+
+
+from datetime import datetime
+from zira_dashboard.shift_config import SITE_TZ
+
+
+def test_in_shift_on_respects_custom_hours(monkeypatch):
+    """09:30 → 13:00 override; 09:00 should be out, 10:00 should be in."""
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=False,
+            custom_hours={"start": "09:30", "end": "13:00", "breaks": []},
+        ))
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset(range(7)))
+    early = datetime(2026, 4, 28, 9, 0, tzinfo=SITE_TZ)
+    inside = datetime(2026, 4, 28, 10, 0, tzinfo=SITE_TZ)
+    assert shift_config.in_shift_on(early) is False
+    assert shift_config.in_shift_on(inside) is True

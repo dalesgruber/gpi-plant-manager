@@ -126,6 +126,21 @@ def productive_minutes_for(day: date) -> int:
     return max(0, total)
 
 
+def in_shift_on(local_dt: datetime) -> bool:
+    """Day-aware twin of in_shift(): derives the day from local_dt and
+    consults per-day custom_hours."""
+    if local_dt.weekday() not in work_weekdays():
+        return False
+    day = local_dt.date()
+    t = local_dt.time()
+    if t < shift_start_for(day) or t >= shift_end_for(day):
+        return False
+    for b in breaks_for(day):
+        if b.start <= t < b.end:
+            return False
+    return True
+
+
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
     """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
     if day.weekday() not in work_weekdays():
