@@ -88,6 +88,33 @@ def shift_end_for(day: date) -> time:
     return shift_end()
 
 
+def breaks_for(day: date) -> tuple:
+    """Return the breaks tuple for `day`, honoring per-day custom_hours.
+
+    A custom_hours override with an empty `breaks` list means "no breaks
+    today" — not "fall back to global." Only when custom_hours itself is
+    None (or omits the breaks key) do we use the global break list.
+    """
+    from . import staffing
+    from .schedule_store import Break
+    sched = staffing.load_schedule(day)
+    ch = sched.custom_hours
+    if ch and isinstance(ch.get("breaks"), list):
+        out = []
+        for b in ch["breaks"]:
+            if not isinstance(b, dict):
+                continue
+            try:
+                bs = time.fromisoformat(b["start"])
+                be = time.fromisoformat(b["end"])
+            except (ValueError, KeyError, TypeError):
+                continue
+            name = str(b.get("name") or "Break")
+            out.append(Break(bs, be, name))
+        return tuple(out)
+    return breaks()
+
+
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
     """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
     if day.weekday() not in work_weekdays():
