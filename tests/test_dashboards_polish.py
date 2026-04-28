@@ -96,3 +96,28 @@ def test_recycling_downtime_row_renders_person_and_wc_stacked(monkeypatch):
     # the WC qualifies as active so we expect at least 2 occurrences (bar widget + downtime row).
     assert html.count("Alice") >= 2
     assert html.count("Repair-1") >= 2
+
+
+def test_top_nav_renamed_and_work_centers_dropped():
+    client = TestClient(app)
+    html = client.get("/recycling").text
+    assert ">Dashboards<" in html
+    # The top-nav "Work Centers" link is gone (subnav still has it)
+    # We can assert by counting: there should be exactly one "Work Centers" string
+    # (in the subnav).
+    assert html.count("Work Centers") == 1
+    assert ">Recycling VS<" in html
+    assert ">New VS<" in html
+
+
+def test_work_centers_subnav_active_on_index():
+    client = TestClient(app)
+    html = client.get("/").text
+    # subnav appears on the index page
+    assert ">Recycling VS<" in html
+    assert ">New VS<" in html
+    assert ">Work Centers<" in html
+    # "Work Centers" tab is active
+    import re
+    m = re.search(r'class="[^"]*active[^"]*"[^>]*>\s*Work Centers', html)
+    assert m, "Work Centers tab should be active on index page"

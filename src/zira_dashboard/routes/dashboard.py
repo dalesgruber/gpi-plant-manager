@@ -32,8 +32,8 @@ def index(
     today = datetime.now(timezone.utc).date()
     is_today = d == today
     stations = _filter_stations(category)
-    results = leaderboard(client, stations, d)
     now = datetime.now(timezone.utc)
+    results = leaderboard(client, stations, d, now_utc=now if is_today else None)
 
     enriched = []
     counts = {"Running": 0, "Stopped": 0, "Offline": 0}
@@ -77,6 +77,7 @@ def index(
             "counts": counts,
             "top_units": top,
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
+            "active_vs": "work_centers",
         },
     )
 
@@ -90,8 +91,8 @@ def api_leaderboard(
     today = datetime.now(timezone.utc).date()
     is_today = d == today
     stations = _filter_stations(category)
-    results = leaderboard(client, stations, d)
     now = datetime.now(timezone.utc)
+    results = leaderboard(client, stations, d, now_utc=now if is_today else None)
     return JSONResponse(
         {
             "day": d.isoformat(),

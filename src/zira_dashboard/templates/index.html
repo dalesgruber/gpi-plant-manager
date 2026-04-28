@@ -62,6 +62,12 @@
   button:hover { filter: brightness(1.2); }
   main { padding: 1rem 1.5rem; }
 
+  /* Value Streams sub-nav */
+  .sub-nav { display: flex; gap: 0.25rem; padding: 0.55rem 1.25rem 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .sub-nav a { color: var(--muted); text-decoration: none; font-size: 0.88rem; padding: 0.5rem 0.85rem; border-radius: 8px 8px 0 0; border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; }
+  .sub-nav a:hover { color: var(--fg); }
+  .sub-nav a.active { color: var(--running); background: var(--bg); border-color: var(--border); font-weight: 600; }
+
   .summary {
     display: flex;
     flex-wrap: wrap;
@@ -156,8 +162,7 @@
   <div style="display:flex;gap:1.25rem;align-items:center">
     <h1>GPI Plant Manager</h1>
     <nav style="display:flex;gap:0.5rem">
-      <a href="/" style="color:var(--running);text-decoration:none;font-weight:600;font-size:0.9rem;padding:0.25rem 0.6rem;border-radius:6px;background:var(--running-bg)">Work Centers</a>
-      <a href="/recycling" style="color:var(--muted);text-decoration:none;font-size:0.9rem;padding:0.25rem 0.6rem;border-radius:6px">Value Streams</a>
+      <a href="/recycling" style="color:var(--running);text-decoration:none;font-weight:600;font-size:0.9rem;padding:0.25rem 0.6rem;border-radius:6px;background:var(--running-bg)">Dashboards</a>
       <a href="/staffing" style="color:var(--muted);text-decoration:none;font-size:0.9rem;padding:0.25rem 0.6rem;border-radius:6px">Staffing</a>
       <a href="/settings" style="color:var(--muted);text-decoration:none;font-size:0.9rem;padding:0.25rem 0.6rem;border-radius:6px">Settings</a>
     </nav>
@@ -174,6 +179,7 @@
     <button type="submit">Update</button>
   </form>
 </header>
+{% include '_value_streams_subnav.html' %}
 <main>
   {% if is_today %}
   <div class="summary">
