@@ -20,6 +20,8 @@ router = APIRouter()
 
 @router.get("/staffing/skills", response_class=HTMLResponse)
 def staffing_skills(request: Request):
+    from .. import odoo_sync
+    sync_result = odoo_sync.sync(force=False)
     roster = staffing.load_roster()
     roster.sort(key=lambda p: (not p.active, p.name.lower()))
     active_count = sum(1 for p in roster if p.active)
@@ -32,6 +34,9 @@ def staffing_skills(request: Request):
             "skills": list(staffing.SKILLS),
             "active_count": active_count,
             "inactive_count": len(roster) - active_count,
+            "sync_ok": sync_result.ok,
+            "sync_last_at": sync_result.last_sync_at.isoformat() if sync_result.last_sync_at else None,
+            "sync_error": sync_result.error,
         },
     )
 
@@ -46,19 +51,17 @@ async def staffing_skills_save(request: Request):
             person.active = form.get(f"active__{name}") in ("on", "1", "true")
         if form.get(f"reserve_present__{name}"):
             person.reserve = form.get(f"reserve__{name}") in ("on", "1", "true")
-        for s in staffing.SKILLS:
-            v = form.get(f"skill__{name}__{s}")
-            if v is not None:
-                try:
-                    lvl = int(v)
-                    if 0 <= lvl <= 3:
-                        person.skills[s] = lvl
-                except (TypeError, ValueError):
-                    pass
     staffing.save_roster(roster)
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({"ok": True})
     return RedirectResponse(url="/staffing/skills", status_code=303)
+
+
+@router.post("/staffing/skills/refresh")
+def staffing_skills_refresh():
+    from .. import odoo_sync
+    odoo_sync.sync(force=True)
+    return RedirectResponse("/staffing/skills", status_code=303)
 
 
 @router.post("/staffing/people/add")
