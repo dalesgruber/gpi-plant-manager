@@ -302,6 +302,9 @@ async def staffing_save(
             wc_notes=dict(snap.get("wc_notes") or {}),
             testing_day=bool(snap.get("testing_day", False)),
             published_snapshot=None,
+            # Discard-draft only reverts the schedule grid; custom_hours are
+            # managed independently via the Hours editor and persist.
+            custom_hours=existing.custom_hours,
         )
         staffing.save_schedule(restored)
         if (request.headers.get("accept") or "").startswith("application/json"):
@@ -336,6 +339,10 @@ async def staffing_save(
         wc_notes=wc_notes,
         testing_day=testing_day,
         published_snapshot=published_snapshot,
+        # Custom hours live alongside the day's schedule and are managed by
+        # the dedicated /staffing/hours route. Preserve them through every
+        # publish / save / unpublish so the user's overrides aren't dropped.
+        custom_hours=existing.custom_hours,
     ))
 
     # Auto-save (fetch with ?auto=1) → JSON, no redirect.
