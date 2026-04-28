@@ -288,14 +288,30 @@ Two visual cues so it's never silent:
 
 - (None.) The feature fits inside existing modules; no new files needed.
 
+## Confirm-before-save guard for past-day edits
+
+Editing the custom hours of a **past day** retroactively reshuffles every
+operator's % of target on the leaderboards and player cards for the window
+that contained that day. To prevent fat-finger rewrites:
+
+- **Today or future days:** Save proceeds without a confirm.
+- **Past days** (`day < today` in `SITE_TZ`): on Save, show a confirm popup
+  that names the consequence ("Editing past-day hours updates leaderboards
+  and player cards for any window that includes 2026-04-22. Continue?").
+  The popup uses the same style as the existing Override / Overstaffed
+  popups in the scheduler.
+
+The confirm gates the POST. If the user cancels, the editor stays open with
+its current values. The "Reset to defaults" button uses the same confirm
+when on a past day.
+
 ## Open questions deferred to implementation
 
 - Should the editor autosave on field change like the rest of the
   scheduler, or stay click-Save? Leaning **click-Save** because the
   validation rules (start < end, break orderings) are easier to enforce
-  on a single submit than on every keystroke. Implementation can revisit.
-- Should "Reset to defaults" require a confirm? Probably yes if the day is
-  Posted; no if it's Draft. Match the existing Discard-Draft UX.
+  on a single submit than on every keystroke. The confirm-on-past-day
+  guard is also cleaner with click-Save. Implementation can revisit.
 
 ## Risks
 
