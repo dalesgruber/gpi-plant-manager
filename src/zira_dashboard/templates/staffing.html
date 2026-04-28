@@ -1216,12 +1216,124 @@
     if (!pill) return;
     pill.remove();
     // Refresh the count badge in the Time Off heading.
+    refreshTimeOffCount();
+    if (typeof scheduleAutosave === 'function') scheduleAutosave();
+  });
+
+  // ---------- Time Off helpers ----------
+  function refreshTimeOffCount() {
     const sect = document.querySelector('.section.timeoff');
-    if (sect) {
-      const count = sect.querySelectorAll('.pill').length;
-      const cspan = sect.querySelector('h3 .count');
-      if (cspan) cspan.textContent = count;
+    if (!sect) return;
+    const count = sect.querySelectorAll('.pill').length;
+    const cspan = sect.querySelector('h3 .count');
+    if (cspan) cspan.textContent = count;
+  }
+
+  // Remove `name` from every Scheduled WC dropdown. Returns the list of WC
+  // location names she was removed from (used to surface a toast).
+  function removeFromAllScheduledWcs(name) {
+    const removedFrom = [];
+    document.querySelectorAll('details.sched-dd').forEach(dd => {
+      const items = dd.querySelectorAll('.dd-item');
+      let removedHere = false;
+      items.forEach(item => {
+        if (item.dataset.name !== name) return;
+        const cb = item.querySelector('input[type=checkbox]');
+        if (cb && cb.checked) {
+          cb.checked = false;
+          item.classList.remove('selected');
+          removedHere = true;
+        }
+      });
+      if (removedHere) {
+        updateDdSummary(dd);
+        __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
+        removedFrom.push(dd.dataset.loc);
+      }
+    });
+    return removedFrom;
+  }
+
+  // Remove `name` from the Time Off pill list (silent — caller just acted).
+  function removeFromTimeOff(name) {
+    const pills = document.querySelectorAll('.section.timeoff .pill');
+    let any = false;
+    pills.forEach(pill => {
+      if (pill.dataset.name === name) {
+        pill.remove();
+        any = true;
+      }
+    });
+    if (any) {
+      // Re-add the option to the time-off "+ Add" select so the user can
+      // re-select this person without reloading.
+      const sel = document.querySelector('.add-select[data-loc="__time_off"]');
+      if (sel && !Array.from(sel.options).some(o => o.value.split('|')[0] === name)) {
+        const opt = document.createElement('option');
+        opt.value = name + '|2';
+        opt.textContent = name;
+        sel.appendChild(opt);
+        // Sort the trailing options alphabetically (skip the "+ Add" placeholder).
+        const placeholder = sel.options[0];
+        const rest = Array.from(sel.options).slice(1)
+          .sort((a, b) => a.textContent.localeCompare(b.textContent));
+        sel.innerHTML = '';
+        sel.appendChild(placeholder);
+        rest.forEach(o => sel.appendChild(o));
+        sel.value = '';
+      }
+      refreshTimeOffCount();
     }
+    return any;
+  }
+
+  // ---------- Time Off "+ Add" select: build pill + hidden input on change ----------
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest('.add-select[data-loc="__time_off"]');
+    if (!sel) return;
+    const raw = sel.value;
+    if (!raw) return;
+    // Value format: "Name|level". Default level to 2 if missing.
+    const pipe = raw.indexOf('|');
+    const name = pipe >= 0 ? raw.slice(0, pipe) : raw;
+    const level = pipe >= 0 ? raw.slice(pipe + 1) : '2';
+    const pillsDiv = document.querySelector('.section.timeoff .pills[data-loc="__time_off"]');
+    if (!pillsDiv) { sel.value = ''; return; }
+    // Don't double-add.
+    const already = Array.from(pillsDiv.querySelectorAll('.pill'))
+      .some(p => p.dataset.name === name);
+    if (!already) {
+      const span = document.createElement('span');
+      span.className = 'pill lvl-' + (level || '2');
+      span.dataset.name = name;
+      span.textContent = name;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pill-x';
+      btn.setAttribute('aria-label', 'remove');
+      btn.textContent = '×';
+      span.appendChild(btn);
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'loc____time_off';
+      hidden.value = name;
+      span.appendChild(hidden);
+      pillsDiv.appendChild(span);
+
+      // Mutual exclusion: pull this person out of any WC they were scheduled at.
+      const removedFrom = removeFromAllScheduledWcs(name);
+      if (removedFrom.length) {
+        showSavedToast(null, name + ' removed from ' + removedFrom.join(', '), null);
+      }
+      refreshTimeOffCount();
+      refreshPickerVisibility();
+    }
+    // Drop the chosen option from the select (avoids re-adding the same person)
+    // and reset to placeholder so the next pick fires `change` again.
+    Array.from(sel.options).forEach(o => {
+      if (o.value && o.value.split('|')[0] === name) o.remove();
+    });
+    sel.value = '';
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   });
 
@@ -1252,6 +1364,9 @@
             __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
             setWcTraining(loc, true);
             flagTestingDay();
+            // Mutual exclusion: silent pull from Time Off if she was off.
+            removeFromTimeOff(item.dataset.name);
+            refreshPickerVisibility();
             if (typeof scheduleAutosave === 'function') scheduleAutosave();
           },
         });
@@ -1274,6 +1389,8 @@
       // Just remember the current selection for the over-max revert path; the
       // understaffed warning is fired on picker close, not on every selection.
       __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
+      // Mutual exclusion: when adding to a WC, silently pull her out of Time Off.
+      if (nowSelected) removeFromTimeOff(item.dataset.name);
     }
     // Re-filter every picker so this person disappears from / reappears in others.
     refreshPickerVisibility();

@@ -64,6 +64,11 @@ def staffing_page(
     active_people = [p for p in roster if p.active]
     all_by_name = {p.name: p for p in roster}
 
+    # Time Off list (stored under TIME_OFF_KEY in assignments). Pulled up here so
+    # we can filter time-off names out of every WC's pool and the Reserves list.
+    time_off_names = sched.assignments.get(staffing.TIME_OFF_KEY, [])
+    time_off_set = set(time_off_names)
+
     def options_for(required: tuple[str, ...]) -> list[dict]:
         """All active people, tagged with trained = (level >= 1 in ALL required skills).
         Untrained people are hidden client-side unless the WC's per-row Training
@@ -97,7 +102,11 @@ def staffing_page(
             # Color by the lowest level across required skills.
             lvl = min((p.level(s) for s in required), default=0) if p else 0
             assigned.append({"name": n, "level": lvl, "color": staffing.skill_color(lvl)})
-        pool = options_for(required)
+        # Filter out anyone in Time Off — they shouldn't appear in any WC's
+        # picker. The "currently-assigned safety net" below re-adds anyone
+        # already historically assigned to this WC, so dirty data won't be
+        # silently dropped.
+        pool = [r for r in options_for(required) if r["name"] not in time_off_set]
         # Reserves go last so the template can split them into the bottom group.
         pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         assigned_set = {a["name"] for a in assigned}
@@ -166,9 +175,8 @@ def staffing_page(
         for loc in staffing.LOCATIONS
     }
 
-    # Time Off list (stored under TIME_OFF_KEY in assignments).
-    time_off_names = sched.assignments.get(staffing.TIME_OFF_KEY, [])
-    time_off_set = set(time_off_names)
+    # Time Off picker pool (the "+ Add" select). time_off_names / time_off_set
+    # were computed above so they could filter the per-WC pools.
     time_off_pool = [
         {
             "name": p.name,
@@ -191,7 +199,7 @@ def staffing_page(
         for p in active_people
         if not p.reserve and p.name not in assigned_today and p.name not in time_off_set
     ]
-    reserves = [p.name for p in active_people if p.reserve]
+    reserves = [p.name for p in active_people if p.reserve and p.name not in time_off_set]
 
     eff_start = shift_config.shift_start_for(d)
     eff_end   = shift_config.shift_end_for(d)
@@ -265,6 +273,21 @@ async def staffing_save(
     time_off_clean = [n.strip() for n in time_off_picked if n and n.strip()]
     if time_off_clean:
         assignments[staffing.TIME_OFF_KEY] = time_off_clean
+
+    # Mutual exclusion (defense in depth): a name can't be in both Time Off and
+    # a WC. Time Off wins; drop those names from every WC's assignment list.
+    # The JS pre-cleans before submitting, so this only fires on inconsistent
+    # data (e.g. a stale tab posting alongside a fresh one).
+    if time_off_clean:
+        to_set = set(time_off_clean)
+        for loc_name in list(assignments.keys()):
+            if loc_name == staffing.TIME_OFF_KEY:
+                continue
+            cleaned = [n for n in assignments[loc_name] if n not in to_set]
+            if cleaned:
+                assignments[loc_name] = cleaned
+            else:
+                assignments.pop(loc_name, None)
 
     action = (form.get("action") or "save").strip().lower()
     override = (form.get("override") or "").strip() == "1"
