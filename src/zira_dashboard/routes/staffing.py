@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import schedule_store, staffing, work_centers_store
+from .. import schedule_store, shift_config, staffing, work_centers_store
 from ..deps import templates
 
 router = APIRouter()
@@ -193,6 +193,17 @@ def staffing_page(
     ]
     reserves = [p.name for p in active_people if p.reserve]
 
+    eff_start = shift_config.shift_start_for(d)
+    eff_end   = shift_config.shift_end_for(d)
+    eff_breaks = [
+        {"start": b.start.strftime("%H:%M"),
+         "end":   b.end.strftime("%H:%M"),
+         "name":  b.name}
+        for b in shift_config.breaks_for(d)
+    ]
+    has_custom_hours = sched.custom_hours is not None
+    eff_hours_label = f"{eff_start.strftime('%H:%M')}–{eff_end.strftime('%H:%M')}"
+
     return templates.TemplateResponse(
         request,
         "staffing.html",
@@ -216,6 +227,11 @@ def staffing_page(
             "has_snapshot": has_snapshot,
             "viewing_posted": viewing_posted,
             "view_mode": view_mode,
+            "eff_hours_start": eff_start.strftime("%H:%M"),
+            "eff_hours_end": eff_end.strftime("%H:%M"),
+            "eff_breaks": eff_breaks,
+            "has_custom_hours": has_custom_hours,
+            "eff_hours_label": eff_hours_label,
         },
     )
 
