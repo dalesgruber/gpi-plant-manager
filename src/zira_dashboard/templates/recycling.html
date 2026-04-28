@@ -309,6 +309,11 @@
     padding: 0.3rem 0;
   }
   .bar-row .name { font-size: 0.85rem; }
+  .bar-row .name { display: flex; flex-direction: column; line-height: 1.15; }
+  .name-primary  { font-weight: 500; }
+  .name-secondary{ color: var(--muted); font-size: 0.78em; }
+  .name-secondary em { font-style: italic; }
+  .vbar-name     { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
   .bar-row .val  { font-size: 0.9rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
   .bar-track { height: 20px; background: var(--panel-2); border-radius: 4px; overflow: hidden; position: relative; }
   .bar-fill  { height: 100%; background: var(--good); border-radius: 4px; }
@@ -572,7 +577,15 @@
             </div>
             {% if b.target_pct is not none %}<div class="vbar-target-line" style="bottom: {{ b.target_pct }}%" title="goal {{ b.expected }}"></div>{% endif %}
           </div>
-          <div class="vbar-name">{{ b.who if b.who else b.name }}</div>
+          <div class="vbar-name">
+            {% if b.who and b.who != b.name %}
+              <span class="name-primary">{{ b.who }}</span>
+              <span class="name-secondary">{{ b.name }}</span>
+            {% else %}
+              <span class="name-primary">{{ b.name }}</span>
+              <span class="name-secondary"><em>(no assignment)</em></span>
+            {% endif %}
+          </div>
         </div>
       {% endfor %}
     </div>
@@ -580,7 +593,15 @@
     {% for b in items %}
       {% set fill_color = b.color or 'var(--good)' %}
       <div class="bar-row numpos-{{ numpos }}" title="{{ b.who if b.who else b.name }} — {{ b.units }} / {{ b.expected }} expected{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
-        <div class="name">{{ b.who if b.who else b.name }}</div>
+        <div class="name">
+          {% if b.who and b.who != b.name %}
+            <span class="name-primary">{{ b.who }}</span>
+            <span class="name-secondary">{{ b.name }}</span>
+          {% else %}
+            <span class="name-primary">{{ b.name }}</span>
+            <span class="name-secondary"><em>(no assignment)</em></span>
+          {% endif %}
+        </div>
         <div class="bar-track">
           <div class="bar-fill" style="width: {{ b.pct }}%; background: {{ fill_color }}">
             {% if numpos == 'inside' %}<span class="in">{{ b.units }}</span>{% endif %}
