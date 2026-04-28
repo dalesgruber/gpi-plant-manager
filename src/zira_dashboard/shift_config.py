@@ -142,16 +142,19 @@ def in_shift_on(local_dt: datetime) -> bool:
 
 
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
-    """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
+    """Productive shift minutes elapsed on `day` as of `now` (site-local).
+    Honors per-day custom_hours."""
     if day.weekday() not in work_weekdays():
         return 0
-    start = datetime.combine(day, shift_start(), tzinfo=SITE_TZ)
-    end = datetime.combine(day, shift_end(), tzinfo=SITE_TZ)
+    s = shift_start_for(day)
+    e = shift_end_for(day)
+    start = datetime.combine(day, s, tzinfo=SITE_TZ)
+    end = datetime.combine(day, e, tzinfo=SITE_TZ)
     effective = min(now.astimezone(SITE_TZ), end)
     if effective <= start:
         return 0
     total = int((effective - start).total_seconds() // 60)
-    for b in breaks():
+    for b in breaks_for(day):
         bs_dt = datetime.combine(day, b.start, tzinfo=SITE_TZ)
         be_dt = datetime.combine(day, b.end, tzinfo=SITE_TZ)
         lo = max(bs_dt, start)

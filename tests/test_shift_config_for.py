@@ -105,3 +105,20 @@ def test_in_shift_on_respects_custom_hours(monkeypatch):
     inside = datetime(2026, 4, 28, 10, 0, tzinfo=SITE_TZ)
     assert shift_config.in_shift_on(early) is False
     assert shift_config.in_shift_on(inside) is True
+
+
+def test_shift_elapsed_minutes_respects_custom_hours(monkeypatch):
+    """Custom 09:00 → 13:00 with a 30-min break at 11:00. As of 12:00,
+    elapsed = 9-11 (120 min) + 11:30-12:00 (30 min) = 150 min."""
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=False,
+            custom_hours={
+                "start": "09:00", "end": "13:00",
+                "breaks": [{"start": "11:00", "end": "11:30", "name": "Lunch"}],
+            },
+        ))
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset(range(7)))
+    d = date(2026, 4, 28)
+    now = datetime(2026, 4, 28, 12, 0, tzinfo=SITE_TZ)
+    assert shift_config.shift_elapsed_minutes(d, now) == 150
