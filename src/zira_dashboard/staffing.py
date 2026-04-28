@@ -221,7 +221,14 @@ def load_roster() -> list[Person]:
                         name=p["name"],
                         active=bool(p.get("active", True)),
                         reserve=bool(p.get("reserve", False)),
-                        skills={s: int(p.get("skills", {}).get(s, 0)) for s in SKILLS},
+                        # Accept whatever skill keys are in the JSON — the
+                        # sync owns column structure (Odoo source of truth)
+                        # and the legacy SKILLS constant is only a fallback
+                        # for first-run before any sync.
+                        skills={
+                            str(k): int(v) for k, v in (p.get("skills") or {}).items()
+                            if isinstance(v, (int, float))
+                        },
                         employee_id=p.get("employee_id"),
                     )
                     for p in data
