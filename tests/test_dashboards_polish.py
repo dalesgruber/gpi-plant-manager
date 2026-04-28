@@ -121,3 +121,16 @@ def test_work_centers_subnav_active_on_index():
     import re
     m = re.search(r'class="[^"]*active[^"]*"[^>]*>\s*Work Centers', html)
     assert m, "Work Centers tab should be active on index page"
+
+
+def test_all_three_dashboard_pages_render_200():
+    client = TestClient(app)
+    for path in ("/", "/recycling", "/new-vs"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} returned {resp.status_code}"
+        # subnav is present on all three
+        assert ">Recycling VS<" in resp.text
+        assert ">New VS<" in resp.text
+        assert ">Work Centers<" in resp.text
+        # top nav rename
+        assert ">Dashboards<" in resp.text
