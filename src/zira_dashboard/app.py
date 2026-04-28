@@ -8,9 +8,11 @@ and provides the ``main()`` entry point used by the console script.
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from . import db
 from .routes import (
     api_layout,
     dashboard,
@@ -24,7 +26,24 @@ from .routes import (
     value_streams,
 )
 
-app = FastAPI(title="Zira Station Dashboard")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialise the Postgres pool and bootstrap schema on startup.
+
+    If ``DATABASE_URL`` is missing or the pool can't be created,
+    ``db.init_pool()`` raises with a clear message — fail fast rather than
+    silently fall back to JSON storage.
+    """
+    db.init_pool()
+    db.bootstrap_schema()
+    try:
+        yield
+    finally:
+        db.shutdown_pool()
+
+
+app = FastAPI(title="Zira Station Dashboard", lifespan=lifespan)
 
 # Mount each feature router. URL paths are owned by the routers themselves.
 app.include_router(dashboard.router)
