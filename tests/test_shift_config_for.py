@@ -68,3 +68,22 @@ def test_breaks_for_empty_list_means_no_breaks(monkeypatch):
             custom_hours={"start": "07:00", "end": "11:00", "breaks": []},
         ))
     assert shift_config.breaks_for(date(2026, 4, 28)) == ()
+
+
+def test_productive_minutes_for_default_matches_global(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(day=d, published=False, custom_hours=None))
+    assert shift_config.productive_minutes_for(date(2026, 4, 28)) == shift_config.productive_minutes_per_day()
+
+
+def test_productive_minutes_for_half_day_with_one_break(monkeypatch):
+    """09:00 → 13:00 = 240 min, minus a 30-min break = 210 min."""
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=False,
+            custom_hours={
+                "start": "09:00", "end": "13:00",
+                "breaks": [{"start": "11:00", "end": "11:30", "name": "Lunch"}],
+            },
+        ))
+    assert shift_config.productive_minutes_for(date(2026, 4, 28)) == 210

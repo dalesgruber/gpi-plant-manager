@@ -115,6 +115,17 @@ def breaks_for(day: date) -> tuple:
     return breaks()
 
 
+def productive_minutes_for(day: date) -> int:
+    """Total productive minutes for `day` (shift duration minus breaks),
+    honoring custom_hours."""
+    def _mins(t): return t.hour * 60 + t.minute
+    s, e = shift_start_for(day), shift_end_for(day)
+    total = _mins(e) - _mins(s)
+    for b in breaks_for(day):
+        total -= _mins(b.end) - _mins(b.start)
+    return max(0, total)
+
+
 def shift_elapsed_minutes(day: date, now: datetime) -> int:
     """Productive shift minutes elapsed on `day` as of `now` (site-local)."""
     if day.weekday() not in work_weekdays():
