@@ -7,14 +7,14 @@ from typing import Callable, Iterable
 
 from .leaderboard import StationTotal
 from .settings_store import station_target
-from .shift_config import SITE_TZ, breaks, shift_end, shift_start, work_weekdays
+from .shift_config import SITE_TZ, breaks_for, shift_end_for, shift_start_for, work_weekdays
 
 # Type alias: target_fn(b_start_local, b_end_local) -> expected units in that bucket.
 TargetFn = Callable[[datetime, datetime], float]
 
 
-def _in_any_break(t: time) -> bool:
-    return any(b.start <= t < b.end for b in breaks())
+def _in_any_break(day: date, t: time) -> bool:
+    return any(b.start <= t < b.end for b in breaks_for(day))
 
 
 def _default_target(
@@ -64,8 +64,8 @@ def progress_buckets(
         for ts_utc, units in st.samples:
             samples.append((ts_utc.astimezone(SITE_TZ), units))
 
-    start = datetime.combine(day, shift_start(), tzinfo=SITE_TZ)
-    end = datetime.combine(day, shift_end(), tzinfo=SITE_TZ)
+    start = datetime.combine(day, shift_start_for(day), tzinfo=SITE_TZ)
+    end = datetime.combine(day, shift_end_for(day), tzinfo=SITE_TZ)
     edge = min(now_utc.astimezone(SITE_TZ), end)
     if edge <= start:
         return []
@@ -77,7 +77,7 @@ def progress_buckets(
         b_start = cursor
         b_end = cursor + delta
         cursor = b_end
-        if _in_any_break(b_start.time()):
+        if _in_any_break(day, b_start.time()):
             continue  # wholly inside a break period
         actual = sum(u for ts, u in samples if b_start <= ts < b_end)
         # For the current (in-progress) bucket, don't penalize — show only actual.
