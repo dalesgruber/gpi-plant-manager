@@ -66,7 +66,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     # the shift as productive for any *scheduled* WC, since the 60-min rule
     # can't possibly have triggered yet — that's the user-supplied "first 60
     # min fixed" rule for the progress charts.
-    shift_start_local = datetime.combine(d, shift_config.shift_start(), tzinfo=shift_config.SITE_TZ)
+    shift_start_local = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
     grace_end_local   = shift_start_local + timedelta(minutes=60)
     grace_interval_utc = (
         shift_start_local.astimezone(timezone.utc),
@@ -93,7 +93,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     # so a station "productive all day" sums to *productive shift hours* (not
     # wall-clock), matching the settings goal which is daily / productive_hours.
     breaks_utc: list[tuple[datetime, datetime]] = []
-    for b in shift_config.breaks():
+    for b in shift_config.breaks_for(d):
         bs = datetime.combine(d, b.start, tzinfo=shift_config.SITE_TZ).astimezone(timezone.utc)
         be = datetime.combine(d, b.end,   tzinfo=shift_config.SITE_TZ).astimezone(timezone.utc)
         if be > bs:
