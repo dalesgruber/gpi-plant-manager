@@ -78,10 +78,11 @@ async def staffing_skills_filter(request: Request):
 async def staffing_skills_save(request: Request):
     form = await request.form()
     roster = staffing.load_roster()
+    # `active` is now sourced from Odoo (read-only in the matrix UI). Only
+    # the local `reserve` flag is editable; everything else round-trips
+    # untouched.
     for person in roster:
         name = person.name
-        if form.get(f"active_present__{name}"):
-            person.active = form.get(f"active__{name}") in ("on", "1", "true")
         if form.get(f"reserve_present__{name}"):
             person.reserve = form.get(f"reserve__{name}") in ("on", "1", "true")
     staffing.save_roster(roster)
