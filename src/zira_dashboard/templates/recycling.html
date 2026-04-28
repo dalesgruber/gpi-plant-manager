@@ -696,7 +696,7 @@
       <div class="legend">
         <span><span class="swatch" style="background:var(--hit, var(--good))"></span>At / above goal</span>
         <span><span class="swatch" style="background:var(--bad)"></span>Below goal</span>
-        <span style="margin-left:auto">Goal {{ group_target_per_hour }}/hr · {{ bucket_target }} per 15 min</span>
+        <span style="margin-left:auto">Goal {{ group_target_per_hour|round|int }}/hr · {{ bucket_target }} per 15 min</span>
       </div>
       <div class="plot">
         <div class="bars">

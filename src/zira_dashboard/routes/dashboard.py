@@ -1,11 +1,16 @@
-"""Top-level dashboard routes: GET / and GET /api/leaderboard."""
+"""Top-level dashboard routes: GET /work-centers and GET /api/leaderboard.
+
+GET / redirects to /recycling so the home page lands on the Recycling VS
+dashboard. The Work Centers page (formerly served at /) now lives at
+/work-centers and is reachable from the Dashboards subnav.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..deps import (
     _filter_stations,
@@ -22,7 +27,12 @@ from ..stations import CATEGORIES
 router = APIRouter()
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/")
+def home():
+    return RedirectResponse(url="/recycling", status_code=307)
+
+
+@router.get("/work-centers", response_class=HTMLResponse)
 def index(
     request: Request,
     day: str | None = Query(default=None),

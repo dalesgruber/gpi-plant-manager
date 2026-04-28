@@ -54,13 +54,18 @@ def recycling(request: Request, day: str | None = Query(default=None)):
     uptime_minutes = max(0, available - total_downtime)
     uptime_pct = (uptime_minutes / available * 100.0) if available > 0 else 0.0
     pallets_per_hour = (total_units / (elapsed / 60.0)) if elapsed > 0 else 0.0
-    people_count = sum(
-        len(ops) for wc, ops in sched_for_labels.assignments.items()
-        if wc != staffing.TIME_OFF_KEY and ops and wc in active_wc_names
+    # pallets/hr/person — metered pallet total divided by total recycling
+    # man-hours. Every person scheduled to a Recycled-stream WC contributes
+    # their full elapsed shift hours, metered or not (Trim Saw, Master
+    # Recycler, unmetered Repairs all count). Matches a clipboard calc.
+    elapsed_hours = elapsed / 60.0 if elapsed else 0.0
+    total_recycling_people = sum(
+        len(sched_for_labels.assignments.get(loc.name, []))
+        for loc in staffing.LOCATIONS
+        if work_centers_store.value_stream(loc) == "Recycled"
     )
-    pph_per_person = (
-        pallets_per_hour / people_count if people_count > 0 else 0.0
-    )
+    total_man_hours = total_recycling_people * elapsed_hours
+    pph_per_person = (total_units / total_man_hours) if total_man_hours > 0 else 0.0
 
     dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
     dismantlers.sort(key=lambda r: r.station.name)

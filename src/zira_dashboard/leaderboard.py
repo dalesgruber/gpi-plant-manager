@@ -9,7 +9,7 @@ from typing import Any
 
 from zira_probe.client import ZiraClient
 
-from .shift_config import SITE_TZ, in_shift, shift_end_for
+from .shift_config import SITE_TZ, in_shift_on, shift_end_for
 from .stations import Station
 
 PAGE_SIZE = 500
@@ -117,7 +117,11 @@ def _adjusted_downtime(
 
 
 def fetch_station_day(
-    client: ZiraClient, station: Station, start_iso: str, end_iso: str
+    client: ZiraClient,
+    station: Station,
+    start_iso: str,
+    end_iso: str,
+    now_utc: datetime | None = None,
 ) -> StationTotal:
     total = 0
     count = 0
@@ -150,7 +154,7 @@ def fetch_station_day(
             duration = r.get("duration")
             event_dt = _parse_event_date(r.get("event_date"))
             event_local = event_dt.astimezone(SITE_TZ) if event_dt else None
-            in_shift_now = event_local is not None and in_shift(event_local)
+            in_shift_now = event_local is not None and in_shift_on(event_local)
             if status and status != WORKING_STATUS and isinstance(duration, (int, float)) and in_shift_now:
                 downtime_rows.append((event_dt, int(duration)))
             if u_int > 0 and event_dt is not None and in_shift_now:
@@ -165,11 +169,15 @@ def fetch_station_day(
     # Cap the active-interval tail at the *shift end* of this day, not the
     # UTC end of day. Otherwise the 60-min grace window can extend past the
     # actual workday and inflate every active_minutes (and every per-WC
-    # expected on the bar widgets) by up to 60 min.
+    # expected on the bar widgets) by up to 60 min. Also cap at `now` when
+    # provided, so the in-progress shift's transfer-rule tail can't bill
+    # future minutes as productive.
     end_of_day = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
     day_local = end_of_day.astimezone(SITE_TZ).date()
     shift_end_local = datetime.combine(day_local, shift_end_for(day_local), tzinfo=SITE_TZ)
     eval_end = min(shift_end_local.astimezone(timezone.utc), end_of_day)
+    if now_utc is not None:
+        eval_end = min(eval_end, now_utc)
     intervals = _active_intervals(samples, eval_end)
     active_minutes = int(sum((b - a).total_seconds() / 60.0 for a, b in intervals))
     downtime = _adjusted_downtime(downtime_rows, samples, eval_end)
@@ -191,12 +199,13 @@ def leaderboard(
     client: ZiraClient,
     stations: list[Station],
     day: date,
+    now_utc: datetime | None = None,
 ) -> list[StationTotal]:
     start_iso, end_iso = day_window_utc(day)
     with ThreadPoolExecutor(max_workers=min(10, len(stations) or 1)) as pool:
         results = list(
             pool.map(
-                lambda s: fetch_station_day(client, s, start_iso, end_iso),
+                lambda s: fetch_station_day(client, s, start_iso, end_iso, now_utc),
                 stations,
             )
         )

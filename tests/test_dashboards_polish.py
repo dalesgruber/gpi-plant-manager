@@ -110,22 +110,29 @@ def test_top_nav_renamed_and_work_centers_dropped():
     assert ">New VS<" in html
 
 
-def test_work_centers_subnav_active_on_index():
+def test_work_centers_subnav_active_on_work_centers_page():
     client = TestClient(app)
-    html = client.get("/").text
-    # subnav appears on the index page
+    html = client.get("/work-centers").text
+    # subnav appears on the work-centers page
     assert ">Recycling VS<" in html
     assert ">New VS<" in html
     assert ">Work Centers<" in html
     # "Work Centers" tab is active
     import re
     m = re.search(r'class="[^"]*active[^"]*"[^>]*>\s*Work Centers', html)
-    assert m, "Work Centers tab should be active on index page"
+    assert m, "Work Centers tab should be active on /work-centers page"
+
+
+def test_root_redirects_to_recycling():
+    client = TestClient(app)
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code in (307, 308)
+    assert resp.headers["location"] == "/recycling"
 
 
 def test_all_three_dashboard_pages_render_200():
     client = TestClient(app)
-    for path in ("/", "/recycling", "/new-vs"):
+    for path in ("/work-centers", "/recycling", "/new-vs"):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} returned {resp.status_code}"
         # subnav is present on all three
