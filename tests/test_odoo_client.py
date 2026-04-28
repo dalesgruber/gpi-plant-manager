@@ -37,3 +37,62 @@ def test_authenticate_raises_on_failure(monkeypatch):
         odoo_client._reset_cache_for_tests()
         with pytest.raises(odoo_client.OdooAuthError):
             odoo_client.authenticate()
+
+
+def _stub_execute(monkeypatch, responses):
+    """Map (model, method) → return value. Calls not in the map raise."""
+    calls = []
+    def fake(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        key = (model, method)
+        if key not in responses:
+            raise AssertionError(f"unexpected call: {key}")
+        return responses[key]
+    monkeypatch.setattr(odoo_client, "execute", fake)
+    return calls
+
+
+def test_fetch_skill_columns_returns_production_then_supervisor(monkeypatch):
+    responses = {
+        ("hr.skill.type", "search_read"): [
+            {"id": 1, "name": "Production"},
+            {"id": 2, "name": "Supervisor"},
+        ],
+        ("hr.skill", "search_read"): [
+            {"id": 10, "name": "Repair", "skill_type_id": [1, "Production"]},
+            {"id": 11, "name": "Dismantler", "skill_type_id": [1, "Production"]},
+            {"id": 12, "name": "Floor Lead", "skill_type_id": [2, "Supervisor"]},
+        ],
+    }
+    _stub_execute(monkeypatch, responses)
+    cols = odoo_client.fetch_skill_columns()
+    # Production skills first (alphabetical), then Supervisor (alphabetical)
+    assert cols == ["Dismantler", "Repair", "Floor Lead"]
+
+
+def test_fetch_skill_level_buckets_rank_maps_4_levels(monkeypatch):
+    responses = {
+        ("hr.skill.level", "search_read"): [
+            {"id": 100, "level_progress": 0,   "skill_type_id": [1, "Production"]},
+            {"id": 101, "level_progress": 33,  "skill_type_id": [1, "Production"]},
+            {"id": 102, "level_progress": 67,  "skill_type_id": [1, "Production"]},
+            {"id": 103, "level_progress": 100, "skill_type_id": [1, "Production"]},
+        ],
+    }
+    _stub_execute(monkeypatch, responses)
+    buckets = odoo_client.fetch_skill_level_buckets()
+    assert buckets == {100: 0, 101: 1, 102: 2, 103: 3}
+
+
+def test_fetch_skill_level_buckets_rank_maps_3_levels(monkeypatch):
+    responses = {
+        ("hr.skill.level", "search_read"): [
+            {"id": 200, "level_progress": 0,   "skill_type_id": [2, "Supervisor"]},
+            {"id": 201, "level_progress": 50,  "skill_type_id": [2, "Supervisor"]},
+            {"id": 202, "level_progress": 100, "skill_type_id": [2, "Supervisor"]},
+        ],
+    }
+    _stub_execute(monkeypatch, responses)
+    buckets = odoo_client.fetch_skill_level_buckets()
+    # 3 levels -> rank 0,1,2 -> 0, round(1*3/2)=2, round(2*3/2)=3
+    assert buckets == {200: 0, 201: 2, 202: 3}

@@ -73,3 +73,62 @@ def execute(model: str, method: str, *args: Any, **kwargs: Any) -> Any:
     return _object_proxy.execute_kw(
         db, uid, key, model, method, list(args), kwargs
     )
+
+
+SKILL_TYPE_NAMES = ("Production", "Supervisor")
+
+
+def fetch_skill_columns() -> list[str]:
+    """Return ordered skill names: all skills from the Production type
+    (alphabetical), then all from Supervisor (alphabetical)."""
+    types = execute(
+        "hr.skill.type", "search_read",
+        [("name", "in", list(SKILL_TYPE_NAMES))],
+        fields=["id", "name"],
+    )
+    type_order = {name: i for i, name in enumerate(SKILL_TYPE_NAMES)}
+    types.sort(key=lambda t: type_order.get(t["name"], 999))
+    type_ids = [t["id"] for t in types]
+    if not type_ids:
+        return []
+    skills = execute(
+        "hr.skill", "search_read",
+        [("skill_type_id", "in", type_ids)],
+        fields=["id", "name", "skill_type_id"],
+    )
+    by_type: dict[int, list[str]] = {tid: [] for tid in type_ids}
+    for s in skills:
+        tid = s["skill_type_id"][0] if isinstance(s["skill_type_id"], list) else s["skill_type_id"]
+        by_type.setdefault(tid, []).append(s["name"])
+    out: list[str] = []
+    for tid in type_ids:
+        out.extend(sorted(by_type.get(tid, []), key=str.lower))
+    return out
+
+
+def fetch_skill_level_buckets() -> dict[int, int]:
+    """Map hr.skill.level.id → bucket (0–3) using rank-within-type.
+
+    For each skill type, sort levels ascending by level_progress, assign
+    rank index, then bucket = round(rank * 3 / max(N-1, 1)) clamped 0..3.
+    """
+    levels = execute(
+        "hr.skill.level", "search_read",
+        [],
+        fields=["id", "level_progress", "skill_type_id"],
+    )
+    by_type: dict[int, list[dict]] = {}
+    for lvl in levels:
+        tid = lvl["skill_type_id"][0] if isinstance(lvl["skill_type_id"], list) else lvl["skill_type_id"]
+        by_type.setdefault(tid, []).append(lvl)
+    out: dict[int, int] = {}
+    for tid, lvls in by_type.items():
+        lvls.sort(key=lambda l: l.get("level_progress", 0))
+        n = len(lvls)
+        for rank, lvl in enumerate(lvls):
+            if n <= 1:
+                bucket = 0
+            else:
+                bucket = round(rank * 3 / (n - 1))
+            out[lvl["id"]] = max(0, min(3, bucket))
+    return out
