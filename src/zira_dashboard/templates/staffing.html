@@ -488,6 +488,88 @@
   @media (max-width: 960px) {
     .layout { grid-template-columns: 1fr; }
   }
+
+  /* Hours pill — shows effective hours for the day, accent-colored when an
+     override is set. */
+  .hours-pill {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.78rem; font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .hours-pill:hover { color: var(--fg); border-color: var(--muted); }
+  .hours-pill.custom { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+  .hours-pill .label { text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.65rem; }
+
+  /* Hours editor — modal popover. */
+  .hours-editor {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: var(--panel); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    width: min(28rem, 90vw);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+    z-index: 1200;
+  }
+  .hours-editor h4 { margin: 0 0 0.6rem; font-size: 0.95rem; font-weight: 700; }
+  .hours-editor .row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.45rem; }
+  .hours-editor .row label { color: var(--muted); font-size: 0.78rem; min-width: 4rem; }
+  .hours-editor input[type=time] {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.25rem 0.4rem; font: inherit; font-size: 0.85rem; color-scheme: dark;
+  }
+  .hours-editor input[type=text] {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.25rem 0.5rem; font: inherit; font-size: 0.85rem; flex: 1 1 auto;
+  }
+  .hours-editor .breaks-list { max-height: 14rem; overflow-y: auto; padding-right: 0.2rem; }
+  .hours-editor .break-row {
+    display: grid;
+    grid-template-columns: 5rem 5rem 1fr 1.6rem;
+    gap: 0.35rem; align-items: center;
+    margin-bottom: 0.35rem;
+  }
+  .hours-editor .break-row .remove-btn {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.1rem 0; font: inherit; font-size: 0.85rem; cursor: pointer;
+  }
+  .hours-editor .break-row .remove-btn:hover { color: var(--bad); border-color: var(--bad); }
+  .hours-editor .add-break {
+    background: var(--panel-2); color: var(--accent);
+    border: 1px dashed var(--accent); border-radius: 6px;
+    padding: 0.3rem 0.6rem; font: inherit; font-size: 0.8rem; cursor: pointer;
+    margin-top: 0.3rem;
+  }
+  .hours-editor .actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.7rem; flex-wrap: wrap; }
+  .hours-editor .actions .reset {
+    margin-right: auto;
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.35rem 0.7rem; font: inherit; font-size: 0.82rem; cursor: pointer;
+  }
+  .hours-editor .actions .reset:hover { color: var(--bad); border-color: var(--bad); }
+  .hours-editor .actions .cancel,
+  .hours-editor .actions .save {
+    border-radius: 6px; padding: 0.35rem 0.85rem;
+    font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  .hours-editor .actions .cancel { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); }
+  .hours-editor .actions .save { background: var(--accent); color: #0e1116; border: 1px solid var(--accent); }
+
+  /* Custom-hours banner shown in the day-notes section. */
+  .custom-hours-banner {
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+    padding: 0.45rem 0.75rem; margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .custom-hours-banner b { font-weight: 700; }
 </style>
 </head>
 <body>
@@ -579,6 +661,39 @@
       <input type="date" id="day-picker" value="{{ day }}" class="date-input" title="Jump to another day">
       <a href="/staffing?day={{ today }}" class="day-hot {% if day == today %}active{% endif %}" title="Jump to today">Today</a>
       <a href="/staffing?day={{ tomorrow }}" class="day-hot {% if day == tomorrow %}active{% endif %}" title="Jump to tomorrow">Next Day</a>
+      <button type="button" class="hours-pill {% if has_custom_hours %}custom{% endif %}" id="hours-pill"
+              title="Click to edit shift hours for this day">
+        <span class="label">Hours</span>
+        <span>{{ eff_hours_label }}</span>
+        {% if has_custom_hours %}<span>· {{ eff_breaks|length }} break{{ eff_breaks|length != 1 and 's' or '' }}</span>{% endif %}
+      </button>
+
+      <div id="hours-editor" class="hours-editor" hidden>
+        <h4>Custom hours for {{ day }}</h4>
+        <div class="row">
+          <label>Shift</label>
+          <input type="time" id="hours-start" value="{{ eff_hours_start }}" step="300">
+          <span style="color:var(--muted)">→</span>
+          <input type="time" id="hours-end"   value="{{ eff_hours_end }}"   step="300">
+        </div>
+        <div class="row" style="margin-bottom:0.25rem"><label>Breaks</label></div>
+        <div id="hours-breaks-list" class="breaks-list">
+          {% for b in eff_breaks %}
+            <div class="break-row">
+              <input type="time" class="b-start" value="{{ b.start }}" step="60">
+              <input type="time" class="b-end"   value="{{ b.end }}"   step="60">
+              <input type="text" class="b-name"  value="{{ b.name }}" maxlength="40">
+              <button type="button" class="remove-btn" title="Remove break">×</button>
+            </div>
+          {% endfor %}
+        </div>
+        <button type="button" id="hours-add-break" class="add-break">+ Add break</button>
+        <div class="actions">
+          <button type="button" class="reset"  id="hours-reset">Reset to defaults</button>
+          <button type="button" class="cancel" id="hours-cancel">Cancel</button>
+          <button type="button" class="save"   id="hours-save">Save</button>
+        </div>
+      </div>
       <button type="button" id="clear-schedule-btn" class="clear-btn">Reset to defaults</button>
       <button type="button" class="undo-btn" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
       <button type="button" class="redo-btn" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
@@ -699,6 +814,14 @@
 </div>
 
 <div class="day-notes" style="max-width:1100px;margin:0 auto;padding:0 1.25rem">
+  {% if has_custom_hours %}
+  <div class="custom-hours-banner">
+    <b>Custom hours today:</b> {{ eff_hours_start }}–{{ eff_hours_end }}
+    {% if eff_breaks %}· {{ eff_breaks|length }} break{{ eff_breaks|length != 1 and 's' or '' }}:
+    {% for b in eff_breaks %}{{ b.name }} ({{ b.start }}–{{ b.end }}){% if not loop.last %}, {% endif %}{% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
   <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
   <textarea id="notes-textarea" name="notes" rows="3" placeholder="e.g. Rush order on Bay 4. Isidro to train Jose O on Repair 1 after lunch.">{{ notes }}</textarea>
 </div>
