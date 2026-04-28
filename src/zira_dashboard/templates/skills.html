@@ -78,6 +78,35 @@
   .active-check { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; cursor: pointer; }
   .reserve-check { accent-color: #a78bfa; width: 1.05rem; height: 1.05rem; cursor: pointer; }
 
+  /* Read-only skill cell display (replaces editable <select>). */
+  .skill-display { display: inline-block; min-width: 1.6rem; text-align: center;
+                   padding: 0.15rem 0.35rem; border-radius: 4px;
+                   background: transparent; border: 1px solid var(--border);
+                   font-variant-numeric: tabular-nums; font-weight: 700; font-size: 0.82rem; }
+  .skill-display.lvl-3 { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .skill-display.lvl-2 { background: var(--panel-2); border-color: var(--border); color: var(--fg); }
+  .skill-display.lvl-1 { background: transparent; border-color: var(--warn-dim); color: var(--warn); }
+  .skill-display.lvl-0 { background: transparent; border-color: var(--border); color: var(--muted); }
+
+  /* Read-only Active badge (replaces editable checkbox). */
+  .active-badge { font-size: 0.95rem; font-weight: 700; }
+  .active-badge.on  { color: var(--accent); }
+  .active-badge.off { color: var(--muted); }
+
+  /* Sync header bar (Last synced + Refresh from Odoo). */
+  .sync-bar { display: flex; justify-content: space-between; align-items: center;
+              margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; font-size: 0.82rem;
+              color: var(--muted); background: var(--panel); border-radius: 6px; }
+  .sync-error { color: var(--bad); }
+  .sync-btn { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+              border-radius: 6px; padding: 0.3rem 0.7rem; font-size: 0.8rem; cursor: pointer; }
+  .sync-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* "Open in Odoo" hover link per row. */
+  .odoo-link { opacity: 0; margin-left: 0.4rem; color: var(--muted); text-decoration: none; }
+  .skills-table tr:hover .odoo-link { opacity: 0.7; }
+  .odoo-link:hover { color: var(--accent); opacity: 1 !important; }
+
   .toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
   .toolbar .counts { color: var(--muted); font-size: 0.82rem; }
   /* Top-center save toast (shared with staffing + settings). */
@@ -109,36 +138,6 @@
     width: 14rem;
   }
   label.active-toggle { color: var(--muted); font-size: 0.85rem; display: inline-flex; gap: 0.35rem; align-items: center; }
-
-  /* Add person bar */
-  .add-person-bar {
-    display: flex; gap: 0.5rem; align-items: center;
-    background: var(--panel); border: 1px dashed var(--border); border-radius: 8px;
-    padding: 0.4rem 0.7rem; margin-bottom: 0.75rem;
-  }
-  .add-person-bar label { color: var(--muted); font-size: 0.8rem; }
-  .add-person-bar input[type=text] {
-    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.88rem; width: 14rem;
-  }
-  .add-person-bar button {
-    background: var(--accent-dim); color: var(--accent);
-    border: 1px solid var(--accent); border-radius: 6px;
-    padding: 0.35rem 0.9rem; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-  }
-
-  /* Trash icon — only visible when hovering the row */
-  .skills-table td.name .del-btn {
-    background: transparent; color: var(--muted);
-    border: none; border-radius: 4px;
-    padding: 0.15rem 0.3rem; cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.1s, color 0.1s, background 0.1s;
-    flex: 0 0 auto;
-  }
-  .skills-table td.name .del-btn svg { width: 0.95rem; height: 0.95rem; display: block; }
-  .skills-table tbody tr:hover td.name .del-btn { opacity: 1; }
-  .skills-table td.name .del-btn:hover { color: var(--bad); background: var(--bad-dim); }
 
   /* Confirmation popup (reuse staffing.html's popover style) */
   .popover-backdrop {
@@ -177,11 +176,19 @@
     <span><span class="swatch s3">3</span>proficient</span>
   </div>
 
-  <div class="add-person-bar">
-    <label for="new-person-name">Add person:</label>
-    <input type="text" id="new-person-name" placeholder="e.g. Pedro" maxlength="80">
-    <button type="button" id="add-person-btn">Add to roster</button>
-    <span class="hint" style="margin-left:auto">New people start active with all skills at 0.</span>
+  {# Sync header bar — uses a button with formaction so we don't nest <form>s #}
+  <div class="sync-bar">
+    <span>
+      {% if sync_last_at %}
+        Last synced: {{ sync_last_at | replace('T', ' ') | truncate(16, end='') }}
+      {% else %}
+        Never synced
+      {% endif %}
+      {% if sync_error %}
+        · <span class="sync-error">⚠ {{ sync_error }}</span>
+      {% endif %}
+    </span>
+    <button type="submit" class="sync-btn" formaction="/staffing/skills/refresh" formmethod="post">Refresh from Odoo</button>
   </div>
 
   <div style="overflow:auto;max-height:75vh">
@@ -200,20 +207,16 @@
           <td class="name">
             <div class="name-inner">
               <a class="name-link" href="/staffing/people/{{ p.name | urlencode }}">{{ p.name }}</a>
-              <button type="button" class="del-btn" data-person="{{ p.name }}" title="Remove from roster" aria-label="Remove {{ p.name }}">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"></path>
-                  <path d="M10 11v6"></path>
-                  <path d="M14 11v6"></path>
-                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              </button>
+              {% if p.employee_id and odoo_url %}
+                <a class="odoo-link" href="{{ odoo_url }}/web#id={{ p.employee_id }}&model=hr.employee&view_type=form" target="_blank" rel="noopener" title="Open in Odoo">↗</a>
+              {% endif %}
             </div>
           </td>
           <td>
             <input type="hidden" name="active_present__{{ p.name }}" value="1">
-            <input class="active-check" type="checkbox" name="active__{{ p.name }}" {% if p.active %}checked{% endif %}>
+            <span class="active-badge {% if p.active %}on{% else %}off{% endif %}">
+              {% if p.active %}✓{% else %}✗{% endif %}
+            </span>
           </td>
           <td>
             <input type="hidden" name="reserve_present__{{ p.name }}" value="1">
@@ -222,9 +225,7 @@
           {% for s in skills %}
             {% set lvl = p.skills.get(s, 0) %}
             <td>
-              <select class="skill-sel lvl-{{ lvl }}" name="skill__{{ p.name }}__{{ s }}">
-                {% for i in range(4) %}<option value="{{ i }}" {% if lvl == i %}selected{% endif %}>{{ i }}</option>{% endfor %}
-              </select>
+              <span class="skill-display lvl-{{ lvl }}">{{ lvl if lvl > 0 else '—' }}</span>
             </td>
           {% endfor %}
         </tr>
@@ -237,7 +238,8 @@
 
 {% block scripts %}
 <script>
-  // Filter + active-only
+  // Filter + active-only.  The matrix is view-only; only Reserve is editable
+  // and autosaves below.
   const filterInput = document.getElementById('wheel-filter');
   const hideInactive = document.getElementById('hide-inactive');
   const rows = [...document.querySelectorAll('#skills-table tbody tr')];
@@ -265,8 +267,14 @@
     function cellValue(tr, i) {
       const td = tr.children[i];
       if (!td) return '';
-      const sel = td.querySelector('select.skill-sel');
-      if (sel) return parseInt(sel.value, 10);
+      const skillSpan = td.querySelector('span.skill-display');
+      if (skillSpan) {
+        // Pull the level from the lvl-N class so '—' sorts as 0.
+        const m = (skillSpan.className.match(/lvl-(\d)/) || [, '0'])[1];
+        return parseInt(m, 10);
+      }
+      const badge = td.querySelector('span.active-badge');
+      if (badge) return badge.classList.contains('on') ? 1 : 0;
       const cb = td.querySelector('input[type=checkbox]');
       if (cb) return cb.checked ? 1 : 0;
       return td.textContent.trim().toLowerCase();
@@ -287,24 +295,7 @@
     });
   })();
 
-  // Live color update for skill selects
-  document.querySelectorAll('.skill-sel').forEach(sel => {
-    sel.addEventListener('change', () => {
-      sel.classList.remove('lvl-0', 'lvl-1', 'lvl-2', 'lvl-3');
-      sel.classList.add('lvl-' + sel.value);
-    });
-  });
-  // Active row styling updates live
-  document.querySelectorAll('input.active-check').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const row = cb.closest('tr');
-      row.classList.toggle('inactive', !cb.checked);
-      row.dataset.active = cb.checked ? '1' : '0';
-      apply();
-    });
-  });
-
-  // ---------- Autosave + Undo + top-center toast ----------
+  // ---------- Autosave (Reserve only) + Undo + top-center toast ----------
   const form = document.getElementById('skills-form');
   const undoBtn = document.getElementById('undo-btn');
   const redoBtn = document.getElementById('redo-btn');
@@ -327,18 +318,6 @@
         el.value = vals[0] ?? '';
       }
     }
-  }
-  function reapplyVisualState() {
-    document.querySelectorAll('input.active-check').forEach(cb => {
-      const row = cb.closest('tr');
-      row.classList.toggle('inactive', !cb.checked);
-      row.dataset.active = cb.checked ? '1' : '0';
-    });
-    document.querySelectorAll('.skill-sel').forEach(sel => {
-      sel.classList.remove('lvl-0', 'lvl-1', 'lvl-2', 'lvl-3');
-      sel.classList.add('lvl-' + sel.value);
-    });
-    apply();
   }
 
   let __undoSnapshot = serializeForm(form);
@@ -381,7 +360,6 @@
     if (!snap) return;
     const beforeRevert = serializeForm(form);
     applyState(form, snap);
-    reapplyVisualState();
     clearTimeout(__saveTimer);
     __saving = true;
     fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
@@ -398,7 +376,6 @@
     if (!snap) return;
     const beforeRedo = serializeForm(form);
     applyState(form, snap);
-    reapplyVisualState();
     clearTimeout(__saveTimer);
     __saving = true;
     fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } })
@@ -418,8 +395,9 @@
   // Don't actually submit — Enter in the search box would otherwise GET the page.
   form.addEventListener('submit', (e) => e.preventDefault());
 
-  // Autosave only on real data changes — search box and "Active only" toggle have
-  // no `name` attr and live outside the matrix table.
+  // Autosave only on real data changes — Reserve checkboxes are the sole
+  // editable inputs in the matrix.  Search/"active only" filter inputs live
+  // outside the table and have no `name`.
   document.getElementById('skills-table').addEventListener('change', scheduleAutosave);
 
   // Flush any pending debounced save before the page unloads. Without this, a
@@ -455,81 +433,5 @@
     bd.appendChild(el);
     setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 300); }, 5000);
   }
-
-  // --- Add person ---
-  document.getElementById('add-person-btn').addEventListener('click', () => {
-    const input = document.getElementById('new-person-name');
-    const name = (input.value || '').trim();
-    if (!name) { input.focus(); return; }
-    const fd = new FormData();
-    fd.append('name', name);
-    fetch('/staffing/people/add', { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } })
-      .then(r => r.json().then(j => ({ ok: r.ok, j })))
-      .then(({ok, j}) => {
-        if (ok) { toast('Added ' + name); setTimeout(() => location.reload(), 500); }
-        else    { toast(j.error || 'Add failed', true); }
-      })
-      .catch(() => toast('Add failed', true));
-  });
-  document.getElementById('new-person-name').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('add-person-btn').click(); }
-  });
-
-  // --- Popover (shared w/ delete confirm) ---
-  function showPopup({title, msg, buttons}) {
-    let bd = document.getElementById('popover-bd');
-    if (!bd) {
-      bd = document.createElement('div');
-      bd.id = 'popover-bd';
-      bd.className = 'popover-backdrop';
-      bd.innerHTML = '<div class="popover"><h4 data-role="title"></h4><p data-role="msg"></p><div class="actions" data-role="btns"></div></div>';
-      document.body.appendChild(bd);
-    }
-    bd.querySelector('[data-role=title]').textContent = title;
-    bd.querySelector('[data-role=msg]').textContent = msg;
-    const btns = bd.querySelector('[data-role=btns]');
-    btns.innerHTML = '';
-    const close = () => bd.classList.remove('show');
-    for (const b of buttons) {
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.textContent = b.label;
-      el.className = b.cls || 'ghost';
-      el.onclick = () => { close(); if (b.fn) b.fn(); };
-      btns.appendChild(el);
-    }
-    bd.classList.add('show');
-  }
-
-  // --- Delete person (with warning) ---
-  document.querySelectorAll('.del-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const name = btn.dataset.person;
-      const row = btn.closest('tr');
-      const activeCb = row.querySelector('input.active-check');
-      showPopup({
-        title: 'Remove ' + name + '?',
-        msg: 'Permanently deleting ' + name + ' will wipe their skill history from the roster. We recommend marking them Inactive instead — they stay in the system for historical reference but no longer show in the matrix or the scheduler dropdowns.',
-        buttons: [
-          { label: 'Cancel', cls: 'ghost' },
-          { label: 'Inactivate instead', cls: 'primary', fn: () => {
-            if (activeCb) { activeCb.checked = false; activeCb.dispatchEvent(new Event('change', {bubbles: true})); }
-            toast(name + ' marked inactive (remember to Save)');
-          }},
-          { label: 'Delete permanently', cls: 'danger', fn: () => {
-            const fd = new FormData();
-            fd.append('name', name);
-            fetch('/staffing/people/delete', { method: 'POST', body: fd, headers: { 'Accept': 'application/json' } })
-              .then(r => r.json().then(j => ({ ok: r.ok, j })))
-              .then(({ok, j}) => {
-                if (ok) { toast('Deleted ' + name); row.remove(); }
-                else    { toast(j.error || 'Delete failed', true); }
-              })
-              .catch(() => toast('Delete failed', true));
-          }},
-        ],
-      });
-    });
-  });
 </script>
 {% endblock %}

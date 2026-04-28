@@ -9,6 +9,8 @@ Routes:
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -37,6 +39,7 @@ def staffing_skills(request: Request):
             "sync_ok": sync_result.ok,
             "sync_last_at": sync_result.last_sync_at.isoformat() if sync_result.last_sync_at else None,
             "sync_error": sync_result.error,
+            "odoo_url": os.environ.get("ODOO_URL", "").rstrip("/"),
         },
     )
 
