@@ -101,6 +101,7 @@ class Person:
     active: bool = True
     reserve: bool = False
     skills: dict[str, int] = field(default_factory=dict)
+    employee_id: int | None = None  # Odoo hr.employee.id; None for legacy
 
     def level(self, skill: str) -> int:
         return int(self.skills.get(skill, 0))
@@ -221,6 +222,7 @@ def load_roster() -> list[Person]:
                         active=bool(p.get("active", True)),
                         reserve=bool(p.get("reserve", False)),
                         skills={s: int(p.get("skills", {}).get(s, 0)) for s in SKILLS},
+                        employee_id=p.get("employee_id"),
                     )
                     for p in data
                 ]
@@ -240,10 +242,12 @@ def load_roster() -> list[Person]:
 
 def save_roster(people: list[Person]) -> None:
     with _lock:
-        payload = [
-            {"name": p.name, "active": p.active, "reserve": p.reserve, "skills": p.skills}
-            for p in people
-        ]
+        payload = []
+        for p in people:
+            row: dict = {"name": p.name, "active": p.active, "reserve": p.reserve, "skills": p.skills}
+            if p.employee_id is not None:
+                row["employee_id"] = p.employee_id
+            payload.append(row)
         ROSTER_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
