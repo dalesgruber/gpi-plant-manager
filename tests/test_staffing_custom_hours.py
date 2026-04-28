@@ -42,3 +42,27 @@ def test_load_schedule_treats_missing_custom_hours_as_none(tmp_path, monkeypatch
     )
     sched = staffing.load_schedule(d)
     assert sched.custom_hours is None
+
+
+def test_save_schedule_writes_custom_hours(tmp_path, monkeypatch):
+    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
+    d = date(2026, 4, 28)
+    sched = staffing.Schedule(
+        day=d,
+        published=False,
+        assignments={"Repair 1": ["Jose"]},
+        custom_hours={"start": "09:00", "end": "13:00", "breaks": []},
+    )
+    staffing.save_schedule(sched)
+    raw = (tmp_path / f"{d.isoformat()}.json").read_text(encoding="utf-8")
+    parsed = json.loads(raw)
+    assert parsed["custom_hours"] == {"start": "09:00", "end": "13:00", "breaks": []}
+
+
+def test_save_schedule_omits_custom_hours_when_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(staffing, "SCHEDULES_DIR", tmp_path)
+    d = date(2026, 4, 28)
+    sched = staffing.Schedule(day=d, published=False, assignments={}, custom_hours=None)
+    staffing.save_schedule(sched)
+    parsed = json.loads((tmp_path / f"{d.isoformat()}.json").read_text(encoding="utf-8"))
+    assert "custom_hours" not in parsed or parsed["custom_hours"] is None

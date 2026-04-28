@@ -323,6 +323,8 @@ def save_schedule(schedule: Schedule) -> None:
         }
         if schedule.published_snapshot:
             payload["published_snapshot"] = schedule.published_snapshot
+        if schedule.custom_hours is not None:
+            payload["custom_hours"] = schedule.custom_hours
         _schedule_path(schedule.day).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
