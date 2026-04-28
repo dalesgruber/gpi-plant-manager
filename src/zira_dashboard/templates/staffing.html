@@ -577,8 +577,7 @@
   <div style="display:flex;gap:1.25rem;align-items:center">
     <h1>GPI Plant Manager</h1>
     <nav>
-      <a href="/">Work Centers</a>
-      <a href="/recycling">Value Streams</a>
+      <a href="/recycling">Dashboards</a>
       <a href="/staffing" class="active">Staffing</a>
       <a href="/settings">Settings</a>
     </nav>
@@ -1207,6 +1206,23 @@
   const __prevSel = new WeakMap();
   document.querySelectorAll('details.sched-dd').forEach(dd => {
     __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
+  });
+
+  document.addEventListener('click', (e) => {
+    const x = e.target.closest('.timeoff .pill-x');
+    if (!x) return;
+    e.preventDefault();
+    const pill = x.closest('.pill');
+    if (!pill) return;
+    pill.remove();
+    // Refresh the count badge in the Time Off heading.
+    const sect = document.querySelector('.section.timeoff');
+    if (sect) {
+      const count = sect.querySelectorAll('.pill').length;
+      const cspan = sect.querySelector('h3 .count');
+      if (cspan) cspan.textContent = count;
+    }
+    if (typeof scheduleAutosave === 'function') scheduleAutosave();
   });
 
   document.addEventListener('click', (e) => {
