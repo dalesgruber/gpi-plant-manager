@@ -47,7 +47,10 @@
   .panel .sub { font-size: 0.7rem; color: var(--muted); margin-left: 0.4rem; font-weight: 400; }
 
   .bar-row { display: grid; grid-template-columns: 9rem 1fr 5.5rem; align-items: center; gap: 0.75rem; padding: 0.35rem 0; }
-  .bar-row .name { font-size: 0.88rem; }
+  .bar-row .name { font-size: 0.88rem; display: flex; flex-direction: column; line-height: 1.15; }
+  .name-primary  { font-weight: 500; }
+  .name-secondary{ color: var(--muted); font-size: 0.78em; }
+  .name-secondary em { font-style: italic; }
   .bar-row .val  { font-size: 0.92rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
   .bar-row .val .pct { color: var(--muted); font-weight: 400; font-size: 0.85em; margin-left: 0.1em; }
   .bar-track { height: 22px; background: var(--panel-2); border-radius: 4px; overflow: hidden; position: relative; }
@@ -106,7 +109,15 @@
     {% if bars %}
       {% for b in bars %}
         <div class="bar-row" title="{{ b.who if b.who else b.name }} — {{ b.units }}{% if b.expected %} / {{ b.expected }} expected{% endif %}{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
-          <div class="name">{{ b.who if b.who else b.name }}</div>
+          <div class="name">
+            {% if b.who and b.who != b.name %}
+              <span class="name-primary">{{ b.who }}</span>
+              <span class="name-secondary">{{ b.name }}</span>
+            {% else %}
+              <span class="name-primary">{{ b.name }}</span>
+              <span class="name-secondary"><em>(no assignment)</em></span>
+            {% endif %}
+          </div>
           <div class="bar-track">
             <div class="bar-fill" style="width: {{ b.pct }}%;{% if b.color %} background: {{ b.color }};{% endif %}"></div>
           </div>
@@ -128,7 +139,15 @@
     {% elif downtime_rows %}
       {% for d in downtime_rows %}
         <div class="bar-row">
-          <div class="name">{{ d.name }}</div>
+          <div class="name">
+            {% if d.who and d.who != d.name %}
+              <span class="name-primary">{{ d.who }}</span>
+              <span class="name-secondary">{{ d.name }}</span>
+            {% else %}
+              <span class="name-primary">{{ d.name }}</span>
+              <span class="name-secondary"><em>(no assignment)</em></span>
+            {% endif %}
+          </div>
           <div class="stacked-track">
             <div class="good" style="width: {{ d.working_pct }}%" title="Working {{ d.working }}m"></div>
             <div class="bad"  style="width: {{ d.down_pct }}%"    title="Down {{ d.down }}m"></div>

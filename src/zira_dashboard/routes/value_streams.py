@@ -383,6 +383,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         total = elapsed if elapsed else 1
         downtime_rows.append({
             "name": r.station.name,
+            "who": who_by_wc.get(r.station.name),
             "working": working,
             "down": r.downtime_minutes,
             "working_pct": working / total * 100.0,
