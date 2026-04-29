@@ -20,6 +20,7 @@ from .routes import (
     past_schedules,
     people,
     settings,
+    share,
     skills,
     staffing,
     time_off,
@@ -72,6 +73,7 @@ async def _security_headers(request, call_next):
 app.include_router(dashboard.router)
 app.include_router(value_streams.router)
 app.include_router(staffing.router)
+app.include_router(share.router)
 app.include_router(skills.router)
 app.include_router(people.router)
 app.include_router(leaderboards.router)
