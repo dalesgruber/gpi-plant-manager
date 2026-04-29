@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import settings_store, staffing
 from ..deps import _window_dates, client, templates
@@ -19,46 +19,125 @@ def staffing_leaderboards(
     request: Request,
     window: str = Query(default="week"),
     metric: str = Query(default="pct"),
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
 ):
+    from datetime import date as _date
+    from .. import leaderboard_settings_store as lstore
     from .. import production_history
-    today_d = datetime.now(timezone.utc).date()
-    start_d, end_d = _window_dates(window, today_d)
-    range_out = production_history.attribution_range(start_d, end_d, client)
 
-    # Group WCs by their `skill` category and compute per-WC daily expected units.
-    cats: dict[str, list[staffing.Location]] = {}
+    today_d = datetime.now(timezone.utc).date()
+    custom_range_active = False
+    if start and end:
+        try:
+            start_d = _date.fromisoformat(start)
+            end_d = _date.fromisoformat(end)
+            if end_d >= start_d:
+                custom_range_active = True
+        except ValueError:
+            start_d, end_d = _window_dates(window, today_d)
+    if not custom_range_active:
+        start_d, end_d = _window_dates(window, today_d)
+
+    records = production_history.daily_records(start_d, end_d, client)
+
+    # Per-WC top-5 computation.
+    settings = lstore.snapshot()
+    sections = []
     for loc in staffing.LOCATIONS:
-        cats.setdefault(loc.skill, []).append(loc)
-    expected_per_day_by_wc: dict[str, int] = {}
-    for loc in staffing.LOCATIONS:
-        target_per_hr = settings_store.station_target(
+        target_per_day = settings_store.station_target_per_day(
             Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
         )
-        expected_per_day_by_wc[loc.name] = int(round(target_per_hr * 8))  # 8 productive hrs
+        wc_records = [r for r in records if r["wc"] == loc.name]
 
-    sections = []
-    for skill_name, locs in cats.items():
-        wc_names = [loc.name for loc in locs]
-        rows = production_history.rank_by_category(
-            range_out,
-            category_wcs=wc_names,
-            expected_units_per_day_by_wc=expected_per_day_by_wc,
-            min_days=1,  # TEMP: lowered from 3 for early testing — restore to 3 once there's enough history
-        )
-        if metric == "units":
-            rows = sorted(rows, key=lambda r: -r["units"])
-        sections.append({"category": skill_name, "rows": rows})
-    sections.sort(key=lambda s: s["category"].lower())
+        # Compute metric per record + sort.
+        def metric_value(r):
+            if metric == "units":
+                return r["units"]
+            if target_per_day <= 0:
+                return 0.0
+            return r["units"] / target_per_day
+
+        # Sort: metric desc; tiebreak by ascending day (oldest first).
+        wc_records.sort(key=lambda r: (-metric_value(r), r["day"]))
+        top = wc_records[:5]
+
+        # Per-row name_count = total days that operator worked at this WC across the whole range.
+        name_counts: dict[str, int] = {}
+        for r in wc_records:
+            name_counts[r["person"]] = name_counts.get(r["person"], 0) + 1
+
+        rows = []
+        for i, r in enumerate(top, start=1):
+            day = r["day"]
+            day_label = f"{day.strftime('%a')} {day.month}/{day.day}"
+            expected = target_per_day
+            pct = (r["units"] / expected) if expected > 0 else 0.0
+            rows.append({
+                "rank": i,
+                "name": r["person"],
+                "name_count": name_counts.get(r["person"], 0),
+                "day": day.isoformat(),
+                "day_label": day_label,
+                "units": r["units"],
+                "expected": expected,
+                "pct": pct,
+            })
+
+        wc_settings = settings.get(loc.name, {"sort_order": 0, "is_inactive": False})
+        auto_inactive = not rows
+        sections.append({
+            "loc_name": loc.name,
+            "rows": rows,
+            "is_inactive": wc_settings["is_inactive"] or auto_inactive,
+            "is_manually_inactive": wc_settings["is_inactive"],
+            "is_auto_empty": auto_inactive and not wc_settings["is_inactive"],
+            "sort_order": wc_settings["sort_order"],
+        })
+
+    # Stable secondary sort by LOCATIONS index (bay-organized natural order).
+    loc_index = {loc.name: i for i, loc in enumerate(staffing.LOCATIONS)}
+    sort_key = lambda s: (s["sort_order"], loc_index.get(s["loc_name"], 999))
+    active_sections = sorted([s for s in sections if not s["is_inactive"]], key=sort_key)
+    inactive_sections = sorted([s for s in sections if s["is_inactive"]], key=sort_key)
 
     return templates.TemplateResponse(
         request,
         "leaderboards.html",
         {
             "active": "leaderboards",
-            "sections": sections,
+            "active_sections": active_sections,
+            "inactive_sections": inactive_sections,
             "window": window,
             "metric": metric,
             "start": start_d.isoformat(),
             "end": end_d.isoformat(),
+            "today": today_d.isoformat(),
+            "custom_range_active": custom_range_active,
         },
     )
+
+
+@router.post("/staffing/leaderboards/order")
+async def leaderboards_set_order(request: Request):
+    from .. import leaderboard_settings_store as lstore
+    body = await request.json()
+    order = body.get("order") or []
+    if not isinstance(order, list):
+        return JSONResponse({"ok": False, "error": "order must be a list"}, status_code=400)
+    lstore.set_order([str(x) for x in order if isinstance(x, str)])
+    return JSONResponse({"ok": True})
+
+
+@router.post("/staffing/leaderboards/wc/{name}/inactive")
+def leaderboards_set_inactive(name: str):
+    from .. import leaderboard_settings_store as lstore
+    lstore.set_inactive(name, True)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/staffing/leaderboards/wc/{name}/active")
+def leaderboards_set_active(name: str):
+    from .. import leaderboard_settings_store as lstore
+    lstore.set_inactive(name, False)
+    return JSONResponse({"ok": True})
