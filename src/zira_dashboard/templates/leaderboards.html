@@ -23,15 +23,29 @@
     border-radius: 4px; padding: 0.2rem 0.4rem; font: inherit; font-size: 0.8rem;
   }
 
+  .lb-active-list,
+  .lb-inactive-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 0.7rem;
+    align-items: start;
+  }
+
   .lb-section {
     background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    margin-bottom: 0.7rem; padding: 0.6rem 0.8rem;
+    padding: 0.6rem 0.8rem;
   }
   .lb-section.dragging { opacity: 0.4; }
   .lb-section-header {
     display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
   }
   .lb-section-header h3 { margin: 0; font-size: 0.95rem; flex: 1; }
+  .lb-section-tag {
+    font-size: 0.65rem; color: var(--accent); background: var(--accent-dim);
+    padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.4rem;
+    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;
+    vertical-align: middle;
+  }
   .lb-drag-handle { cursor: move; color: var(--muted); font-size: 1rem; user-select: none; padding: 0 0.3rem; }
   .lb-drag-handle:hover { color: var(--fg); }
   .lb-hide-btn, .lb-show-btn {
@@ -56,7 +70,8 @@
     border: 1px solid var(--border); border-radius: 6px;
   }
   .lb-inactive-wrap[open] > summary { color: var(--fg); }
-  .lb-inactive-wrap > .lb-section { margin-top: 0.5rem; opacity: 0.85; }
+  .lb-inactive-wrap .lb-section { opacity: 0.85; }
+  .lb-inactive-content { margin-top: 0.5rem; }
 {% endblock %}
 
 {% block content %}
@@ -82,8 +97,39 @@
 </form>
 
 <div class="lb-active-list">
+  {% for s in active_groups %}
+    <div class="lb-section lb-section-group" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
+      <div class="lb-section-header">
+        <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+        <h3>{{ s.loc_name }} <span class="lb-section-tag">group</span></h3>
+        <button type="button" class="lb-hide-btn" title="Mark inactive">&#10005;</button>
+      </div>
+      {% if s.rows %}
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Operator</th><th>Date</th><th>WC</th>
+              <th class="num">Units</th><th class="num">% of Goal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in s.rows %}
+              <tr>
+                <td class="rank">{{ r.rank }}</td>
+                <td class="op">{{ r.name }} <span class="lb-name-count">({{ r.name_count }})</span></td>
+                <td>{{ r.day_label }}</td>
+                <td>{{ r.wc }}</td>
+                <td class="num">{{ r.units|round|int }}</td>
+                <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  {% endfor %}
   {% for s in active_sections %}
-    <div class="lb-section" data-wc="{{ s.loc_name }}" draggable="true">
+    <div class="lb-section" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
       <div class="lb-section-header">
         <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
         <h3>{{ s.loc_name }}</h3>
@@ -94,7 +140,7 @@
           <thead>
             <tr>
               <th>#</th><th>Operator</th><th>Date</th>
-              <th class="num">Units</th><th class="num">Expected</th><th class="num">%</th>
+              <th class="num">Units</th><th class="num">% of Goal</th>
             </tr>
           </thead>
           <tbody>
@@ -104,7 +150,6 @@
                 <td class="op">{{ r.name }} <span class="lb-name-count">({{ r.name_count }})</span></td>
                 <td>{{ r.day_label }}</td>
                 <td class="num">{{ r.units|round|int }}</td>
-                <td class="num">{{ r.expected|round|int }}</td>
                 <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
               </tr>
             {% endfor %}
@@ -116,42 +161,78 @@
 </div>
 
 <details class="lb-inactive-wrap" id="lb-inactive">
-  <summary>Inactive ({{ inactive_sections|length }})</summary>
-  {% for s in inactive_sections %}
-    <div class="lb-section lb-section-inactive" data-wc="{{ s.loc_name }}" draggable="true">
-      <div class="lb-section-header">
-        <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
-        <h3>{{ s.loc_name }}</h3>
-        {% if s.is_manually_inactive %}
-          <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
-        {% else %}
-          <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
+  <summary>Inactive ({{ (inactive_sections|length) + (inactive_groups|length) }})</summary>
+  <div class="lb-inactive-content">
+    {% for s in inactive_groups %}
+      <div class="lb-section lb-section-group lb-section-inactive" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
+        <div class="lb-section-header">
+          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+          <h3>{{ s.loc_name }} <span class="lb-section-tag">group</span></h3>
+          {% if s.is_manually_inactive %}
+            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
+          {% else %}
+            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
+          {% endif %}
+        </div>
+        {% if s.rows %}
+          <table class="lb-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Operator</th><th>Date</th><th>WC</th>
+                <th class="num">Units</th><th class="num">% of Goal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in s.rows %}
+                <tr>
+                  <td class="rank">{{ r.rank }}</td>
+                  <td class="op">{{ r.name }} <span class="lb-name-count">({{ r.name_count }})</span></td>
+                  <td>{{ r.day_label }}</td>
+                  <td>{{ r.wc }}</td>
+                  <td class="num">{{ r.units|round|int }}</td>
+                  <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% endif %}
       </div>
-      {% if s.rows %}
-        <table class="lb-table">
-          <thead>
-            <tr>
-              <th>#</th><th>Operator</th><th>Date</th>
-              <th class="num">Units</th><th class="num">Expected</th><th class="num">%</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in s.rows %}
+    {% endfor %}
+    {% for s in inactive_sections %}
+      <div class="lb-section lb-section-inactive" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
+        <div class="lb-section-header">
+          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+          <h3>{{ s.loc_name }}</h3>
+          {% if s.is_manually_inactive %}
+            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
+          {% else %}
+            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
+          {% endif %}
+        </div>
+        {% if s.rows %}
+          <table class="lb-table">
+            <thead>
               <tr>
-                <td class="rank">{{ r.rank }}</td>
-                <td class="op">{{ r.name }} <span class="lb-name-count">({{ r.name_count }})</span></td>
-                <td>{{ r.day_label }}</td>
-                <td class="num">{{ r.units|round|int }}</td>
-                <td class="num">{{ r.expected|round|int }}</td>
-                <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                <th>#</th><th>Operator</th><th>Date</th>
+                <th class="num">Units</th><th class="num">% of Goal</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-    </div>
-  {% endfor %}
+            </thead>
+            <tbody>
+              {% for r in s.rows %}
+                <tr>
+                  <td class="rank">{{ r.rank }}</td>
+                  <td class="op">{{ r.name }} <span class="lb-name-count">({{ r.name_count }})</span></td>
+                  <td>{{ r.day_label }}</td>
+                  <td class="num">{{ r.units|round|int }}</td>
+                  <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
 </details>
 {% endblock %}
 
@@ -182,22 +263,24 @@
   document.querySelectorAll('.lb-section').forEach(bindDrag);
 
   function saveOrder() {
-    const active = [...document.querySelectorAll('.lb-active-list .lb-section')]
-      .map(s => s.dataset.wc);
-    const inactive = [...document.querySelectorAll('.lb-inactive-wrap .lb-section')]
-      .map(s => s.dataset.wc);
-    fetch('/staffing/leaderboards/order', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({order: [...active, ...inactive]}),
-    }).catch(() => {});
+    for (const kind of ['wc', 'group']) {
+      const order = [];
+      document.querySelectorAll(`.lb-active-list .lb-section[data-kind="${kind}"]`).forEach(s => order.push(s.dataset.wc));
+      document.querySelectorAll(`.lb-inactive-content .lb-section[data-kind="${kind}"]`).forEach(s => order.push(s.dataset.wc));
+      fetch(`/staffing/leaderboards/order?kind=${kind}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({order}),
+      }).catch(() => {});
+    }
   }
 
   document.querySelectorAll('.lb-hide-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sec = btn.closest('.lb-section');
       const name = sec.dataset.wc;
-      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/inactive`,
+      const kind = sec.dataset.kind || 'wc';
+      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/inactive?kind=${kind}`,
                                {method: 'POST'});
       if (resp.ok) window.location.reload();
     });
@@ -207,7 +290,8 @@
     btn.addEventListener('click', async () => {
       const sec = btn.closest('.lb-section');
       const name = sec.dataset.wc;
-      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/active`,
+      const kind = sec.dataset.kind || 'wc';
+      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/active?kind=${kind}`,
                                {method: 'POST'});
       if (resp.ok) window.location.reload();
     });

@@ -25,6 +25,7 @@ def staffing_leaderboards(
     from datetime import date as _date
     from .. import leaderboard_settings_store as lstore
     from .. import production_history
+    from .. import work_centers_store
 
     today_d = datetime.now(timezone.utc).date()
     custom_range_active = False
@@ -41,8 +42,11 @@ def staffing_leaderboards(
 
     records = production_history.daily_records(start_d, end_d, client)
 
+    snap = lstore.snapshot()
+    wc_settings_dict = snap.get("wc", {})
+    group_settings_dict = snap.get("group", {})
+
     # Per-WC top-5 computation.
-    settings = lstore.snapshot().get("wc", {})
     sections = []
     for loc in staffing.LOCATIONS:
         target_per_day = settings_store.station_target_per_day(
@@ -84,7 +88,7 @@ def staffing_leaderboards(
                 "pct": pct,
             })
 
-        wc_settings = settings.get(loc.name, {"sort_order": 0, "is_inactive": False})
+        wc_settings = wc_settings_dict.get(loc.name, {"sort_order": 0, "is_inactive": False})
         auto_inactive = not rows
         sections.append({
             "loc_name": loc.name,
@@ -101,6 +105,69 @@ def staffing_leaderboards(
     active_sections = sorted([s for s in sections if not s["is_inactive"]], key=sort_key)
     inactive_sections = sorted([s for s in sections if s["is_inactive"]], key=sort_key)
 
+    # Per-group top-5 computation.
+    group_sections = []
+    for group_name in work_centers_store.registered_groups():
+        member_locs = work_centers_store.members("group", group_name)
+        member_names = {loc.name for loc in member_locs}
+        if not member_names:
+            continue
+        g_records = [r for r in records if r["wc"] in member_names]
+        target_by_wc = {
+            loc.name: settings_store.station_target_per_day(
+                Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+            )
+            for loc in member_locs
+        }
+
+        def metric_value_g(r, _target_by_wc=target_by_wc):
+            if metric == "units":
+                return r["units"]
+            t = _target_by_wc.get(r["wc"], 0)
+            return (r["units"] / t) if t > 0 else 0.0
+
+        g_records.sort(key=lambda r: (-metric_value_g(r), r["day"]))
+        top = g_records[:5]
+
+        counts: dict[str, int] = {}
+        for r in g_records:
+            counts[r["person"]] = counts.get(r["person"], 0) + 1
+
+        rows = []
+        for i, r in enumerate(top, start=1):
+            day = r["day"]
+            target = target_by_wc.get(r["wc"], 0)
+            rows.append({
+                "rank": i,
+                "name": r["person"],
+                "name_count": counts.get(r["person"], 0),
+                "day": day.isoformat(),
+                "day_label": f"{day.strftime('%a')} {day.month}/{day.day}",
+                "wc": r["wc"],
+                "units": r["units"],
+                "pct": (r["units"] / target) if target > 0 else 0.0,
+            })
+
+        g_set = group_settings_dict.get(group_name, {"sort_order": 0, "is_inactive": False})
+        auto_inactive = not rows
+        group_sections.append({
+            "loc_name": group_name,
+            "rows": rows,
+            "is_inactive": g_set["is_inactive"] or auto_inactive,
+            "is_manually_inactive": g_set["is_inactive"],
+            "is_auto_empty": auto_inactive and not g_set["is_inactive"],
+            "sort_order": g_set["sort_order"],
+        })
+
+    active_groups = sorted(
+        [s for s in group_sections if not s["is_inactive"]],
+        key=lambda s: s["sort_order"],
+    )
+    inactive_groups = sorted(
+        [s for s in group_sections if s["is_inactive"]],
+        key=lambda s: s["sort_order"],
+    )
+
     return templates.TemplateResponse(
         request,
         "leaderboards.html",
@@ -108,6 +175,8 @@ def staffing_leaderboards(
             "active": "leaderboards",
             "active_sections": active_sections,
             "inactive_sections": inactive_sections,
+            "active_groups": active_groups,
+            "inactive_groups": inactive_groups,
             "window": window,
             "metric": metric,
             "start": start_d.isoformat(),
@@ -119,25 +188,31 @@ def staffing_leaderboards(
 
 
 @router.post("/staffing/leaderboards/order")
-async def leaderboards_set_order(request: Request):
+async def leaderboards_set_order(request: Request, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
+    if kind not in ("wc", "group"):
+        return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
     body = await request.json()
     order = body.get("order") or []
     if not isinstance(order, list):
         return JSONResponse({"ok": False, "error": "order must be a list"}, status_code=400)
-    lstore.set_order("wc", [str(x) for x in order if isinstance(x, str)])
+    lstore.set_order(kind, [str(x) for x in order if isinstance(x, str)])
     return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/leaderboards/wc/{name}/inactive")
-def leaderboards_set_inactive(name: str):
+def leaderboards_set_inactive(name: str, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
-    lstore.set_inactive("wc", name, True)
+    if kind not in ("wc", "group"):
+        return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
+    lstore.set_inactive(kind, name, True)
     return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/leaderboards/wc/{name}/active")
-def leaderboards_set_active(name: str):
+def leaderboards_set_active(name: str, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
-    lstore.set_inactive("wc", name, False)
+    if kind not in ("wc", "group"):
+        return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
+    lstore.set_inactive(kind, name, False)
     return JSONResponse({"ok": True})
