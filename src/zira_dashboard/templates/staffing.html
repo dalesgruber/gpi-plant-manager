@@ -120,6 +120,13 @@
   .title-bar .title-actions { margin-left: auto; display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
   .title-bar .publish-btn { background: var(--accent); color: #0e1116; border: 1px solid var(--accent); border-radius: 6px; padding: 0.45rem 1rem; font: inherit; font-weight: 700; cursor: pointer; }
   .title-bar .publish-btn:hover { filter: brightness(1.08); }
+  /* Icon-only variants of .publish-btn (Print + Post-to-Slack). */
+  .title-bar .publish-btn.icon-btn { padding: 0.4rem 0.55rem; display: inline-flex; align-items: center; justify-content: center; }
+  .title-bar .publish-btn.icon-btn svg { width: 18px; height: 18px; display: block; }
+  .title-bar .publish-btn.print-btn { background: var(--panel-2); color: var(--fg); border-color: var(--border); }
+  .title-bar .publish-btn.print-btn:hover { background: var(--panel-3); }
+  .title-bar .publish-btn.share-btn { background: #fff; border-color: #e0e0e0; padding: 0.35rem 0.6rem; }
+  .title-bar .publish-btn.share-btn:hover { background: #f5f5f5; }
   .title-bar .save-draft-btn {
     background: transparent; color: var(--fg);
     border: 1px solid var(--border); border-radius: 6px;
@@ -638,6 +645,12 @@
       margin-top: 2pt;
       color: #333;
     }
+    .print-header .hours {
+      font-size: 10pt;
+      font-weight: 600;
+      margin-top: 2pt;
+      color: #333;
+    }
 
     /* Stack multiple assigned people on separate lines per WC. */
     .multi-dd .dd-summary-text > span[class^="lvl-"] {
@@ -655,6 +668,12 @@
       border: none !important;
       padding: 0 !important;
       color: black !important;
+      min-height: auto !important;
+      line-height: 1.25;
+    }
+    /* Table rows shrink to fit content (1 name → 1 line; multi-name expands). */
+    table.sched td {
+      vertical-align: top !important;
     }
     .multi-dd .dd-summary-text .lvl-3,
     .multi-dd .dd-summary-text .lvl-2,
@@ -759,6 +778,7 @@
 <div class="print-header">
   <div class="title">Plant Scheduler</div>
   <div class="date">{{ day_pretty }}</div>
+  {% if has_custom_hours %}<div class="hours">Custom Hours: {{ eff_hours_label }}</div>{% endif %}
 </div>
 <header class="app">
   <div style="display:flex;gap:1.25rem;align-items:center">
@@ -906,8 +926,25 @@
             <span class="draft-label">DRAFT</span>
             <button type="submit" name="action" value="save" class="save-draft-btn">Save Draft</button>
           {% endif %}
-          <button type="button" class="publish-btn print-btn" onclick="printSchedule()">Print</button>
-          <button type="button" class="publish-btn share-btn" onclick="postToSlack(this)">Post to Slack</button>
+          <button type="button" class="publish-btn icon-btn print-btn" onclick="printSchedule()" title="Print" aria-label="Print">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect width="12" height="8" x="6" y="14"/>
+            </svg>
+          </button>
+          <button type="button" class="publish-btn icon-btn share-btn" onclick="postToSlack(this)" title="Post to Slack" aria-label="Post to Slack">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#36C5F0" d="M5 14a2 2 0 1 1 0-4h2v4z"/>
+              <path fill="#36C5F0" d="M6 14a2 2 0 0 1 4 0v6a2 2 0 0 1-4 0z"/>
+              <path fill="#2EB67D" d="M10 5a2 2 0 1 1 4 0v2h-4z"/>
+              <path fill="#2EB67D" d="M10 6a2 2 0 0 1 0 4H4a2 2 0 0 1 0-4z"/>
+              <path fill="#ECB22E" d="M19 10a2 2 0 1 1 0 4h-2v-4z"/>
+              <path fill="#ECB22E" d="M18 10a2 2 0 0 1-4 0V4a2 2 0 0 1 4 0z"/>
+              <path fill="#E01E5A" d="M14 19a2 2 0 1 1-4 0v-2h4z"/>
+              <path fill="#E01E5A" d="M14 18a2 2 0 0 1 0-4h6a2 2 0 0 1 0 4z"/>
+            </svg>
+          </button>
           <button type="submit" name="action" value="publish" class="publish-btn">{{ 'Re-publish' if published else 'Publish' }}</button>
         {% endif %}
       </div>
@@ -1969,9 +2006,9 @@
   }
 
   async function postToSlack(btn) {
-    const originalLabel = btn.textContent;
+    const originalContent = btn.innerHTML;
     btn.disabled = true;
-    btn.textContent = 'Posting…';
+    btn.innerHTML = '<span style="font-size:0.85rem;font-weight:600">Posting…</span>';
     try {
       // Pull the day from the URL — same key the GET handler uses.
       const params = new URLSearchParams(window.location.search);
@@ -1994,7 +2031,7 @@
       showToast(`Slack post failed: ${e.message}`, null, 'error');
     } finally {
       btn.disabled = false;
-      btn.textContent = originalLabel;
+      btn.innerHTML = originalContent;
     }
   }
 </script>
