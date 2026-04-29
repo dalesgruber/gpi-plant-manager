@@ -919,7 +919,35 @@
       </div>
     </div>
 
-    <div class="grid-stack-item" {{ widget_attrs('downtime-report', 0, 16, 12, 4) }}>
+    <div class="grid-stack-item" {{ widget_attrs('dismantler-cumulative', 0, 16, 12, 5) }}>
+      <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-cumulative', {}).get('color') %}{% if pc %}style="--good: {{ pc }}"{% endif %}>
+        {{ edit_controls('dismantler-cumulative', 'All Dismantlers — Daily Progress', 'progress') }}
+        <h3>{{ widget_title('dismantler-cumulative', 'All Dismantlers — Daily Progress') }}</h3>
+        <div class="widget-body">
+          {% if dismantler_progress %}
+            {{ cumulative_progress_chart(dismantler_progress) }}
+          {% else %}
+            <div style="color:var(--muted);font-size:0.85rem">No shift data for this day.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('repair-cumulative', 0, 21, 12, 5) }}>
+      <div class="grid-stack-item-content" {% set pc = customs.get('repair-cumulative', {}).get('color') %}{% if pc %}style="--good: {{ pc }}"{% endif %}>
+        {{ edit_controls('repair-cumulative', 'All Repairs — Daily Progress', 'progress') }}
+        <h3>{{ widget_title('repair-cumulative', 'All Repairs — Daily Progress') }}</h3>
+        <div class="widget-body">
+          {% if repair_progress %}
+            {{ cumulative_progress_chart(repair_progress) }}
+          {% else %}
+            <div style="color:var(--muted);font-size:0.85rem">No shift data for this day.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('downtime-report', 0, 26, 12, 4) }}>
       <div class="grid-stack-item-content" {% set dc = customs.get('downtime-report', {}).get('color') %}{% if dc %}style="--good-color: {{ dc }}"{% endif %}>
         {{ edit_controls('downtime-report', 'Downtime Report', 'downtime') }}
         <h3>{{ widget_title('downtime-report', 'Downtime Report — green = working, red = down (shift-scoped)') }}</h3>
