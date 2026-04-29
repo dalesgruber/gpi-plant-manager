@@ -22,21 +22,24 @@ router = APIRouter()
 
 @router.get("/staffing/skills", response_class=HTMLResponse)
 def staffing_skills(request: Request):
-    from .. import odoo_sync, skill_filter_store, db
+    from .. import odoo_sync, skill_matrix_views_store as views_store, db
     sync_result = odoo_sync.sync(force=False)
     roster = staffing.load_roster()
     roster.sort(key=lambda p: (not p.active, p.name.lower()))
     active_count = sum(1 for p in roster if p.active)
-    # Columns come directly from the `skills` table — Odoo's "Production
-    # Skills" + "Supervisor Skills" types and nothing else. Production
-    # skills first (alphabetical), then Supervisor.
+
+    # Columns directly from skills table.
     skill_rows = db.query(
         "SELECT name, skill_type FROM skills "
         "ORDER BY skill_type, lower(name)"
     )
     columns = [r["name"] for r in skill_rows]
     type_by_skill = {r["name"]: r["skill_type"] for r in skill_rows}
-    hidden = set(skill_filter_store.load_hidden())
+
+    # All saved views + the default view (server-side state shared across users).
+    all_views = views_store.list_views()
+    default_view = views_store.get_default_view()
+
     return templates.TemplateResponse(
         request,
         "skills.html",
@@ -45,7 +48,9 @@ def staffing_skills(request: Request):
             "people": roster,
             "skills": columns,
             "type_by_skill": type_by_skill,
-            "hidden_skills": hidden,
+            "views": all_views,
+            "default_view_name": default_view["name"] if default_view else None,
+            "default_view_state": default_view,
             "active_count": active_count,
             "inactive_count": len(roster) - active_count,
             "sync_ok": sync_result.ok,
@@ -54,17 +59,6 @@ def staffing_skills(request: Request):
             "odoo_url": os.environ.get("ODOO_URL", "").rstrip("/"),
         },
     )
-
-
-@router.post("/staffing/skills/filter")
-async def staffing_skills_filter(request: Request):
-    from .. import skill_filter_store
-    body = await request.json()
-    hidden = body.get("hidden", []) if isinstance(body, dict) else []
-    if not isinstance(hidden, list):
-        return JSONResponse({"ok": False, "error": "hidden must be a list"}, status_code=400)
-    skill_filter_store.save_hidden([str(x) for x in hidden])
-    return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/skills")
@@ -89,6 +83,52 @@ def staffing_skills_refresh():
     from .. import odoo_sync
     odoo_sync.sync(force=True)
     return RedirectResponse("/staffing/skills", status_code=303)
+
+
+@router.post("/staffing/skills/views")
+async def staffing_skills_view_create(request: Request):
+    from .. import skill_matrix_views_store as views_store
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "name required"}, status_code=400)
+    if views_store.get_view(name) is not None:
+        return JSONResponse({"ok": False, "error": "name already exists"}, status_code=409)
+    view = views_store.create_view(name, body)
+    return JSONResponse({"ok": True, "view": view})
+
+
+@router.put("/staffing/skills/views/{name}")
+async def staffing_skills_view_update(name: str, request: Request):
+    from .. import skill_matrix_views_store as views_store
+    body = await request.json()
+    if views_store.get_view(name) is None:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    view = views_store.update_view(name, body)
+    return JSONResponse({"ok": True, "view": view})
+
+
+@router.delete("/staffing/skills/views/default")
+def staffing_skills_view_clear_default():
+    from .. import skill_matrix_views_store as views_store
+    views_store.set_default(None)
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/staffing/skills/views/{name}")
+def staffing_skills_view_delete(name: str):
+    from .. import skill_matrix_views_store as views_store
+    views_store.delete_view(name)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/staffing/skills/views/{name}/default")
+def staffing_skills_view_set_default(name: str):
+    from .. import skill_matrix_views_store as views_store
+    if views_store.get_view(name) is None:
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    views_store.set_default(name)
+    return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/people/add")
