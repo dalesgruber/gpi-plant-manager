@@ -143,6 +143,10 @@ def sync(force: bool = False) -> SyncResult:
 
     _write_last_sync(pulled_at)
 
+    # Bust caches that depend on the freshly-synced data.
+    from . import cert_lookup
+    cert_lookup.invalidate_cache()
+
     return SyncResult(
         ok=True, refreshed=True, employee_count=len(employees),
         skill_column_count=len(columns), last_sync_at=pulled_at,

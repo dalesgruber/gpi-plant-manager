@@ -91,7 +91,7 @@ def _fetch_wc_totals(client, day: date) -> dict[str, tuple[int, int]]:
     zero output (which is what attribute_for_day does).
     """
     from . import staffing  # local import — staffing imports leaderboard.Station
-    from .leaderboard import leaderboard  # local — leaderboard pulls shift_config/tzdata
+    from .leaderboard import cached_leaderboard as leaderboard  # local — leaderboard pulls shift_config/tzdata
     from .stations import Station
 
     metered = [loc for loc in staffing.LOCATIONS if loc.meter_id]

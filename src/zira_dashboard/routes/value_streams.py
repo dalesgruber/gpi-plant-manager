@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 
 from .. import layout_store, settings_store, shift_config, staffing, widget_customizer, work_centers_store
 from ..deps import _parse_day, _state, client, templates
-from ..leaderboard import leaderboard
+from ..leaderboard import cached_leaderboard as leaderboard
 from ..progress import progress_buckets
 from ..shift_config import shift_elapsed_minutes
 from ..stations import Station, recycling_stations

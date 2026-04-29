@@ -1,10 +1,16 @@
 """Per-widget visual customization (title, color, etc.) backed by Postgres
-`widget_customizations` (page, widget_id) -> JSONB."""
+`widget_customizations` (page, widget_id) -> JSONB.
+
+`load_all` is hot — runs on every dashboard render. Cached in-process
+for 30 seconds. `save_one` / `reset_one` invalidate the cached page so
+edits show up immediately."""
 
 from __future__ import annotations
 
 import json
 import re
+
+from ._cache import TTLCache
 
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
@@ -12,6 +18,8 @@ ORIENTATIONS = {"horizontal", "vertical"}
 NUMBER_POSITIONS = {"widget", "bar", "inside", "hidden"}
 SORTS = {"preset", "desc", "asc", "alpha"}
 ALIGNS = {"left", "center", "right"}
+
+_CACHE = TTLCache(ttl_seconds=30.0, max_entries=16)
 
 
 def _decode(raw) -> dict:
@@ -24,6 +32,10 @@ def _decode(raw) -> dict:
 
 
 def load_all(page: str) -> dict[str, dict]:
+    return _CACHE.get_or_compute(page, lambda: _load_all_uncached(page))
+
+
+def _load_all_uncached(page: str) -> dict[str, dict]:
     from . import db
     rows = db.query(
         "SELECT widget_id, customizations FROM widget_customizations WHERE page = %s",
@@ -75,6 +87,7 @@ def save_one(page: str, widget_id: str, config: dict) -> dict:
             "DELETE FROM widget_customizations WHERE page = %s AND widget_id = %s",
             (page, widget_id),
         )
+    _CACHE.invalidate(page)
     return clean
 
 
@@ -84,3 +97,4 @@ def reset_one(page: str, widget_id: str) -> None:
         "DELETE FROM widget_customizations WHERE page = %s AND widget_id = %s",
         (page, widget_id),
     )
+    _CACHE.invalidate(page)

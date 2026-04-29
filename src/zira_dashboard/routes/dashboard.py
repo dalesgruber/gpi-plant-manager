@@ -21,7 +21,7 @@ from ..deps import (
     client,
     templates,
 )
-from ..leaderboard import leaderboard
+from ..leaderboard import cached_leaderboard as leaderboard
 from ..stations import CATEGORIES
 
 router = APIRouter()

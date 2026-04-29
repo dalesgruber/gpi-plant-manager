@@ -9,6 +9,7 @@ from typing import Any
 
 from zira_probe.client import ZiraClient
 
+from ._cache import TTLCache
 from .shift_config import SITE_TZ, in_shift_on, shift_end_for
 from .stations import Station
 
@@ -211,3 +212,31 @@ def leaderboard(
         )
     results.sort(key=lambda r: (-r.units, r.station.name))
     return results
+
+
+# In-process cache for full leaderboard results, keyed by
+# (sorted meter ids, day, is_today). For today, TTL is short (30s)
+# so up-to-the-minute production stays visible. For past days,
+# results are immutable; we still TTL them to bound cache size, but
+# longer (1h). Cache is per-process — a Railway redeploy resets it.
+_TODAY_CACHE = TTLCache(ttl_seconds=30.0, max_entries=16)
+_PAST_CACHE = TTLCache(ttl_seconds=3600.0, max_entries=64)
+
+
+def cached_leaderboard(
+    client: ZiraClient,
+    stations: list[Station],
+    day: date,
+    now_utc: datetime | None = None,
+) -> list[StationTotal]:
+    """Same contract as `leaderboard()`, but caches results so
+    repeated requests within the TTL skip the Zira API round-trip
+    (~1 call per station, paginated). For 'today' the TTL is 30s;
+    for past days it's 1h."""
+    today = datetime.now(timezone.utc).date()
+    is_today = day == today
+    key = (tuple(sorted(s.meter_id for s in stations)), day.isoformat(), is_today)
+    cache = _TODAY_CACHE if is_today else _PAST_CACHE
+    return cache.get_or_compute(
+        key, lambda: leaderboard(client, stations, day, now_utc)
+    )
