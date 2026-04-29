@@ -307,6 +307,15 @@ CREATE TABLE IF NOT EXISTS skill_matrix_views (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS skill_matrix_views_default_idx
   ON skill_matrix_views (is_default) WHERE is_default = TRUE;
+
+-- Per-WC display settings for the leaderboards page ------------------
+
+CREATE TABLE IF NOT EXISTS leaderboard_wc_settings (
+  wc_name      TEXT PRIMARY KEY,
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  is_inactive  BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
