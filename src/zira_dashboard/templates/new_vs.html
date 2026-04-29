@@ -104,7 +104,7 @@
   </div>
 
   <div class="panel">
-    <h3>Pallets by Work Center<span class="sub">— New value stream</span></h3>
+    <h3>Pallets by Work Center — New value stream</h3>
     {% if bars %}
       {% for b in bars %}
         <div class="bar-row" title="{{ b.who if b.who else b.name }} — {{ b.units }}{% if b.expected %} / {{ b.expected }} expected{% endif %}{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
@@ -132,7 +132,7 @@
   </div>
 
   <div class="panel">
-    <h3>Downtime Report<span class="sub">— green = working, red = down (shift-scoped)</span></h3>
+    <h3>Downtime Report — green = working, red = down (shift-scoped)</h3>
     {% if elapsed_minutes == 0 %}
       <div class="empty-state">No elapsed shift minutes on this day (weekend or before 7:00 AM).</div>
     {% elif downtime_rows %}

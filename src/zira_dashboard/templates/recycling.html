@@ -665,7 +665,7 @@
     <div class="grid-stack-item" {{ widget_attrs('dismantler-bars', 0, 2, 6, 4) }}>
       <div class="grid-stack-item-content">
         {{ edit_controls('dismantler-bars', 'Pallets by Work Center — Dismantlers', 'bars') }}
-        <h3>{{ widget_title('dismantler-bars', 'Pallets by Work Center') }}<span class="sub">— Dismantlers</span></h3>
+        <h3>{{ widget_title('dismantler-bars', 'Pallets by Work Center — Dismantlers') }}</h3>
         <div class="widget-body">
           {{ bar_chart('dismantler-bars', dismantler_bars) }}
         </div>
@@ -675,7 +675,7 @@
     <div class="grid-stack-item" {{ widget_attrs('repair-bars', 6, 2, 6, 4) }}>
       <div class="grid-stack-item-content">
         {{ edit_controls('repair-bars', 'Pallets by Work Center — Repairs', 'bars') }}
-        <h3>{{ widget_title('repair-bars', 'Pallets by Work Center') }}<span class="sub">— Repairs</span></h3>
+        <h3>{{ widget_title('repair-bars', 'Pallets by Work Center — Repairs') }}</h3>
         <div class="widget-body">
           {{ bar_chart('repair-bars', repair_bars) }}
         </div>
@@ -723,7 +723,7 @@
     <div class="grid-stack-item" {{ widget_attrs('dismantler-progress', 0, 6, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {{ edit_controls('dismantler-progress', 'All Dismantlers — 15-minute progress', 'progress') }}
-        <h3>{{ widget_title('dismantler-progress', 'All Dismantlers') }}<span class="sub">— 15-minute progress</span></h3>
+        <h3>{{ widget_title('dismantler-progress', 'All Dismantlers — 15-minute progress') }}</h3>
         <div class="widget-body">
           {% if dismantler_progress %}
             {{ progress_chart(dismantler_progress, dismantler_group_target, (dismantler_group_target / 4)|round|int, 'dismantler-progress') }}
@@ -737,7 +737,7 @@
     <div class="grid-stack-item" {{ widget_attrs('repair-progress', 0, 11, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('repair-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {{ edit_controls('repair-progress', 'All Repairs — 15-minute progress', 'progress') }}
-        <h3>{{ widget_title('repair-progress', 'All Repairs') }}<span class="sub">— 15-minute progress</span></h3>
+        <h3>{{ widget_title('repair-progress', 'All Repairs — 15-minute progress') }}</h3>
         <div class="widget-body">
           {% if repair_progress %}
             {{ progress_chart(repair_progress, repair_group_target, (repair_group_target / 4)|round|int, 'repair-progress') }}
@@ -751,7 +751,7 @@
     <div class="grid-stack-item" {{ widget_attrs('downtime-report', 0, 16, 12, 4) }}>
       <div class="grid-stack-item-content" {% set dc = customs.get('downtime-report', {}).get('color') %}{% if dc %}style="--good-color: {{ dc }}"{% endif %}>
         {{ edit_controls('downtime-report', 'Downtime Report', 'downtime') }}
-        <h3>{{ widget_title('downtime-report', 'Downtime Report') }}<span class="sub">— green = working, red = down (shift-scoped)</span></h3>
+        <h3>{{ widget_title('downtime-report', 'Downtime Report — green = working, red = down (shift-scoped)') }}</h3>
         <div class="widget-body">
           {% if elapsed_minutes == 0 %}
             <div style="color:var(--muted);font-size:0.85rem">No elapsed shift minutes on this day (weekend or before 7:00 AM).</div>
