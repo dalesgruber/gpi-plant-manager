@@ -382,6 +382,36 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         b["pct"] = (b["units"] / scale * 100.0) if scale else 0.0
     bars.sort(key=lambda x: -x["units"])
 
+    # ---- Per-bucket dismantler / repair progress (cumulative widgets) ----
+    # New VS has sparse metering, so we use a flat target function instead of
+    # the full break-aware machinery the Recycling route uses. Each 15-min
+    # bucket gets a target of (sum of group hourly targets) * (bucket_min/60).
+    new_dismantlers = [r for r in results if r.station.category == "Dismantler"]
+    new_repairs    = [r for r in results if r.station.category == "Repair"]
+
+    def _flat_target_fn(group):
+        def fn(b_start_local, b_end_local):
+            bucket_min = (b_end_local - b_start_local).total_seconds() / 60.0
+            total_hourly = sum(settings_store.station_target(r.station) for r in group)
+            return total_hourly * bucket_min / 60.0
+        return fn
+
+    new_dism_progress = (
+        progress_buckets(new_dismantlers, d, now, target_fn=_flat_target_fn(new_dismantlers))
+        if new_dismantlers else []
+    )
+    new_repair_progress = (
+        progress_buckets(new_repairs, d, now, target_fn=_flat_target_fn(new_repairs))
+        if new_repairs else []
+    )
+
+    def _flat_group_goal(rows):
+        if not rows:
+            return 0.0
+        return sum(settings_store.station_target(r.station) for r in rows)
+    new_dism_group_target = _flat_group_goal(new_dismantlers)
+    new_repair_group_target = _flat_group_goal(new_repairs)
+
     downtime_rows = []
     for r in results:
         working = max(0, elapsed - r.downtime_minutes)
@@ -411,6 +441,12 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
             "elapsed_minutes": elapsed,
             "bars": bars,
             "downtime_rows": downtime_rows,
+            "has_dismantlers": bool(new_dismantlers),
+            "has_repairs": bool(new_repairs),
+            "new_dism_progress": new_dism_progress,
+            "new_repair_progress": new_repair_progress,
+            "new_dism_group_target": new_dism_group_target,
+            "new_repair_group_target": new_repair_group_target,
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
