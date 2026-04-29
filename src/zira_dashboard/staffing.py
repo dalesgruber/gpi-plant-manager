@@ -302,10 +302,35 @@ def snapshot_of(sched: "Schedule") -> dict:
     }
 
 
+# Per-day Schedule cache. shift_start_for / shift_end_for / breaks_for
+# call load_schedule(d) inside hot loops (per-sample, per-bucket), so a
+# naive Postgres round-trip per call exhausts the connection pool. We
+# cache by day; save_schedule() invalidates the matching entry.
+_schedule_cache: dict[date, "Schedule"] = {}
+_schedule_cache_lock = RLock()
+
+
+def _invalidate_schedule_cache(day: date) -> None:
+    with _schedule_cache_lock:
+        _schedule_cache.pop(day, None)
+
+
 def load_schedule(day: date) -> Schedule:
     """Hydrate a Schedule from Postgres (schedules + schedule_assignments
     + schedule_time_off + schedule_wc_notes). Returns an empty Schedule
-    if the day has no row yet."""
+    if the day has no row yet. Cached in-process per-day; invalidated on
+    save_schedule()."""
+    with _schedule_cache_lock:
+        cached = _schedule_cache.get(day)
+        if cached is not None:
+            return cached
+    sched = _load_schedule_from_db(day)
+    with _schedule_cache_lock:
+        _schedule_cache[day] = sched
+    return sched
+
+
+def _load_schedule_from_db(day: date) -> "Schedule":
     from . import db
     rows = db.query(
         "SELECT day, published, testing_day, notes, custom_hours, published_snapshot "
@@ -356,6 +381,7 @@ def save_schedule(schedule: Schedule) -> None:
     """Upsert the day's schedule + replace its assignments / time off /
     wc_notes atomically (delete-then-insert inside one transaction)."""
     from . import db
+    _invalidate_schedule_cache(schedule.day)
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO schedules (day, published, testing_day, notes, "

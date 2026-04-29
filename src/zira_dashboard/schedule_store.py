@@ -1,11 +1,20 @@
 """Plant work schedule: shift hours, work days, breaks. Persisted in the
-`global_schedule` table (singleton row id=1)."""
+`global_schedule` table (singleton row id=1).
+
+Heavy callers (in_shift_on, shift_start_for, etc.) invoke current() in
+hot loops — once per sample inside fetch_station_day, which itself runs
+in 10-way parallel from the leaderboard. Without an in-process cache,
+that's thousands of DB round trips per page render and the connection
+pool exhausts. We cache the singleton in module state and invalidate
+on save().
+"""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from datetime import time
+from threading import RLock
 
 WEEKDAY_NAMES = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
@@ -75,9 +84,11 @@ def _row_to_schedule(row: dict) -> Schedule:
     return Schedule(start, end, wd, tuple(brks))
 
 
-def current() -> Schedule:
-    """Read the singleton global_schedule row. Falls back to DEFAULT_SCHEDULE
-    if the table has no row yet (first-run before migration)."""
+_lock = RLock()
+_cache: Schedule | None = None
+
+
+def _load_from_db() -> Schedule:
     from . import db
     rows = db.query(
         "SELECT shift_start, shift_end, work_weekdays, breaks FROM global_schedule WHERE id = 1"
@@ -87,7 +98,20 @@ def current() -> Schedule:
     return _row_to_schedule(rows[0])
 
 
+def current() -> Schedule:
+    """Return the singleton global_schedule. Cached in process memory after
+    first read; invalidated on save(). Falls back to DEFAULT_SCHEDULE if the
+    table has no row yet."""
+    global _cache
+    with _lock:
+        if _cache is None:
+            _cache = _load_from_db()
+        return _cache
+
+
 def save(sched: Schedule) -> None:
+    """Persist + invalidate the cache so the next current() call re-reads."""
+    global _cache
     from . import db
     db.execute(
         "INSERT INTO global_schedule (id, shift_start, shift_end, work_weekdays, breaks, updated_at) "
@@ -105,9 +129,13 @@ def save(sched: Schedule) -> None:
             ]),
         ),
     )
+    with _lock:
+        _cache = sched
 
 
 def reload() -> Schedule:
-    """Compatibility shim — Postgres has no in-process cache, so this is
-    just a fresh read."""
-    return current()
+    """Force a fresh read from Postgres, bypassing the cache."""
+    global _cache
+    with _lock:
+        _cache = _load_from_db()
+        return _cache
