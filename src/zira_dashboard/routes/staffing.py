@@ -230,6 +230,9 @@ def staffing_page(
             "time_off_pool": time_off_pool,
             "unassigned": sorted(unassigned),
             "reserves": sorted(reserves),
+            # JS uses this to route auto-removed people back to the right
+            # left-rail list (Unscheduled vs Reserves) on uncheck/X.
+            "people_meta": {p.name: {"reserve": p.reserve} for p in active_people},
             "defaults_by_loc": defaults_by_loc,
             "skill_labels": staffing.SKILL_LABELS,
             "has_snapshot": has_snapshot,

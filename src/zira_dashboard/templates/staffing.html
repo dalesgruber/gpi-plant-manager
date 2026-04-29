@@ -617,7 +617,7 @@
       <h3>Unscheduled <span class="count">{{ unassigned|length }}</span></h3>
       <ul>
         {% if unassigned %}
-          {% for n in unassigned %}<li>{{ n }}</li>{% endfor %}
+          {% for n in unassigned %}<li data-name="{{ n }}">{{ n }}</li>{% endfor %}
         {% else %}
           <li class="empty">— all scheduled —</li>
         {% endif %}
@@ -648,7 +648,7 @@
       <h3>Reserves <span class="count">{{ reserves|length }}</span></h3>
       <ul>
         {% if reserves %}
-          {% for n in reserves %}<li>{{ n }}</li>{% endfor %}
+          {% for n in reserves %}<li data-name="{{ n }}">{{ n }}</li>{% endfor %}
         {% else %}
           <li class="empty">— none flagged —</li>
         {% endif %}
@@ -1220,8 +1220,10 @@
     e.preventDefault();
     const pill = x.closest('.pill');
     if (!pill) return;
+    const name = pill.dataset.name;
     pill.remove();
-    // Refresh the count badge in the Time Off heading.
+    // Live-update the left rail: send them back to whichever list owns them.
+    if (name) addBackToCorrectList(name);
     refreshTimeOffCount();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   });
@@ -1290,6 +1292,61 @@
       const items = sect.querySelectorAll('ul li:not(.empty)');
       const cspan = sect.querySelector('h3 .count');
       if (cspan) cspan.textContent = items.length;
+    }
+  }
+
+  // Per-person metadata (reserve flag) for routing add-backs to the right list.
+  const __peopleMeta = {{ people_meta | tojson }};
+
+  function _insertSorted(ul, name) {
+    const li = document.createElement('li');
+    li.dataset.name = name;
+    li.textContent = name;
+    const existing = [...ul.querySelectorAll('li:not(.empty)')];
+    const target = existing.find(other => other.textContent.trim().toLowerCase() > name.toLowerCase());
+    if (target) ul.insertBefore(li, target); else ul.appendChild(li);
+  }
+
+  function addToUnscheduled(name) {
+    if (!name) return;
+    const sect = document.querySelector('.section.unscheduled');
+    if (!sect) return;
+    const ul = sect.querySelector('ul');
+    if (!ul) return;
+    if (ul.querySelector(`li[data-name="${CSS.escape(name)}"]`)) return;  // already there
+    const empty = ul.querySelector('li.empty');
+    if (empty) empty.remove();
+    _insertSorted(ul, name);
+    const items = ul.querySelectorAll('li:not(.empty)');
+    const cspan = sect.querySelector('h3 .count');
+    if (cspan) cspan.textContent = items.length;
+  }
+
+  function addToReserves(name) {
+    if (!name) return;
+    const sect = document.querySelector('.section.reserves');
+    if (!sect) return;
+    const ul = sect.querySelector('ul');
+    if (!ul) return;
+    if (ul.querySelector(`li[data-name="${CSS.escape(name)}"]`)) return;
+    const empty = ul.querySelector('li.empty');
+    if (empty) empty.remove();
+    _insertSorted(ul, name);
+    const items = ul.querySelectorAll('li:not(.empty)');
+    const cspan = sect.querySelector('h3 .count');
+    if (cspan) cspan.textContent = items.length;
+  }
+
+  /** Decide where this person belongs when removed from a WC or Time Off,
+   * based on the per-person reserve flag rendered into __peopleMeta. */
+  function addBackToCorrectList(name) {
+    if (!name) return;
+    const meta = __peopleMeta[name];
+    if (!meta) return;  // unknown person (e.g., old-name reference); silently noop
+    if (meta.reserve) {
+      addToReserves(name);
+    } else {
+      addToUnscheduled(name);
     }
   }
 
@@ -1406,8 +1463,10 @@
             __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
             setWcTraining(loc, true);
             flagTestingDay();
-            // Mutual exclusion: silent pull from Time Off if she was off.
+            // Mutual exclusion + live left-rail update.
             removeFromTimeOff(item.dataset.name);
+            removeFromUnscheduled(item.dataset.name);
+            removeFromReserves(item.dataset.name);
             refreshPickerVisibility();
             if (typeof scheduleAutosave === 'function') scheduleAutosave();
           },
@@ -1431,8 +1490,23 @@
       // Just remember the current selection for the over-max revert path; the
       // understaffed warning is fired on picker close, not on every selection.
       __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
-      // Mutual exclusion: when adding to a WC, silently pull her out of Time Off.
-      if (nowSelected) removeFromTimeOff(item.dataset.name);
+      const personName = item.dataset.name;
+      if (nowSelected) {
+        // Mutual exclusion + live-update left rail when scheduling.
+        removeFromTimeOff(personName);
+        removeFromUnscheduled(personName);
+        removeFromReserves(personName);
+      } else {
+        // Unchecking from a WC — unless they're scheduled elsewhere or in
+        // time off, return them to the right left-rail list.
+        const stillScheduled = !!document.querySelector(
+          'details.sched-dd input[type=checkbox]:checked[value="' + CSS.escape(personName) + '"]'
+        );
+        const inTimeOff = !!document.querySelector(
+          '.section.timeoff .pill[data-name="' + CSS.escape(personName) + '"]'
+        );
+        if (!stillScheduled && !inTimeOff) addBackToCorrectList(personName);
+      }
     }
     // Re-filter every picker so this person disappears from / reappears in others.
     refreshPickerVisibility();
@@ -1454,6 +1528,7 @@
     if (__viewingPosted) return;
     const dd = document.querySelector('details.sched-dd[data-loc="' + CSS.escape(btn.dataset.loc) + '"]');
     if (!dd) return;
+    const cleared = [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name);
     dd.querySelectorAll('.dd-item.selected').forEach(item => {
       item.classList.remove('selected');
       const cb = item.querySelector('input[type=checkbox]');
@@ -1461,6 +1536,17 @@
     });
     updateDdSummary(dd);
     __prevSel.set(dd, []);
+    // Send each cleared person back to the left rail unless they're still
+    // scheduled at another WC or in Time Off.
+    cleared.forEach(name => {
+      const stillScheduled = !!document.querySelector(
+        'details.sched-dd input[type=checkbox]:checked[value="' + CSS.escape(name) + '"]'
+      );
+      const inTimeOff = !!document.querySelector(
+        '.section.timeoff .pill[data-name="' + CSS.escape(name) + '"]'
+      );
+      if (!stillScheduled && !inTimeOff) addBackToCorrectList(name);
+    });
     refreshPickerVisibility();
     if (typeof scheduleAutosave === 'function') scheduleAutosave();
   });
