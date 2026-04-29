@@ -50,6 +50,8 @@ from . import cert_icons
 from .deps import templates
 
 templates.env.globals["cert_icon_svg"] = cert_icons.icon_for
+templates.env.globals["cert_icon_slug"] = cert_icons.slug_for
+templates.env.globals["cert_icon_data"] = cert_icons.all_data
 
 
 @app.middleware("http")

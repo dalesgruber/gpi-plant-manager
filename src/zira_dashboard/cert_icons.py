@@ -70,6 +70,17 @@ _CERT_ICONS: dict[str, str] = {
     "spotter truck certified": _SVG_SPOTTER,
 }
 
+# Slug per cert — drives the per-cert color class on the badge wrapper
+# (e.g., `cert-badge-forklift` → yellow). Same lookup keys as _CERT_ICONS.
+# Certs without a slug here render with the default badge color.
+_CERT_SLUGS: dict[str, str] = {
+    "forklift certified": "forklift",
+    "cdl (automatics) certified": "cdl-auto",
+    "cdl (manuals) certified": "cdl-manual",
+    "dot certified": "dot",
+    "spotter truck certified": "spotter",
+}
+
 
 def icon_for(cert_name: str) -> str | None:
     """Return the inline SVG for the given cert name, or None if unmapped.
@@ -79,3 +90,26 @@ def icon_for(cert_name: str) -> str | None:
     if not cert_name:
         return None
     return _CERT_ICONS.get(cert_name.strip().lower())
+
+
+def slug_for(cert_name: str) -> str | None:
+    """Return the slug (e.g., 'forklift') for the given cert name, or None.
+
+    Drives the per-cert color CSS class on the badge wrapper.
+    """
+    if not cert_name:
+        return None
+    return _CERT_SLUGS.get(cert_name.strip().lower())
+
+
+def all_data() -> dict[str, dict[str, str]]:
+    """Return {cert_name_lower: {svg, slug}} for every mapped cert.
+
+    Exposed to the browser so live-injected DOM nodes (the JS path in
+    staffing.html's appendCertBadges) can render the same SVG + color
+    class as the server-rendered macro, instead of a text pill.
+    """
+    return {
+        name: {"svg": svg, "slug": _CERT_SLUGS.get(name, "")}
+        for name, svg in _CERT_ICONS.items()
+    }

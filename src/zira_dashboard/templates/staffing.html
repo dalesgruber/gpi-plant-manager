@@ -991,29 +991,31 @@
 
 <script>
   window.PERSON_CERTS = {{ person_certs|tojson }};
+  window.CERT_ICON_DATA = {{ cert_icon_data()|tojson }};
 </script>
 
 <script>
   // ---------- Cert badges (live-injected names) ----------
   // Server-rendered names get real SVG badges via the Jinja macro.
   // Live-built DOM nodes (drag/drop, time-off add, summary rebuild) call this
-  // helper to append simple text-pill badges. Trade-off documented in the plan:
-  // text pills only here so the helper has no CSS dependency; next page reload
-  // restores the SVG icons.
+  // helper, which mirrors the macro by looking up the same SVG + color slug
+  // from window.CERT_ICON_DATA. Falls back to a text pill for unmapped certs.
   function appendCertBadges(parentEl, name) {
     const certs = (window.PERSON_CERTS || {})[name] || [];
     if (!certs.length) return;
     const wrap = document.createElement('span');
     wrap.className = 'cert-badges';
     for (const cert of certs) {
+      const data = (window.CERT_ICON_DATA || {})[cert.trim().toLowerCase()];
       const span = document.createElement('span');
-      span.className = 'cert-badge-js';
       span.title = cert;
-      span.textContent = cert.split(' ')[0].toUpperCase();
-      span.style.cssText =
-        'font-size:0.65rem;font-weight:600;padding:1px 5px;' +
-        'border-radius:999px;border:1px solid #ccc;color:#666;' +
-        'text-transform:uppercase;margin-left:4px;';
+      if (data && data.svg) {
+        span.className = 'cert-badge' + (data.slug ? ' cert-badge-' + data.slug : '');
+        span.innerHTML = data.svg;
+      } else {
+        span.className = 'cert-pill';
+        span.textContent = cert.split(/\s+/)[0].toUpperCase();
+      }
       wrap.appendChild(span);
     }
     parentEl.appendChild(wrap);

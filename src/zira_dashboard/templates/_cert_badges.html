@@ -26,14 +26,19 @@ the inline SVG string for a known cert, or None for an unmapped cert
 .cert-badge {
   display: inline-flex;
   align-items: center;
+  color: var(--accent, currentColor);
 }
 .cert-badge svg {
   width: 14px;
   height: 14px;
   display: block;
-  color: var(--accent, currentColor);
-  opacity: 0.85;
+  opacity: 0.95;
 }
+/* Per-cert color overrides — SVG strokes inherit `color` via currentColor. */
+.cert-badge-forklift   { color: #facc15; } /* yellow */
+.cert-badge-spotter    { color: #22c55e; } /* green  */
+.cert-badge-cdl-manual { color: #3b82f6; } /* blue   */
+.cert-badge-cdl-auto   { color: #a855f7; } /* purple */
 .cert-pill {
   display: inline-block;
   font-size: 0.65rem;
@@ -54,8 +59,9 @@ the inline SVG string for a known cert, or None for an unmapped cert
 <span class="cert-badges">
 {%- for cert in certs -%}
   {%- set svg = cert_icon_svg(cert) -%}
+  {%- set slug = cert_icon_slug(cert) -%}
   {%- if svg -%}
-    <span class="cert-badge" title="{{ cert }}">{{ svg|safe }}</span>
+    <span class="cert-badge{% if slug %} cert-badge-{{ slug }}{% endif %}" title="{{ cert }}">{{ svg|safe }}</span>
   {%- else -%}
     <span class="cert-pill" title="{{ cert }}">{{ cert.split()[0]|upper }}</span>
   {%- endif -%}
