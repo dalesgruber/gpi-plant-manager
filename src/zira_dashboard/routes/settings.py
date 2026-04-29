@@ -128,7 +128,9 @@ def settings_page(request: Request, saved: int = Query(default=0)):
     # then Supervisor.
     from .. import db as _db
     _skill_rows = _db.query(
-        "SELECT name FROM skills ORDER BY skill_type, lower(name)"
+        "SELECT name FROM skills "
+        "WHERE skill_type IN ('Production Skills', 'Supervisor Skills') "
+        "ORDER BY skill_type, lower(name)"
     )
     skills_all = [r["name"] for r in _skill_rows]
     return templates.TemplateResponse(

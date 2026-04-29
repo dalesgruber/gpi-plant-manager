@@ -3,9 +3,12 @@
 Usage:
   {% from "_cert_badges.html" import cert_badges, cert_badges_css %}
   ...
-  <head>...{{ cert_badges_css() }}</head>
+  <head><style>... {{ cert_badges_css() }} ...</style></head>
   ...
   <span class="name">{{ name }}</span>{{ cert_badges(name, person_certs) }}
+
+`cert_badges_css()` emits raw CSS rules (NOT wrapped in a <style> tag);
+call it inside an existing <style> block in the template.
 
 `cert_icon_svg` is registered as a Jinja global in app.py — it returns
 the inline SVG string for a known cert, or None for an unmapped cert
@@ -13,7 +16,6 @@ the inline SVG string for a known cert, or None for an unmapped cert
 #}
 
 {% macro cert_badges_css() -%}
-<style>
 .cert-badges {
   display: inline-flex;
   align-items: center;
@@ -44,7 +46,6 @@ the inline SVG string for a known cert, or None for an unmapped cert
   letter-spacing: 0.02em;
   line-height: 1.3;
 }
-</style>
 {%- endmacro %}
 
 {% macro cert_badges(name, person_certs) -%}
