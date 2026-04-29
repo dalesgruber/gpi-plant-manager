@@ -158,6 +158,31 @@
 
   /* Per-widget edit button + panel */
   .grid-stack-item-content { position: relative; }
+  /* People-count badge in widget header (top-right, left of edit controls). */
+  .grid-stack-item-content .people-count {
+    position: absolute;
+    top: 0.55rem;
+    right: 2.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 999px;
+    z-index: 2;
+  }
+  .grid-stack-item-content .people-count::before {
+    content: "";
+    width: 11px;
+    height: 11px;
+    background: currentColor;
+    -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>") center/contain no-repeat;
+    mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/><circle cx='9' cy='7' r='4'/><path d='M22 21v-2a4 4 0 0 0-3-3.87'/><path d='M16 3.13a4 4 0 0 1 0 7.75'/></svg>") center/contain no-repeat;
+  }
   .widget-edit-btn {
     position: absolute; top: 0.35rem; right: 0.4rem;
     width: 22px; height: 22px; line-height: 18px;
@@ -875,11 +900,6 @@
               {% set pts.s = pts.s + ('%.3f,%.3f ' % (x, y)) %}
             {% endfor %}
             <polyline points="{{ pts.s|trim }}"/>
-            {% if n > 0 %}
-              {% set last_x = ((n - 0.5) / n * 100.0) %}
-              {% set last_y = (100.0 - (acc.target[n-1] / scale * 100.0)) %}
-              <text class="end-label" x="{{ '%.2f'|format(last_x) }}" y="{{ '%.2f'|format(last_y - 1.5) }}" text-anchor="end">Target</text>
-            {% endif %}
           </svg>
         </div>
       </div>
@@ -922,6 +942,7 @@
     <div class="grid-stack-item" {{ widget_attrs('dismantler-cumulative', 0, 16, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-cumulative', {}).get('color') %}{% if pc %}style="--good: {{ pc }}"{% endif %}>
         {{ edit_controls('dismantler-cumulative', 'All Dismantlers — Daily Progress', 'progress') }}
+        <span class="people-count" title="People scheduled in this group">{{ dismantler_people }}</span>
         <h3>{{ widget_title('dismantler-cumulative', 'All Dismantlers — Daily Progress') }}</h3>
         <div class="widget-body">
           {% if dismantler_progress %}
@@ -936,6 +957,7 @@
     <div class="grid-stack-item" {{ widget_attrs('repair-cumulative', 0, 21, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('repair-cumulative', {}).get('color') %}{% if pc %}style="--good: {{ pc }}"{% endif %}>
         {{ edit_controls('repair-cumulative', 'All Repairs — Daily Progress', 'progress') }}
+        <span class="people-count" title="People scheduled in this group">{{ repair_people }}</span>
         <h3>{{ widget_title('repair-cumulative', 'All Repairs — Daily Progress') }}</h3>
         <div class="widget-body">
           {% if repair_progress %}

@@ -292,6 +292,14 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             "repair_progress": repair_progress,
             "dismantler_group_target": dism_group_target,
             "repair_group_target": repair_group_target,
+            "dismantler_people": sum(
+                len(sched_for_labels.assignments.get(r.station.name, []))
+                for r in dismantlers
+            ),
+            "repair_people": sum(
+                len(sched_for_labels.assignments.get(r.station.name, []))
+                for r in repairs
+            ),
             "layout": layout_store.layout_map("recycling"),
             "customs": customs_all,
             "now_label": now_label,
@@ -447,6 +455,14 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
             "new_repair_progress": new_repair_progress,
             "new_dism_group_target": new_dism_group_target,
             "new_repair_group_target": new_repair_group_target,
+            "new_dism_people": sum(
+                len(sched_for_labels.assignments.get(r.station.name, []))
+                for r in new_dismantlers
+            ),
+            "new_repair_people": sum(
+                len(sched_for_labels.assignments.get(r.station.name, []))
+                for r in new_repairs
+            ),
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
