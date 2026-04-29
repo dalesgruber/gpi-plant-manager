@@ -31,7 +31,7 @@ from psycopg2.pool import ThreadedConnectionPool
 _pool: Optional[ThreadedConnectionPool] = None
 
 
-def init_pool(minconn: int = 1, maxconn: int = 8) -> None:
+def init_pool(minconn: int = 1, maxconn: int = 20) -> None:
     """Initialize the global connection pool. Idempotent — second call no-ops.
 
     Reads the connection string from the ``DATABASE_URL`` environment variable.
