@@ -311,11 +311,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS skill_matrix_views_default_idx
 -- Per-WC display settings for the leaderboards page ------------------
 
 CREATE TABLE IF NOT EXISTS leaderboard_wc_settings (
-  wc_name      TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL DEFAULT 'wc',
+  wc_name      TEXT NOT NULL,
   sort_order   INTEGER NOT NULL DEFAULT 0,
   is_inactive  BOOLEAN NOT NULL DEFAULT FALSE,
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (kind, wc_name)
 );
+
+-- Idempotent: add `kind` column to a pre-existing table that has the
+-- legacy single-column PK on wc_name.
+ALTER TABLE leaderboard_wc_settings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'wc';
+
+-- Migrate single-column PK to composite (kind, wc_name) when needed.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'leaderboard_wc_settings_pkey'
+      AND conrelid = 'leaderboard_wc_settings'::regclass
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+    WHERE i.indrelid = 'leaderboard_wc_settings'::regclass
+      AND i.indisprimary
+      AND a.attname = 'kind'
+  ) THEN
+    ALTER TABLE leaderboard_wc_settings DROP CONSTRAINT leaderboard_wc_settings_pkey;
+    ALTER TABLE leaderboard_wc_settings ADD PRIMARY KEY (kind, wc_name);
+  END IF;
+END $$;
 """
 
 

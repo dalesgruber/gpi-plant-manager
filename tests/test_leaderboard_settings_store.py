@@ -20,51 +20,63 @@ def _clean():
 def test_snapshot_empty_returns_empty_dict():
     snap = store.snapshot()
     # filter to test rows so other data in the table doesn't matter
-    test_rows = {k: v for k, v in snap.items() if k.startswith("TestWC")}
+    test_rows = {k: v for k, v in snap["wc"].items() if k.startswith("TestWC")}
     assert test_rows == {}
 
 
 def test_set_order_assigns_left_to_right_indexes():
-    store.set_order(["TestWCa", "TestWCb", "TestWCc"])
+    store.set_order("wc", ["TestWCa", "TestWCb", "TestWCc"])
     snap = store.snapshot()
-    assert snap["TestWCa"]["sort_order"] == 0
-    assert snap["TestWCb"]["sort_order"] == 1
-    assert snap["TestWCc"]["sort_order"] == 2
+    assert snap["wc"]["TestWCa"]["sort_order"] == 0
+    assert snap["wc"]["TestWCb"]["sort_order"] == 1
+    assert snap["wc"]["TestWCc"]["sort_order"] == 2
     # default is_inactive is False
-    assert snap["TestWCa"]["is_inactive"] is False
-    assert snap["TestWCb"]["is_inactive"] is False
-    assert snap["TestWCc"]["is_inactive"] is False
+    assert snap["wc"]["TestWCa"]["is_inactive"] is False
+    assert snap["wc"]["TestWCb"]["is_inactive"] is False
+    assert snap["wc"]["TestWCc"]["is_inactive"] is False
 
 
 def test_set_order_preserves_is_inactive_flag():
-    store.set_inactive("TestWCx", True)
-    store.set_order(["TestWCx", "TestWCy"])
+    store.set_inactive("wc", "TestWCx", True)
+    store.set_order("wc", ["TestWCx", "TestWCy"])
     snap = store.snapshot()
-    assert snap["TestWCx"]["sort_order"] == 0
-    assert snap["TestWCx"]["is_inactive"] is True  # preserved across set_order
-    assert snap["TestWCy"]["sort_order"] == 1
-    assert snap["TestWCy"]["is_inactive"] is False
+    assert snap["wc"]["TestWCx"]["sort_order"] == 0
+    assert snap["wc"]["TestWCx"]["is_inactive"] is True  # preserved across set_order
+    assert snap["wc"]["TestWCy"]["sort_order"] == 1
+    assert snap["wc"]["TestWCy"]["is_inactive"] is False
 
 
 def test_set_inactive_preserves_sort_order():
-    store.set_order(["TestWCp", "TestWCq"])
-    store.set_inactive("TestWCp", True)
+    store.set_order("wc", ["TestWCp", "TestWCq"])
+    store.set_inactive("wc", "TestWCp", True)
     snap = store.snapshot()
-    assert snap["TestWCp"]["sort_order"] == 0  # preserved across set_inactive
-    assert snap["TestWCp"]["is_inactive"] is True
+    assert snap["wc"]["TestWCp"]["sort_order"] == 0  # preserved across set_inactive
+    assert snap["wc"]["TestWCp"]["is_inactive"] is True
     # toggle back off
-    store.set_inactive("TestWCp", False)
+    store.set_inactive("wc", "TestWCp", False)
     snap = store.snapshot()
-    assert snap["TestWCp"]["sort_order"] == 0
-    assert snap["TestWCp"]["is_inactive"] is False
+    assert snap["wc"]["TestWCp"]["sort_order"] == 0
+    assert snap["wc"]["TestWCp"]["is_inactive"] is False
 
 
 def test_set_order_skips_blank_and_non_string_entries():
     # mix of valid + blank/whitespace entries; non-string values are skipped.
-    store.set_order(["TestWCm", "", "   ", "TestWCn"])
+    store.set_order("wc", ["TestWCm", "", "   ", "TestWCn"])
     snap = store.snapshot()
-    assert snap["TestWCm"]["sort_order"] == 0
-    assert snap["TestWCn"]["sort_order"] == 3
+    assert snap["wc"]["TestWCm"]["sort_order"] == 0
+    assert snap["wc"]["TestWCn"]["sort_order"] == 3
     # blank entries did not produce rows
-    assert "" not in snap
-    assert "   " not in snap
+    assert "" not in snap["wc"]
+    assert "   " not in snap["wc"]
+
+
+def test_kinds_are_isolated():
+    store.set_order("wc", ["TestWC1"])
+    store.set_order("group", ["TestWC1"])
+    snap = store.snapshot()
+    assert snap["wc"]["TestWC1"]["sort_order"] == 0
+    assert snap["group"]["TestWC1"]["sort_order"] == 0
+    store.set_inactive("group", "TestWC1", True)
+    snap = store.snapshot()
+    assert snap["wc"]["TestWC1"]["is_inactive"] is False
+    assert snap["group"]["TestWC1"]["is_inactive"] is True

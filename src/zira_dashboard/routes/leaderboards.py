@@ -42,7 +42,7 @@ def staffing_leaderboards(
     records = production_history.daily_records(start_d, end_d, client)
 
     # Per-WC top-5 computation.
-    settings = lstore.snapshot()
+    settings = lstore.snapshot().get("wc", {})
     sections = []
     for loc in staffing.LOCATIONS:
         target_per_day = settings_store.station_target_per_day(
@@ -125,19 +125,19 @@ async def leaderboards_set_order(request: Request):
     order = body.get("order") or []
     if not isinstance(order, list):
         return JSONResponse({"ok": False, "error": "order must be a list"}, status_code=400)
-    lstore.set_order([str(x) for x in order if isinstance(x, str)])
+    lstore.set_order("wc", [str(x) for x in order if isinstance(x, str)])
     return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/leaderboards/wc/{name}/inactive")
 def leaderboards_set_inactive(name: str):
     from .. import leaderboard_settings_store as lstore
-    lstore.set_inactive(name, True)
+    lstore.set_inactive("wc", name, True)
     return JSONResponse({"ok": True})
 
 
 @router.post("/staffing/leaderboards/wc/{name}/active")
 def leaderboards_set_active(name: str):
     from .. import leaderboard_settings_store as lstore
-    lstore.set_inactive(name, False)
+    lstore.set_inactive("wc", name, False)
     return JSONResponse({"ok": True})
