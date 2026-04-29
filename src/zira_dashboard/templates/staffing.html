@@ -1069,6 +1069,7 @@
 <script>
   window.PERSON_CERTS = {{ person_certs|tojson }};
   window.CERT_ICON_DATA = {{ cert_icon_data()|tojson }};
+  window.SCHEDULE_DAY = {{ day|tojson }};
 </script>
 
 <script>
@@ -2012,11 +2013,11 @@
     btn.disabled = true;
     btn.innerHTML = '<span style="font-size:0.85rem;font-weight:600">Posting…</span>';
     try {
-      // Pull the day from the URL — same key the GET handler uses.
-      const params = new URLSearchParams(window.location.search);
-      const day = params.get('day');
+      // Day is rendered server-side; fall back to URL for safety.
+      const day = window.SCHEDULE_DAY
+        || new URLSearchParams(window.location.search).get('day');
       if (!day) {
-        showToast('No day in URL — refresh the page', null, 'error');
+        showToast('No day available — refresh the page', null, 'error');
         return;
       }
       const r = await fetch(`/staffing/share-to-slack?day=${encodeURIComponent(day)}`, {
