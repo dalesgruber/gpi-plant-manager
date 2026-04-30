@@ -137,26 +137,9 @@
     font-size: 0.95rem;
     transition: transform 0.15s ease;
   }
-  /* Pin pushes itself + chevron to the right edge of the summary. */
-  details.collapsible > summary .pin-btn { margin-left: auto; }
   details.collapsible[open] > summary .collapsible-chevron { transform: rotate(180deg); }
-  /* Pin button */
-  .pin-btn {
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    padding: 0.15rem 0.4rem;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 0.85rem;
-    margin-left: 0.25rem;
-    opacity: 0.55;
-    transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
-  }
-  .pin-btn:hover { color: var(--fg); border-color: var(--border); opacity: 1; }
-  .pin-btn.pinned { color: var(--accent); background: var(--accent-dim); border-color: var(--accent); opacity: 1; }
 
-  /* Page-level toolbar: Undo / Redo / Pin buttons live in the top-right of
+  /* Page-level toolbar: Undo / Redo buttons live in the top-right of
      the page header rather than in each panel summary. */
   header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
   header .page-actions { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; }
@@ -172,7 +155,6 @@
   header .page-actions .redo-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; }
   header .page-actions .undo-btn:disabled,
   header .page-actions .redo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  header .page-actions .pin-btn { margin-left: 0.2rem; }
 
   /* Default People picker — same dropdown look as the Scheduled picker on the
      scheduler. Native checkboxes hidden; row clicks toggle them. List opens
@@ -334,7 +316,6 @@
   .popover button.primary  { background: var(--panel-2); color: var(--fg); }
   .popover button.override { background: var(--warn); color: white; border-color: var(--warn); }
   .popover button:hover { filter: brightness(1.08); }
-  form.pinned > details.collapsible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
 
   /* Inline save-status text next to the Save button */
   .save-flash {
@@ -356,11 +337,6 @@
   /* Work Centers table */
   .wc-table th.num, .wc-table td.num { width: 4.5rem; }
   .wc-table td input[type=number] { width: 100%; }
-  .wc-table .note-cell input[type=text] {
-    width: 100%; min-width: 8rem;
-    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 0.25rem 0.45rem; font: inherit; font-size: 0.85rem;
-  }
   .wc-table .skills-cell { min-width: 9rem; }
   .wc-table .group-cell { min-width: 7rem; }
   .wc-table .group-cell select {
@@ -552,13 +528,12 @@
   <div class="settings-content">
   <!-- Company Schedule -->
   <form method="post" action="/settings/schedule" id="schedule-form"
-        data-panel-id="schedule" data-section="schedule"
+        data-section="schedule"
         {% if active_section != 'schedule' %}style="display:none"{% endif %}>
     <details class="panel collapsible">
       <summary>
         <h2 style="display:inline;margin:0">Company Schedule</h2>
         <span class="collapsible-sub">{{ schedule.shift_start }}–{{ schedule.shift_end }} · {{ schedule.work_weekdays | length }} days · {{ schedule.breaks | length }} breaks</span>
-        <button type="button" class="pin-btn" data-panel-id="schedule" title="Pin to top" aria-label="Pin">📌</button>
         <span class="collapsible-chevron" aria-hidden="true">▾</span>
       </summary>
 
@@ -598,13 +573,12 @@
 
   <!-- Unified Work Centers & Goals -->
   <form method="post" action="/settings/work_centers" id="wc-form"
-        data-panel-id="work_centers" data-section="work_centers"
+        data-section="work_centers"
         {% if active_section != 'work_centers' %}style="display:none"{% endif %}>
     <details class="panel collapsible">
       <summary>
         <h2>Work Centers &amp; Goals</h2>
         <span class="collapsible-sub">pallets / day · {{ wc_rows | length }} work centers · {{ vs_rows | length }} value streams · {{ group_rows | length }} groups</span>
-        <button type="button" class="pin-btn" data-panel-id="work_centers" title="Pin to top" aria-label="Pin">📌</button>
         <span class="collapsible-chevron" aria-hidden="true">▾</span>
       </summary>
 
@@ -621,7 +595,6 @@
             <th class="num">Max people</th>
             <th class="num">Goal</th>
             <th>Breakdown</th>
-            <th>Note</th>
           </tr>
         </thead>
         <tbody>
@@ -735,9 +708,6 @@
                 <input type="number" class="target-input" name="{{ p }}goal_per_day" min="0" step="1" value="{{ r.goal }}" data-fallback="{{ r.goal }}">
               </td>
               <td class="breakdown-cell"><div class="breakdown" data-breakdown></div></td>
-              <td class="note-cell">
-                <input type="text" name="{{ p }}note" value="{{ r.note }}" placeholder="—" maxlength="500">
-              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -821,56 +791,6 @@
     inp.addEventListener('input', () => renderFor(inp));
   });
 
-  // --- Pin panels to top + auto-expand on load ---
-  (function () {
-    const PINS_KEY = 'settings-pins';
-    const readPins = () => {
-      try { return new Set(JSON.parse(localStorage.getItem(PINS_KEY) || '[]')); }
-      catch (_) { return new Set(); }
-    };
-    const writePins = (set) => localStorage.setItem(PINS_KEY, JSON.stringify([...set]));
-    const main = document.querySelector('main');
-
-    function applyPins() {
-      const pinned = readPins();
-      // Update button visuals
-      document.querySelectorAll('.pin-btn').forEach(btn => {
-        const id = btn.dataset.panelId;
-        const on = pinned.has(id);
-        btn.classList.toggle('pinned', on);
-        btn.title = on ? 'Unpin' : 'Pin to top';
-      });
-      // Reorder: pinned forms (in saved order) come first; others keep their original order.
-      const forms = [...main.querySelectorAll('form[data-panel-id]')];
-      const pinnedList = [...pinned].map(id => forms.find(f => f.dataset.panelId === id)).filter(Boolean);
-      const rest = forms.filter(f => !pinned.has(f.dataset.panelId));
-      [...pinnedList, ...rest].forEach(f => main.appendChild(f));
-      // Expand pinned panels; mark their form for visual accent
-      forms.forEach(f => {
-        const isPinned = pinned.has(f.dataset.panelId);
-        f.classList.toggle('pinned', isPinned);
-        if (isPinned) {
-          const d = f.querySelector('details.collapsible');
-          if (d) d.open = true;
-        }
-      });
-    }
-
-    document.querySelectorAll('.pin-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();  // don't toggle the <details>
-        const id = btn.dataset.panelId;
-        const pinned = readPins();
-        if (pinned.has(id)) pinned.delete(id); else pinned.add(id);
-        writePins(pinned);
-        applyPins();
-      });
-    });
-
-    applyPins();
-  })();
-
   // --- Inline save-status next to the clicked Save button ---
   function flashBesideButton(btn, msg, isError) {
     if (!btn || !btn.parentElement) return;
@@ -890,7 +810,7 @@
   }
 
   // --- Intercept form submits: save via fetch, keep the page as-is ---
-  document.querySelectorAll('form[data-panel-id]').forEach(form => {
+  document.querySelectorAll('form[data-section]').forEach(form => {
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       // Track which submit button was used (if any), else fall back to the first.
