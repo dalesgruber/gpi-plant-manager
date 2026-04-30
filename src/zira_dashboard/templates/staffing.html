@@ -10,6 +10,57 @@
   {{ cert_badges_css() }}
   /* Save toast (top-center) — shared with skills + settings. */
   {% include "_save_toast.html" %}
+  .autosave {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+    min-width: 1.2rem;
+    height: 1.2rem;
+  }
+  .autosave.clean {
+    display: none;
+  }
+  .autosave.dirty {
+    display: inline-flex;
+    color: #dc2626;
+  }
+  .autosave.dirty::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #dc2626;
+  }
+  .autosave.dirty::after {
+    content: "Unsaved";
+    font-size: 0.72rem;
+    color: #6b7280;
+  }
+  .autosave.saving {
+    display: inline-flex;
+    color: #6b7280;
+  }
+  .autosave.saving::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: autosave-spin 0.8s linear infinite;
+  }
+  .autosave.saving::after {
+    content: "Saving…";
+    font-size: 0.72rem;
+  }
+  @keyframes autosave-spin {
+    to { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
@@ -167,6 +218,7 @@
             <span class="draft-label">DRAFT</span>
             <button type="submit" name="action" value="save" class="save-draft-btn">Save Draft</button>
           {% endif %}
+          <span id="autosave-indicator" class="autosave clean" aria-live="polite"></span>
           <button type="button" class="publish-btn icon-btn print-btn" onclick="printSchedule()" title="Print" aria-label="Print">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <polyline points="6 9 6 2 18 2 18 9"/>
@@ -309,6 +361,8 @@
   window.PERSON_CERTS = {{ person_certs|tojson }};
   window.CERT_ICON_DATA = {{ cert_icon_data()|tojson }};
   window.SCHEDULE_DAY = {{ day|tojson }};
+  window.SCHEDULE_VIEW_MODE = {{ view_mode|tojson }};
+  window.SCHEDULE_PUBLISHED = {{ published|tojson }};
 </script>
 
 <script>
@@ -1246,6 +1300,90 @@
     host.appendChild(toast);
     setTimeout(() => toast.remove(), 6000);
   }
+
+  // ---------- Autosave controller ----------
+  // Debounced fetch POST of the scheduler form. Three states reflected
+  // in #autosave-indicator: clean (hidden), dirty (red dot), saving
+  // (spinner). Exposes window.flushAutosave() for the publish/share
+  // flow to await any in-flight save.
+  (function () {
+    const form = document.getElementById('staffing-form');
+    if (!form) return;
+
+    const indicator = document.getElementById('autosave-indicator');
+    const DEBOUNCE_MS = 750;
+    let debounceTimer = null;
+    let inFlight = null;
+    let queued = false;
+
+    function setState(state) {
+      if (!indicator) return;
+      indicator.classList.remove('clean', 'dirty', 'saving');
+      indicator.classList.add(state);
+      indicator.dataset.state = state;
+    }
+
+    function fireSave() {
+      setState('saving');
+      const formData = new FormData(form);
+      formData.set('action', 'save');
+      const url = form.getAttribute('action')
+        || (window.location.pathname + window.location.search);
+      inFlight = fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Accept': 'application/json' },
+      })
+        .then(r => {
+          if (!r.ok && !(r.status >= 300 && r.status < 400)) {
+            throw new Error('HTTP ' + r.status);
+          }
+          return r;
+        })
+        .then(() => {
+          inFlight = null;
+          if (queued) {
+            queued = false;
+            fireSave();
+          } else {
+            setState('clean');
+          }
+        })
+        .catch(err => {
+          inFlight = null;
+          setState('dirty');
+          if (window.showToast) {
+            showToast('Autosave failed: ' + (err.message || 'unknown'), null, 'error');
+          }
+        });
+      return inFlight;
+    }
+
+    function onEdit() {
+      setState('dirty');
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        fireSave();
+      }, DEBOUNCE_MS);
+    }
+
+    form.addEventListener('input', onEdit);
+    form.addEventListener('change', onEdit);
+
+    window.flushAutosave = function () {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+        if (!inFlight) fireSave();
+      }
+      return inFlight || Promise.resolve();
+    };
+  })();
 
   async function postToSlack(btn) {
     const originalContent = btn.innerHTML;
