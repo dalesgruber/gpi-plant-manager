@@ -164,15 +164,18 @@ def staffing_leaderboards(
     wc_settings_dict = snap.get("wc", {})
     group_settings_dict = snap.get("group", {})
 
-    # Per-WC top-5 computation.
+    # Per-WC top-5 (best days) + per-WC averages computation.
+    from .. import shift_config
+
     sections = []
+    avg_sections = []
     for loc in staffing.LOCATIONS:
-        target_per_day = settings_store.station_target_per_day(
-            Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
-        )
+        station = Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+        target_per_day = settings_store.station_target_per_day(station)
+        target_per_hour = settings_store.station_target(station)
         wc_records = [r for r in records if r["wc"] == loc.name]
 
-        # Compute metric per record + sort.
+        # --- Best Days (existing top-5) ---
         def metric_value(r):
             if metric == "units":
                 return r["units"]
@@ -180,11 +183,9 @@ def staffing_leaderboards(
                 return 0.0
             return r["units"] / target_per_day
 
-        # Sort: metric desc; tiebreak by ascending day (oldest first).
         wc_records.sort(key=lambda r: (-metric_value(r), r["day"]))
         top = wc_records[:5]
 
-        # Per-row name_count = total days that operator worked at this WC across the whole range.
         name_counts: dict[str, int] = {}
         for r in wc_records:
             name_counts[r["person"]] = name_counts.get(r["person"], 0) + 1
@@ -207,10 +208,25 @@ def staffing_leaderboards(
             })
 
         wc_settings = wc_settings_dict.get(loc.name, {"sort_order": 0, "is_inactive": False})
-        auto_inactive = not rows
+        # auto_inactive: empty when there's no production AT ALL for the WC in the
+        # range. Both halves use the same flag — they share a row.
+        auto_inactive = not wc_records
         sections.append({
             "loc_name": loc.name,
             "rows": rows,
+            "is_inactive": wc_settings["is_inactive"] or auto_inactive,
+            "is_manually_inactive": wc_settings["is_inactive"],
+            "is_auto_empty": auto_inactive and not wc_settings["is_inactive"],
+            "sort_order": wc_settings["sort_order"],
+        })
+
+        # --- Best Averages (new) ---
+        avg_rows = averages_for_wc(
+            wc_records, target_per_hour, shift_config.productive_minutes_for, metric,
+        )
+        avg_sections.append({
+            "loc_name": loc.name,
+            "rows": avg_rows,
             "is_inactive": wc_settings["is_inactive"] or auto_inactive,
             "is_manually_inactive": wc_settings["is_inactive"],
             "is_auto_empty": auto_inactive and not wc_settings["is_inactive"],
@@ -222,9 +238,12 @@ def staffing_leaderboards(
     sort_key = lambda s: (s["sort_order"], loc_index.get(s["loc_name"], 999))
     active_sections = sorted([s for s in sections if not s["is_inactive"]], key=sort_key)
     inactive_sections = sorted([s for s in sections if s["is_inactive"]], key=sort_key)
+    active_avg_sections = sorted([s for s in avg_sections if not s["is_inactive"]], key=sort_key)
+    inactive_avg_sections = sorted([s for s in avg_sections if s["is_inactive"]], key=sort_key)
 
-    # Per-group top-5 computation.
+    # Per-group top-5 (best days) + per-group averages computation.
     group_sections = []
+    avg_group_sections = []
     for group_name in work_centers_store.registered_groups():
         member_locs = work_centers_store.members("group", group_name)
         member_names = {loc.name for loc in member_locs}
@@ -233,6 +252,12 @@ def staffing_leaderboards(
         g_records = [r for r in records if r["wc"] in member_names]
         target_by_wc = {
             loc.name: settings_store.station_target_per_day(
+                Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+            )
+            for loc in member_locs
+        }
+        target_per_hour_by_wc = {
+            loc.name: settings_store.station_target(
                 Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
             )
             for loc in member_locs
@@ -267,10 +292,23 @@ def staffing_leaderboards(
             })
 
         g_set = group_settings_dict.get(group_name, {"sort_order": 0, "is_inactive": False})
-        auto_inactive = not rows
+        auto_inactive = not g_records
         group_sections.append({
             "loc_name": group_name,
             "rows": rows,
+            "is_inactive": g_set["is_inactive"] or auto_inactive,
+            "is_manually_inactive": g_set["is_inactive"],
+            "is_auto_empty": auto_inactive and not g_set["is_inactive"],
+            "sort_order": g_set["sort_order"],
+        })
+
+        # --- Best Averages for this group (new) ---
+        avg_rows = averages_for_group(
+            g_records, target_per_hour_by_wc, shift_config.productive_minutes_for, metric,
+        )
+        avg_group_sections.append({
+            "loc_name": group_name,
+            "rows": avg_rows,
             "is_inactive": g_set["is_inactive"] or auto_inactive,
             "is_manually_inactive": g_set["is_inactive"],
             "is_auto_empty": auto_inactive and not g_set["is_inactive"],
@@ -285,6 +323,17 @@ def staffing_leaderboards(
         [s for s in group_sections if s["is_inactive"]],
         key=lambda s: s["sort_order"],
     )
+    active_avg_groups = sorted(
+        [s for s in avg_group_sections if not s["is_inactive"]],
+        key=lambda s: s["sort_order"],
+    )
+    inactive_avg_groups = sorted(
+        [s for s in avg_group_sections if s["is_inactive"]],
+        key=lambda s: s["sort_order"],
+    )
+
+    avg_sections_by_name = {s["loc_name"]: s for s in (active_avg_sections + inactive_avg_sections)}
+    avg_groups_by_name = {s["loc_name"]: s for s in (active_avg_groups + inactive_avg_groups)}
 
     response = templates.TemplateResponse(
         request,
@@ -295,6 +344,12 @@ def staffing_leaderboards(
             "inactive_sections": inactive_sections,
             "active_groups": active_groups,
             "inactive_groups": inactive_groups,
+            "active_avg_sections": active_avg_sections,
+            "inactive_avg_sections": inactive_avg_sections,
+            "active_avg_groups": active_avg_groups,
+            "inactive_avg_groups": inactive_avg_groups,
+            "avg_sections_by_name": avg_sections_by_name,
+            "avg_groups_by_name": avg_groups_by_name,
             "window": window,
             "metric": metric,
             "start": start_d.isoformat(),
