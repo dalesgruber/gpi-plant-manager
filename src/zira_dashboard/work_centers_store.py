@@ -15,6 +15,22 @@ from .staffing import LOCATIONS, Location, required_skills_for
 GROUP_KINDS = ("group", "value_stream")
 VALUE_STREAMS: tuple[str, ...] = ("New", "Recycled", "Transportation")
 
+from ._cache import TTLCache
+
+# Per-location WC config and per-group goal overrides change rarely
+# (only on Settings save). Cache for 60s and invalidate on writes.
+_EFFECTIVE_CACHE = TTLCache(ttl_seconds=60.0, max_entries=128)
+_GOAL_OVERRIDE_CACHE = TTLCache(ttl_seconds=60.0, max_entries=64)
+_GROUP_NAMES_CACHE = TTLCache(ttl_seconds=60.0, max_entries=4)
+
+
+def _invalidate_caches() -> None:
+    """Clear all in-process caches. Called by every write path so the
+    next read sees the freshly-saved state."""
+    _EFFECTIVE_CACHE.invalidate()
+    _GOAL_OVERRIDE_CACHE.invalidate()
+    _GROUP_NAMES_CACHE.invalidate()
+
 
 def _default_goal_for(loc: Location) -> int:
     category = {"Dismantler": "Dismantler", "Repair": "Repair"}.get(loc.skill, "Other")
@@ -24,6 +40,10 @@ def _default_goal_for(loc: Location) -> int:
 # ---------- effective per-work-center ----------
 
 def effective(loc: Location) -> dict:
+    return _EFFECTIVE_CACHE.get_or_compute(loc.name, lambda: _effective_uncached(loc))
+
+
+def _effective_uncached(loc: Location) -> dict:
     from . import db
     rows = db.query(
         "SELECT goal_per_day_override, min_ops, max_ops, value_stream, "
@@ -94,9 +114,16 @@ def group_goal_auto(kind: str, name: str) -> int:
 
 
 def group_goal_override(kind: str, name: str):
-    from . import db
     if kind not in GROUP_KINDS or not name:
         return None
+    return _GOAL_OVERRIDE_CACHE.get_or_compute(
+        (kind, name),
+        lambda: _group_goal_override_uncached(kind, name),
+    )
+
+
+def _group_goal_override_uncached(kind: str, name: str):
+    from . import db
     table = "groups" if kind == "group" else "value_streams"
     rows = db.query(
         f"SELECT goal_per_day_override FROM {table} WHERE name = %s",
@@ -114,6 +141,13 @@ def group_goal(kind: str, name: str) -> int:
 
 
 def all_group_names(kind: str) -> list[str]:
+    return list(_GROUP_NAMES_CACHE.get_or_compute(
+        kind,
+        lambda: tuple(_all_group_names_uncached(kind)),
+    ))
+
+
+def _all_group_names_uncached(kind: str) -> list[str]:
     from . import db
     seen, out = set(), []
     if kind == "group":
@@ -230,6 +264,7 @@ def save_one(loc: Location, updates: dict) -> dict:
                     (i, loc.name, person_name.strip()),
                 )
 
+    _invalidate_caches()
     return effective(loc)
 
 
@@ -248,6 +283,7 @@ def add_group(name: str) -> None:
         "INSERT INTO groups (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
         (name,),
     )
+    _invalidate_caches()
 
 
 def rename_group(old: str, new: str) -> None:
@@ -273,6 +309,7 @@ def rename_group(old: str, new: str) -> None:
             (old, new),
         )
         cur.execute("DELETE FROM groups WHERE name = %s", (old,))
+    _invalidate_caches()
 
 
 def delete_group(name: str) -> None:
@@ -286,6 +323,7 @@ def delete_group(name: str) -> None:
             (name,),
         )
         cur.execute("DELETE FROM groups WHERE name = %s", (name,))
+    _invalidate_caches()
 
 
 def save_group_override(kind: str, name: str, value) -> None:
@@ -310,6 +348,7 @@ def save_group_override(kind: str, name: str, value) -> None:
             f"ON CONFLICT (name) DO UPDATE SET goal_per_day_override = EXCLUDED.goal_per_day_override",
             (name, iv),
         )
+    _invalidate_caches()
 
 
 def snapshot() -> dict:
