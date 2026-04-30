@@ -5,7 +5,9 @@ print mode, convert to PDF, upload to the configured Slack channel.
 from __future__ import annotations
 
 import os
+import re
 from datetime import date
+from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -14,6 +16,8 @@ from .. import slack_client
 from .staffing import staffing_page
 
 router = APIRouter()
+
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _format_comment(day: str) -> str:
@@ -26,14 +30,40 @@ def _format_comment(day: str) -> str:
     return f"Schedule for {weekday} {d.month}/{d.day}"
 
 
+def _inline_static_css(html: str) -> str:
+    """Replace each <link rel="stylesheet" href="/static/X.css..."> with an
+    inline <style> block holding the file contents.
+
+    WeasyPrint otherwise has to fetch the stylesheet over HTTP — which on
+    Railway (TLS terminated at the edge) can fail or return wrong-scheme
+    URLs, leaving the PDF unstyled. Reading from disk avoids the network
+    round-trip and guarantees the PDF uses the same CSS the browser sees.
+    """
+    def _replace(match: re.Match) -> str:
+        filename = match.group(1)
+        css_path = _STATIC_DIR / filename
+        try:
+            css = css_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return match.group(0)  # leave the original link tag in place
+        return f"<style>\n{css}\n</style>"
+
+    pattern = re.compile(
+        r'<link[^>]+href="/static/([^"?]+)(?:\?[^"]*)?"[^>]*>',
+        re.IGNORECASE,
+    )
+    return pattern.sub(_replace, html)
+
+
 def _render_pdf(html: str, base_url: str) -> bytes:
     """Render HTML to PDF bytes via WeasyPrint.
 
     `base_url` lets WeasyPrint resolve any relative asset URLs in the
-    HTML (stylesheets, fonts) against the running server.
+    HTML (e.g., images) against the running server.
     """
     from weasyprint import HTML  # imported lazily — heavy dep
-    return HTML(string=html, base_url=base_url).write_pdf()
+    inlined = _inline_static_css(html)
+    return HTML(string=inlined, base_url=base_url).write_pdf()
 
 
 @router.post("/staffing/share-to-slack")
