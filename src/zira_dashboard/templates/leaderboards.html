@@ -4,76 +4,10 @@
 
 {% block styles %}
   {{ cert_badges_css() }}
-  .lb-toolbar {
-    display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
-    padding: 0.5rem 0.6rem; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 6px;
-    margin-bottom: 0.8rem; font-size: 0.85rem;
-  }
-  .lb-tool-label { color: var(--muted); margin-right: 0.2rem; }
-  .lb-chip {
-    display: inline-block; padding: 0.25rem 0.6rem; border-radius: 999px;
-    background: var(--panel-2); color: var(--fg);
-    border: 1px solid var(--border); text-decoration: none;
-    font: inherit; font-size: 0.82rem; cursor: pointer;
-  }
-  .lb-chip:hover { border-color: var(--accent); color: var(--accent); }
-  .lb-chip-on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .lb-custom { display: inline-flex; gap: 0.4rem; align-items: center; padding-left: 0.5rem; border-left: 1px solid var(--border); margin-left: 0.3rem; }
-  .lb-custom input[type=date] {
-    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
-    border-radius: 4px; padding: 0.2rem 0.4rem; font: inherit; font-size: 0.8rem;
-  }
+{% endblock %}
 
-  .lb-active-list,
-  .lb-inactive-content {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-    gap: 0.7rem;
-    align-items: start;
-  }
-
-  .lb-section {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 0.6rem 0.8rem;
-  }
-  .lb-section.dragging { opacity: 0.4; }
-  .lb-section-header {
-    display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem;
-  }
-  .lb-section-header h3 { margin: 0; font-size: 0.95rem; flex: 1; }
-  .lb-section-tag {
-    font-size: 0.65rem; color: var(--accent); background: var(--accent-dim);
-    padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.4rem;
-    text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700;
-    vertical-align: middle;
-  }
-  .lb-drag-handle { cursor: move; color: var(--muted); font-size: 1rem; user-select: none; padding: 0 0.3rem; }
-  .lb-drag-handle:hover { color: var(--fg); }
-  .lb-hide-btn, .lb-show-btn {
-    background: transparent; border: none; color: var(--muted);
-    cursor: pointer; font-size: 1rem; padding: 0.2rem 0.5rem; border-radius: 4px;
-  }
-  .lb-hide-btn:hover { color: var(--bad); background: var(--panel-2); }
-  .lb-show-btn:hover { color: var(--accent); background: var(--panel-2); }
-  .lb-auto-empty { font-size: 0.7rem; color: var(--muted); font-style: italic; }
-  .lb-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .lb-table th, .lb-table td { padding: 0.25rem 0.5rem; text-align: left; }
-  .lb-table th { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
-  .lb-table td { border-bottom: 1px solid var(--panel-2); }
-  .lb-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .lb-table .rank { color: var(--muted); width: 1.5rem; }
-  .lb-table .pct { font-weight: 600; }
-  .lb-name-count { color: var(--muted); font-size: 0.78rem; margin-left: 0.2rem; }
-  .lb-inactive-wrap { margin-top: 1.2rem; }
-  .lb-inactive-wrap > summary {
-    cursor: pointer; font-size: 0.85rem; color: var(--muted);
-    padding: 0.5rem 0.6rem; background: var(--panel-2);
-    border: 1px solid var(--border); border-radius: 6px;
-  }
-  .lb-inactive-wrap[open] > summary { color: var(--fg); }
-  .lb-inactive-wrap .lb-section { opacity: 0.85; }
-  .lb-inactive-content { margin-top: 0.5rem; }
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', path='leaderboards.css') }}?v={{ static_v('leaderboards.css') }}">
 {% endblock %}
 
 {% block content %}

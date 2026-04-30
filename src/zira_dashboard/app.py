@@ -12,9 +12,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .routes import (
@@ -101,12 +103,28 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Zira Station Dashboard", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
+_STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
 from . import cert_icons
 from .deps import templates
 
 templates.env.globals["cert_icon_svg"] = cert_icons.icon_for
 templates.env.globals["cert_icon_slug"] = cert_icons.slug_for
 templates.env.globals["cert_icon_data"] = cert_icons.all_data
+
+
+def _static_v(filename: str) -> str:
+    """Return a stable cache-busting token (the file's mtime as int)
+    so browsers re-fetch when the file changes but cache aggressively
+    when it doesn't."""
+    try:
+        return str(int((_STATIC_DIR / filename).stat().st_mtime))
+    except FileNotFoundError:
+        return "0"
+
+
+templates.env.globals["static_v"] = _static_v
 
 
 @app.middleware("http")
@@ -123,6 +141,20 @@ async def _security_headers(request, call_next):
     )
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
+
+
+@app.middleware("http")
+async def _static_cache_headers(request, call_next):
+    """Set far-future cache headers on /static/ responses. The
+    mtime-versioned URL (?v=<mtime>) makes browsers re-fetch when the
+    file changes, so it's safe to cache aggressively when it doesn't."""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers.setdefault(
+            "Cache-Control",
+            "public, max-age=31536000, immutable",
+        )
     return response
 
 
