@@ -31,16 +31,22 @@ def staffing_page(
     publish_blocked: int = Query(default=0),
     view: str = Query(default="draft"),
 ):
+    from concurrent.futures import ThreadPoolExecutor
     from .. import cert_lookup
-    person_certs = cert_lookup.load_person_certs()
     today = datetime.now(timezone.utc).date()
     # Default to tomorrow (Dale plans the day before).
     try:
         d = date.fromisoformat(day) if day else today + timedelta(days=1)
     except ValueError:
         d = today + timedelta(days=1)
-    roster = staffing.load_roster()
-    sched = staffing.load_schedule(d)
+    # Three independent reads — run concurrently so Postgres I/O overlaps.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_certs  = pool.submit(cert_lookup.load_person_certs)
+        f_roster = pool.submit(staffing.load_roster)
+        f_sched  = pool.submit(staffing.load_schedule, d)
+        person_certs = f_certs.result()
+        roster = f_roster.result()
+        sched = f_sched.result()
     # If this day has both a current draft and a posted snapshot, the user may want
     # to view the posted version. Swap the visible fields in from the snapshot.
     has_snapshot = bool(sched.published_snapshot) and not sched.published
