@@ -410,7 +410,7 @@ async def staffing_save(
                     defaults[loc.name] = list(dp)
             if defaults:
                 staffing.save_schedule(staffing.Schedule(day=next_day, published=False, assignments=defaults))
-        return RedirectResponse(f"/staffing?day={next_day.isoformat()}", status_code=303)
+        return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
     return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
