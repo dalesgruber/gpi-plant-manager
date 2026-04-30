@@ -1420,25 +1420,54 @@
     btn.disabled = true;
     btn.innerHTML = '<span style="font-size:0.85rem;font-weight:600">Posting…</span>';
     try {
-      // Day is rendered server-side; fall back to URL for safety.
       const day = window.SCHEDULE_DAY
         || new URLSearchParams(window.location.search).get('day');
       if (!day) {
         showToast('No day available — refresh the page', null, 'error');
         return;
       }
-      const r = await fetch(`/staffing/share-to-slack?day=${encodeURIComponent(day)}`, {
+
+      // Re-publish confirmation if the schedule has been published before.
+      if (window.SCHEDULE_PUBLISHED) {
+        const ok = confirm(
+          'Re-publish and post to Slack? Anyone with the previous version will see the revised schedule.'
+        );
+        if (!ok) return;
+      }
+
+      // Make sure any pending autosave finishes before publishing.
+      if (window.flushAutosave) {
+        await window.flushAutosave();
+      }
+
+      // Step 1: publish via the form's POST endpoint with action=publish.
+      const form = document.getElementById('staffing-form');
+      const fd = new FormData(form);
+      fd.set('action', 'publish');
+      const formAction = form.getAttribute('action')
+        || ('/staffing?day=' + encodeURIComponent(day));
+      const pubRes = await fetch(formAction, {
+        method: 'POST',
+        body: fd,
+        headers: { 'Accept': 'application/json' },
+      });
+      if (pubRes.status >= 400) {
+        throw new Error('Publish failed: HTTP ' + pubRes.status);
+      }
+
+      // Step 2: post the resulting PDF to Slack.
+      const r = await fetch('/staffing/share-to-slack?day=' + encodeURIComponent(day), {
         method: 'POST',
         headers: { 'Accept': 'application/json' },
       });
       const data = await r.json();
       if (data.ok) {
-        showToast(`Posted to #${data.channel_name}`, data.permalink);
+        showToast('Published & posted to #' + data.channel_name, data.permalink);
       } else {
-        showToast(`Slack post failed: ${data.error}`, null, 'error');
+        showToast('Slack post failed: ' + data.error, null, 'error');
       }
     } catch (e) {
-      showToast(`Slack post failed: ${e.message}`, null, 'error');
+      showToast(e.message || 'Slack post failed', null, 'error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = originalContent;
