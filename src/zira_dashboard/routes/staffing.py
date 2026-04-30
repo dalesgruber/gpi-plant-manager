@@ -77,11 +77,19 @@ def staffing_page(
     time_off_names = sched.assignments.get(staffing.TIME_OFF_KEY, [])
     time_off_set = set(time_off_names)
 
+    _options_cache: dict[tuple[str, ...], list[dict]] = {}
+
     def options_for(required: tuple[str, ...]) -> list[dict]:
         """All active people, tagged with trained = (level >= 1 in ALL required skills).
         Untrained people are hidden client-side unless the WC's per-row Training
         checkbox is ticked. Reserves are tagged so they can be split into a
-        secondary picker section (office/manager pool, only used when short)."""
+        secondary picker section (office/manager pool, only used when short).
+
+        Memoized within this request — many WCs share the same `required`
+        tuple, so we compute each unique skill set only once."""
+        cached = _options_cache.get(required)
+        if cached is not None:
+            return cached
         rows = []
         for p in active_people:
             levels = [p.level(s) for s in required] if required else []
@@ -94,6 +102,7 @@ def staffing_page(
                 "trained": trained,
                 "reserve": p.reserve,
             })
+        _options_cache[required] = rows
         return rows
 
     # Build a location-level render model and group by bay (preserving LOCATIONS order).
