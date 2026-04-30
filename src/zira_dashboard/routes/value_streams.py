@@ -270,7 +270,7 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             )
         return out
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "recycling.html",
         {
@@ -307,6 +307,9 @@ def recycling(request: Request, day: str | None = Query(default=None)):
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
+    from .._http_cache import set_cache_headers
+    set_cache_headers(response, includes_today=is_today)
+    return response
 
 
 @router.get("/new-vs", response_class=HTMLResponse)
@@ -433,7 +436,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
             "down_pct": r.downtime_minutes / total * 100.0,
         })
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "new_vs.html",
         {
@@ -466,3 +469,6 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
         },
     )
+    from .._http_cache import set_cache_headers
+    set_cache_headers(response, includes_today=is_today)
+    return response

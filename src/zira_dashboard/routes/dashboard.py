@@ -72,7 +72,7 @@ def index(
     for row in enriched:
         by_category[row["station"].category].append(row)
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "index.html",
         {
@@ -90,6 +90,9 @@ def index(
             "active_vs": "work_centers",
         },
     )
+    from .._http_cache import set_cache_headers
+    set_cache_headers(response, includes_today=is_today)
+    return response
 
 
 @router.get("/api/leaderboard")

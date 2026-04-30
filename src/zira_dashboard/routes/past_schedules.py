@@ -124,7 +124,7 @@ def staffing_past(
             "testing_day": bool(getattr(sched, "testing_day", False)),
         })
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "past_schedules.html",
         {
@@ -142,3 +142,6 @@ def staffing_past(
             "person_certs": person_certs,
         },
     )
+    from .._http_cache import set_cache_headers
+    set_cache_headers(response, includes_today=False)
+    return response

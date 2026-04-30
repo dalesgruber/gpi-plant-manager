@@ -171,7 +171,7 @@ def staffing_leaderboards(
         key=lambda s: s["sort_order"],
     )
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "leaderboards.html",
         {
@@ -189,6 +189,9 @@ def staffing_leaderboards(
             "person_certs": person_certs,
         },
     )
+    from .._http_cache import set_cache_headers, range_includes_today
+    set_cache_headers(response, includes_today=range_includes_today(end_d, today_d))
+    return response
 
 
 @router.post("/staffing/leaderboards/order")
