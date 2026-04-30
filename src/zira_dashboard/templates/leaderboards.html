@@ -37,82 +37,13 @@
 
 <div class="lb-active-list">
   {% for s in active_groups %}
-    <div class="lb-section lb-section-group" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
+    <div class="lb-section lb-section-row" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
       <div class="lb-section-header">
         <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
         <h3>{{ s.loc_name }} <span class="lb-section-tag">group</span></h3>
         <button type="button" class="lb-hide-btn" title="Mark inactive">&#10005;</button>
       </div>
-      {% if s.rows %}
-        <table class="lb-table">
-          <thead>
-            <tr>
-              <th>#</th><th>Operator</th><th>Date</th><th>WC</th>
-              <th class="num">Units</th><th class="num">% of Goal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in s.rows %}
-              <tr>
-                <td class="rank">{{ r.rank }}</td>
-                <td class="op">{{ r.name }}{{ cert_badges(r.name, person_certs) }} <span class="lb-name-count">({{ r.name_count }})</span></td>
-                <td>{{ r.day_label }}</td>
-                <td>{{ r.wc }}</td>
-                <td class="num">{{ r.units|round|int }}</td>
-                <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-    </div>
-  {% endfor %}
-  {% for s in active_sections %}
-    <div class="lb-section" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
-      <div class="lb-section-header">
-        <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
-        <h3>{{ s.loc_name }}</h3>
-        <button type="button" class="lb-hide-btn" title="Mark inactive">&#10005;</button>
-      </div>
-      {% if s.rows %}
-        <table class="lb-table">
-          <thead>
-            <tr>
-              <th>#</th><th>Operator</th><th>Date</th>
-              <th class="num">Units</th><th class="num">% of Goal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in s.rows %}
-              <tr>
-                <td class="rank">{{ r.rank }}</td>
-                <td class="op">{{ r.name }}{{ cert_badges(r.name, person_certs) }} <span class="lb-name-count">({{ r.name_count }})</span></td>
-                <td>{{ r.day_label }}</td>
-                <td class="num">{{ r.units|round|int }}</td>
-                <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-    </div>
-  {% endfor %}
-</div>
-
-<details class="lb-inactive-wrap" id="lb-inactive">
-  <summary>Inactive ({{ (inactive_sections|length) + (inactive_groups|length) }})</summary>
-  <div class="lb-inactive-content">
-    {% for s in inactive_groups %}
-      <div class="lb-section lb-section-group lb-section-inactive" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
-        <div class="lb-section-header">
-          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
-          <h3>{{ s.loc_name }} <span class="lb-section-tag">group</span></h3>
-          {% if s.is_manually_inactive %}
-            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
-          {% else %}
-            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
-          {% endif %}
-        </div>
+      <div class="lb-side-days">
         {% if s.rows %}
           <table class="lb-table">
             <thead>
@@ -136,18 +67,17 @@
           </table>
         {% endif %}
       </div>
-    {% endfor %}
-    {% for s in inactive_sections %}
-      <div class="lb-section lb-section-inactive" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
-        <div class="lb-section-header">
-          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
-          <h3>{{ s.loc_name }}</h3>
-          {% if s.is_manually_inactive %}
-            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
-          {% else %}
-            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
-          {% endif %}
-        </div>
+      <div class="lb-side-avg"></div>
+    </div>
+  {% endfor %}
+  {% for s in active_sections %}
+    <div class="lb-section lb-section-row" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
+      <div class="lb-section-header">
+        <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+        <h3>{{ s.loc_name }}</h3>
+        <button type="button" class="lb-hide-btn" title="Mark inactive">&#10005;</button>
+      </div>
+      <div class="lb-side-days">
         {% if s.rows %}
           <table class="lb-table">
             <thead>
@@ -169,6 +99,88 @@
             </tbody>
           </table>
         {% endif %}
+      </div>
+      <div class="lb-side-avg"></div>
+    </div>
+  {% endfor %}
+</div>
+
+<details class="lb-inactive-wrap" id="lb-inactive">
+  <summary>Inactive ({{ (inactive_sections|length) + (inactive_groups|length) }})</summary>
+  <div class="lb-inactive-content">
+    {% for s in inactive_groups %}
+      <div class="lb-section lb-section-row lb-section-inactive" data-kind="group" data-wc="{{ s.loc_name }}" draggable="true">
+        <div class="lb-section-header">
+          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+          <h3>{{ s.loc_name }} <span class="lb-section-tag">group</span></h3>
+          {% if s.is_manually_inactive %}
+            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
+          {% else %}
+            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
+          {% endif %}
+        </div>
+        <div class="lb-side-days">
+          {% if s.rows %}
+            <table class="lb-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Operator</th><th>Date</th><th>WC</th>
+                  <th class="num">Units</th><th class="num">% of Goal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in s.rows %}
+                  <tr>
+                    <td class="rank">{{ r.rank }}</td>
+                    <td class="op">{{ r.name }}{{ cert_badges(r.name, person_certs) }} <span class="lb-name-count">({{ r.name_count }})</span></td>
+                    <td>{{ r.day_label }}</td>
+                    <td>{{ r.wc }}</td>
+                    <td class="num">{{ r.units|round|int }}</td>
+                    <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+        </div>
+        <div class="lb-side-avg"></div>
+      </div>
+    {% endfor %}
+    {% for s in inactive_sections %}
+      <div class="lb-section lb-section-row lb-section-inactive" data-kind="wc" data-wc="{{ s.loc_name }}" draggable="true">
+        <div class="lb-section-header">
+          <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
+          <h3>{{ s.loc_name }}</h3>
+          {% if s.is_manually_inactive %}
+            <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
+          {% else %}
+            <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
+          {% endif %}
+        </div>
+        <div class="lb-side-days">
+          {% if s.rows %}
+            <table class="lb-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Operator</th><th>Date</th>
+                  <th class="num">Units</th><th class="num">% of Goal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in s.rows %}
+                  <tr>
+                    <td class="rank">{{ r.rank }}</td>
+                    <td class="op">{{ r.name }}{{ cert_badges(r.name, person_certs) }} <span class="lb-name-count">({{ r.name_count }})</span></td>
+                    <td>{{ r.day_label }}</td>
+                    <td class="num">{{ r.units|round|int }}</td>
+                    <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+        </div>
+        <div class="lb-side-avg"></div>
       </div>
     {% endfor %}
   </div>
