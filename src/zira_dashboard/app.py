@@ -7,8 +7,11 @@ and provides the ``main()`` entry point used by the console script.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,9 +32,53 @@ from .routes import (
 )
 
 
+_log = logging.getLogger(__name__)
+_WARMER_INTERVAL_SECONDS = 30
+
+
+async def _warm_zira_cache_loop():
+    """Periodically warm today's Zira leaderboard cache so user
+    requests on /recycling never pay the cold-cache penalty.
+
+    Runs every 30s. Each tick re-fetches today's leaderboard via
+    the existing cached_leaderboard helper, which writes through
+    the in-process TODAY cache. Past days are not touched here —
+    they're cached forever-ish on first read.
+
+    Errors are logged and swallowed; one bad Zira call shouldn't
+    kill the warmer."""
+    from .leaderboard import cached_leaderboard
+    from .stations import recycling_stations
+    while True:
+        try:
+            stations = recycling_stations()
+            if stations:
+                today = datetime.now(timezone.utc).date()
+                now_utc = datetime.now(timezone.utc)
+                # Run the (sync, blocking) leaderboard fetch off the event
+                # loop so we don't stall request handling.
+                await asyncio.to_thread(
+                    cached_leaderboard,
+                    _zira_client(),
+                    stations,
+                    today,
+                    now_utc,
+                )
+        except Exception as e:  # noqa: BLE001 — never let warmer kill itself
+            _log.warning("Zira warmer tick failed: %s", e)
+        await asyncio.sleep(_WARMER_INTERVAL_SECONDS)
+
+
+def _zira_client():
+    """Lazy import of the shared Zira client to avoid import cycles."""
+    from .deps import client
+    return client
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialise the Postgres pool and bootstrap schema on startup.
+    """Initialise the Postgres pool, start the Zira cache warmer,
+    bootstrap schema. On shutdown, cancel the warmer and shut the pool.
 
     If ``DATABASE_URL`` is missing or the pool can't be created,
     ``db.init_pool()`` raises with a clear message — fail fast rather than
@@ -39,9 +86,15 @@ async def lifespan(app: FastAPI):
     """
     db.init_pool()
     db.bootstrap_schema()
+    warmer_task = asyncio.create_task(_warm_zira_cache_loop())
     try:
         yield
     finally:
+        warmer_task.cancel()
+        try:
+            await warmer_task
+        except asyncio.CancelledError:
+            pass
         db.shutdown_pool()
 
 
