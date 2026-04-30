@@ -232,11 +232,35 @@ def cached_leaderboard(
     """Same contract as `leaderboard()`, but caches results so
     repeated requests within the TTL skip the Zira API round-trip
     (~1 call per station, paginated). For 'today' the TTL is 30s;
-    for past days it's 1h."""
+    for past days it's 1h. Past-day results are also persisted to
+    Postgres so they survive Railway redeploys."""
     today = datetime.now(timezone.utc).date()
     is_today = day == today
     key = (tuple(sorted(s.meter_id for s in stations)), day.isoformat(), is_today)
     cache = _TODAY_CACHE if is_today else _PAST_CACHE
-    return cache.get_or_compute(
-        key, lambda: leaderboard(client, stations, day, now_utc)
-    )
+
+    def _fetch_or_load():
+        # For past days, check Postgres first.
+        if not is_today:
+            try:
+                from . import _zira_persist
+                hit = _zira_persist.load_day(stations, day)
+                if hit is not None:
+                    return hit
+            except Exception:
+                # If Postgres is unavailable or the table doesn't exist
+                # yet, fall through to the API. Don't fail the request.
+                pass
+        # Cache miss — call Zira.
+        result = leaderboard(client, stations, day, now_utc)
+        # Persist past-day results so the next process redeploy still
+        # finds them. Today's results stay in-memory only.
+        if not is_today and result:
+            try:
+                from . import _zira_persist
+                _zira_persist.save_day(result, day)
+            except Exception:
+                pass
+        return result
+
+    return cache.get_or_compute(key, _fetch_or_load)

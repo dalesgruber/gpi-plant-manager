@@ -323,6 +323,19 @@ CREATE TABLE IF NOT EXISTS leaderboard_wc_settings (
 -- legacy single-column PK on wc_name.
 ALTER TABLE leaderboard_wc_settings ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'wc';
 
+-- Persistent cache for past-day Zira leaderboard results -------------
+-- Past-day production is immutable; survive Railway redeploys without
+-- re-paying the Zira API cost. Today's data stays in-process only.
+
+CREATE TABLE IF NOT EXISTS zira_daily_cache (
+  meter_id    TEXT NOT NULL,
+  day         DATE NOT NULL,
+  payload     JSONB NOT NULL,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (meter_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_zira_daily_cache_day ON zira_daily_cache(day);
+
 -- Migrate single-column PK to composite (kind, wc_name) when needed.
 DO $$
 BEGIN
