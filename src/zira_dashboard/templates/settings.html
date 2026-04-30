@@ -478,6 +478,46 @@
     font-size: 0.9rem;
     margin-bottom: 0.75rem;
   }
+  .settings-shell {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .settings-sidebar {
+    position: sticky;
+    top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .settings-nav-item {
+    display: block;
+    padding: 0.55rem 0.85rem;
+    border-radius: 8px;
+    color: var(--fg);
+    text-decoration: none;
+    font-size: 0.92rem;
+    font-weight: 500;
+  }
+  .settings-nav-item:hover {
+    background: var(--panel-2);
+  }
+  .settings-nav-item.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-weight: 700;
+  }
+  @media (max-width: 700px) {
+    .settings-shell { grid-template-columns: 1fr; }
+    .settings-sidebar {
+      position: static;
+      flex-direction: row;
+      gap: 0.4rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+    }
+  }
 </style>
 </head>
 <body>
@@ -497,8 +537,23 @@
   </div>
 </header>
 <main>
+<div class="settings-shell">
+  <aside class="settings-sidebar" aria-label="Settings sections">
+    <a href="?section=work_centers"
+       class="settings-nav-item {% if active_section == 'work_centers' %}active{% endif %}">
+      Work Centers &amp; Goals
+    </a>
+    <a href="?section=schedule"
+       class="settings-nav-item {% if active_section == 'schedule' %}active{% endif %}">
+      Company Schedule
+    </a>
+  </aside>
+
+  <div class="settings-content">
   <!-- Company Schedule -->
-  <form method="post" action="/settings/schedule" id="schedule-form" data-panel-id="schedule">
+  <form method="post" action="/settings/schedule" id="schedule-form"
+        data-panel-id="schedule" data-section="schedule"
+        {% if active_section != 'schedule' %}style="display:none"{% endif %}>
     <details class="panel collapsible">
       <summary>
         <h2 style="display:inline;margin:0">Company Schedule</h2>
@@ -542,7 +597,9 @@
   </form>
 
   <!-- Unified Work Centers & Goals -->
-  <form method="post" action="/settings/work_centers" id="wc-form" data-panel-id="work_centers">
+  <form method="post" action="/settings/work_centers" id="wc-form"
+        data-panel-id="work_centers" data-section="work_centers"
+        {% if active_section != 'work_centers' %}style="display:none"{% endif %}>
     <details class="panel collapsible">
       <summary>
         <h2>Work Centers &amp; Goals</h2>
@@ -735,6 +792,8 @@
 
     </details>
   </form>
+  </div>
+</div>
 </main>
 
 <script>
