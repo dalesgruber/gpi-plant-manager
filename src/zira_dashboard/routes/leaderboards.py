@@ -163,6 +163,8 @@ def staffing_leaderboards(
     snap = lstore.snapshot()
     wc_settings_dict = snap.get("wc", {})
     group_settings_dict = snap.get("group", {})
+    wc_avg_settings_dict = snap.get("wc-avg", {})
+    group_avg_settings_dict = snap.get("group-avg", {})
 
     # Per-WC top-5 (best days) + per-WC averages computation.
     from .. import shift_config
@@ -221,16 +223,18 @@ def staffing_leaderboards(
         })
 
         # --- Best Averages (new) ---
+        wc_avg_settings = wc_avg_settings_dict.get(loc.name, {"sort_order": 0, "is_inactive": False})
+        avg_auto_inactive = not wc_records
         avg_rows = averages_for_wc(
             wc_records, target_per_hour, shift_config.productive_minutes_for, metric,
         )
         avg_sections.append({
             "loc_name": loc.name,
             "rows": avg_rows,
-            "is_inactive": wc_settings["is_inactive"] or auto_inactive,
-            "is_manually_inactive": wc_settings["is_inactive"],
-            "is_auto_empty": auto_inactive and not wc_settings["is_inactive"],
-            "sort_order": wc_settings["sort_order"],
+            "is_inactive": wc_avg_settings["is_inactive"] or avg_auto_inactive,
+            "is_manually_inactive": wc_avg_settings["is_inactive"],
+            "is_auto_empty": avg_auto_inactive and not wc_avg_settings["is_inactive"],
+            "sort_order": wc_avg_settings["sort_order"],
         })
 
     # Stable secondary sort by LOCATIONS index (bay-organized natural order).
@@ -303,16 +307,18 @@ def staffing_leaderboards(
         })
 
         # --- Best Averages for this group (new) ---
+        g_avg_set = group_avg_settings_dict.get(group_name, {"sort_order": 0, "is_inactive": False})
+        avg_auto_inactive = not g_records
         avg_rows = averages_for_group(
             g_records, target_per_hour_by_wc, shift_config.productive_minutes_for, metric,
         )
         avg_group_sections.append({
             "loc_name": group_name,
             "rows": avg_rows,
-            "is_inactive": g_set["is_inactive"] or auto_inactive,
-            "is_manually_inactive": g_set["is_inactive"],
-            "is_auto_empty": auto_inactive and not g_set["is_inactive"],
-            "sort_order": g_set["sort_order"],
+            "is_inactive": g_avg_set["is_inactive"] or avg_auto_inactive,
+            "is_manually_inactive": g_avg_set["is_inactive"],
+            "is_auto_empty": avg_auto_inactive and not g_avg_set["is_inactive"],
+            "sort_order": g_avg_set["sort_order"],
         })
 
     active_groups = sorted(
@@ -332,9 +338,6 @@ def staffing_leaderboards(
         key=lambda s: s["sort_order"],
     )
 
-    avg_sections_by_name = {s["loc_name"]: s for s in (active_avg_sections + inactive_avg_sections)}
-    avg_groups_by_name = {s["loc_name"]: s for s in (active_avg_groups + inactive_avg_groups)}
-
     response = templates.TemplateResponse(
         request,
         "leaderboards.html",
@@ -348,8 +351,6 @@ def staffing_leaderboards(
             "inactive_avg_sections": inactive_avg_sections,
             "active_avg_groups": active_avg_groups,
             "inactive_avg_groups": inactive_avg_groups,
-            "avg_sections_by_name": avg_sections_by_name,
-            "avg_groups_by_name": avg_groups_by_name,
             "window": window,
             "metric": metric,
             "start": start_d.isoformat(),
@@ -367,7 +368,7 @@ def staffing_leaderboards(
 @router.post("/staffing/leaderboards/order")
 async def leaderboards_set_order(request: Request, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
-    if kind not in ("wc", "group"):
+    if kind not in ("wc", "group", "wc-avg", "group-avg"):
         return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
     body = await request.json()
     order = body.get("order") or []
@@ -380,7 +381,7 @@ async def leaderboards_set_order(request: Request, kind: str = Query(default="wc
 @router.post("/staffing/leaderboards/wc/{name}/inactive")
 def leaderboards_set_inactive(name: str, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
-    if kind not in ("wc", "group"):
+    if kind not in ("wc", "group", "wc-avg", "group-avg"):
         return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
     lstore.set_inactive(kind, name, True)
     return JSONResponse({"ok": True})
@@ -389,7 +390,7 @@ def leaderboards_set_inactive(name: str, kind: str = Query(default="wc")):
 @router.post("/staffing/leaderboards/wc/{name}/active")
 def leaderboards_set_active(name: str, kind: str = Query(default="wc")):
     from .. import leaderboard_settings_store as lstore
-    if kind not in ("wc", "group"):
+    if kind not in ("wc", "group", "wc-avg", "group-avg"):
         return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
     lstore.set_inactive(kind, name, False)
     return JSONResponse({"ok": True})

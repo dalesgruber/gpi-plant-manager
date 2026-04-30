@@ -51,43 +51,28 @@
   }
   .lb-custom-apply { align-self: flex-end; }
 
-  .lb-active-list,
-  .lb-inactive-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-    align-items: stretch;
-  }
-
-  .lb-section-row {
+  .lb-page-panes {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      "header header"
-      "days   avg";
-    column-gap: 0.8rem;
-    row-gap: 0.4rem;
+    gap: 1.5rem;
+    align-items: start;
   }
-  .lb-section-row > .lb-section-header { grid-area: header; }
-  .lb-section-row > .lb-side-days { grid-area: days; min-width: 0; }
-  .lb-section-row > .lb-side-avg  { grid-area: avg;  min-width: 0; }
-  .lb-section-row > .lb-side-days::before {
-    content: "Best Days";
-    display: block;
-    font-size: 0.7rem;
+  .lb-pane { min-width: 0; }
+  .lb-pane-avg { border-left: 1px solid var(--border); padding-left: 1.5rem; }
+  .lb-pane-header {
+    margin: 0 0 0.6rem 0;
+    font-size: 1rem;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 0.25rem;
+    font-weight: 700;
   }
-  .lb-section-row > .lb-side-avg::before {
-    content: "Best Averages";
-    display: block;
-    font-size: 0.7rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 0.25rem;
+
+  .lb-pane-active {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 0.7rem;
+    align-items: start;
   }
 
   .lb-row-hidden { display: none; }
@@ -105,14 +90,11 @@
   }
   .lb-expand-btn:hover { color: var(--accent); border-color: var(--accent); }
 
-  @media (max-width: 900px) {
-    .lb-section-row {
+  @media (max-width: 1100px) {
+    .lb-page-panes {
       grid-template-columns: 1fr;
-      grid-template-areas:
-        "header"
-        "days"
-        "avg";
     }
+    .lb-pane-avg { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 1rem; }
   }
 
   .lb-section {

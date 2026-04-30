@@ -8,14 +8,17 @@ from __future__ import annotations
 def snapshot() -> dict[str, dict[str, dict]]:
     """Return {kind: {name: {sort_order, is_inactive}}}.
 
-    Top-level keys are 'wc' and 'group' (always present, possibly empty).
+    Top-level keys are always present (possibly empty):
+    'wc', 'group', 'wc-avg', 'group-avg'.
     """
     from . import db
     rows = db.query(
         "SELECT kind, wc_name, sort_order, is_inactive "
         "FROM leaderboard_wc_settings"
     )
-    out: dict[str, dict[str, dict]] = {"wc": {}, "group": {}}
+    out: dict[str, dict[str, dict]] = {
+        "wc": {}, "group": {}, "wc-avg": {}, "group-avg": {},
+    }
     for r in rows:
         k = r["kind"] or "wc"
         out.setdefault(k, {})[r["wc_name"]] = {
@@ -28,7 +31,7 @@ def snapshot() -> dict[str, dict[str, dict]]:
 def set_order(kind: str, names: list[str]) -> None:
     """Upsert sort_order for each name within the given kind."""
     from . import db
-    if kind not in ("wc", "group"):
+    if kind not in ("wc", "group", "wc-avg", "group-avg"):
         return
     with db.cursor() as cur:
         for i, name in enumerate(names):
@@ -45,7 +48,7 @@ def set_order(kind: str, names: list[str]) -> None:
 
 def set_inactive(kind: str, name: str, value: bool) -> None:
     from . import db
-    if kind not in ("wc", "group"):
+    if kind not in ("wc", "group", "wc-avg", "group-avg"):
         return
     db.execute(
         "INSERT INTO leaderboard_wc_settings (kind, wc_name, is_inactive) "
