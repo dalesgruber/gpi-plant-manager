@@ -361,10 +361,10 @@ def recycling(
         if s == "alpha": return sorted(items, key=lambda x: x["name"].lower())
         return items
 
-    def _downtime_rows(category_filter):
+    def _downtime_rows():
         names = sorted(
             n for n in agg_active_names
-            if (category_filter is None or agg_category.get(n) == category_filter)
+            if agg_category.get(n) in ("Dismantler", "Repair")
         )
         out = []
         for name in names:
@@ -432,7 +432,7 @@ def recycling(
             "elapsed_minutes": total_elapsed,
             "dismantler_bars": _sorted_bars(_bars("Dismantler"), "dismantler-bars"),
             "repair_bars": _sorted_bars(_bars("Repair"), "repair-bars"),
-            "downtime_rows": _downtime_rows(None),
+            "downtime_rows": _downtime_rows(),
             "dismantler_progress": dism_progress,
             "repair_progress": repair_progress,
             "dismantler_group_target": dism_group_target,
