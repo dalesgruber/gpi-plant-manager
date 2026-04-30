@@ -1385,6 +1385,36 @@
     };
   })();
 
+  // ---------- First-edit-on-posted: one-time toast + drop ?view=posted ----------
+  // When the page is loaded with ?view=posted, the first input/change
+  // event flips us back to draft mode silently after a brief toast.
+  // Subsequent edits in the same session are silent.
+  (function () {
+    if (window.SCHEDULE_VIEW_MODE !== 'posted') return;
+    const form = document.getElementById('staffing-form');
+    if (!form) return;
+
+    let warned = false;
+    function onFirstEdit() {
+      if (warned) return;
+      warned = true;
+      if (window.showToast) {
+        showToast(
+          'Switched to draft — Re-publish to update the posted version.',
+          null,
+          'info'
+        );
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete('view');
+      history.replaceState({}, '', url.toString());
+      const pill = document.querySelector('.title-bar .pub-pill.on');
+      if (pill) pill.style.display = 'none';
+    }
+    form.addEventListener('input', onFirstEdit);
+    form.addEventListener('change', onFirstEdit);
+  })();
+
   async function postToSlack(btn) {
     const originalContent = btn.innerHTML;
     btn.disabled = true;
