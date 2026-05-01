@@ -301,15 +301,17 @@ def name_to_emp_id_map() -> dict[str, str]:
     if cached is not None:
         return cached
 
-    # Only consider StratusTime-active employees as candidates. Terminated
-    # employees still come back from GetUserBasic SELECT-ALL, and if a
-    # terminated "Jesus M*" appears before the active one in API order, the
-    # roster's "Jesus M" would map to the wrong (terminated) emp_id and
-    # attendance lookups would return empty / no_punch.
-    by_first: dict[str, list[tuple[str, str, str]]] = {}
+    # Skip *explicitly* inactive/terminated employees. We used to require
+    # Status=='active' but that excluded employees whose Status field was
+    # empty/null/whitespace (which still represents an active employee in
+    # StratusTime's data model), causing roster lookups to fall back to
+    # the StratusTime "First Last" name format and break time-off filters.
+    INACTIVE_STATUSES = {"inactive", "terminated", "suspended", "deleted"}
+    by_first: dict[str, list[tuple[str, str, str, str]]] = {}
     full_name_map: dict[str, str] = {}
     for emp in list_employees():
-        if (emp.get("Status") or "").lower() != "active":
+        st = (emp.get("Status") or "").strip().lower()
+        if st in INACTIVE_STATUSES:
             continue
         emp_id = str(emp.get("EmpIdentifier") or "")
         first = (emp.get("FirstName") or "").strip()
@@ -318,7 +320,7 @@ def name_to_emp_id_map() -> dict[str, str]:
             continue
         if last:
             full_name_map[f"{first} {last}".strip()] = emp_id
-        by_first.setdefault(first.lower(), []).append((emp_id, first, last))
+        by_first.setdefault(first.lower(), []).append((emp_id, first, last, st))
 
     out: dict[str, str] = {}
     try:
@@ -342,13 +344,21 @@ def name_to_emp_id_map() -> dict[str, str]:
             continue
         if len(parts) >= 2 and len(parts[1]) >= 1:
             init = parts[1][0].upper()
-            for emp_id, fn, ln in candidates:
-                if ln and ln[0].upper() == init:
-                    out[rname] = emp_id
-                    break
+            init_matches = [c for c in candidates if c[2] and c[2][0].upper() == init]
+            if init_matches:
+                # Prefer Status=='active' candidates; fall back to first match.
+                active_matches = [c for c in init_matches if c[3] == "active"]
+                pick = active_matches[0] if active_matches else init_matches[0]
+                out[rname] = pick[0]
             continue
         if len(candidates) == 1:
             out[rname] = candidates[0][0]
+        else:
+            # No last-name initial in roster name and multiple candidates —
+            # disambiguate by Status=='active' if exactly one matches.
+            active_matches = [c for c in candidates if c[3] == "active"]
+            if len(active_matches) == 1:
+                out[rname] = active_matches[0][0]
 
     _cache_set(("name_to_id_map",), out)
     return out
