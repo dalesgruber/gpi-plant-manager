@@ -82,6 +82,19 @@ def staffing_page(
     time_off_names = [e["name"] for e in time_off_entries]
     time_off_set = set(time_off_names)
 
+    # Per-person hours-off-today (for partial entries) so the scheduler
+    # can show a badge next to their name.
+    partial_hours_by_name: dict[str, float] = {
+        e["name"]: e["hours"]
+        for e in time_off_entries
+        if e.get("hours") is not None and e["hours"] < 8 and e["hours"] > 0
+    }
+    partial_range_by_name: dict[str, str] = {
+        e["name"]: e["time_range"]
+        for e in time_off_entries
+        if e.get("time_range") and e.get("hours") is not None and e["hours"] < 8
+    }
+
     _options_cache: dict[tuple[str, ...], list[dict]] = {}
 
     def options_for(required: tuple[str, ...]) -> list[dict]:
@@ -240,6 +253,8 @@ def staffing_page(
             "publish_block_reasons": publish_block_reasons,
             "time_off_names": sorted(time_off_names),
             "time_off_entries": sorted(time_off_entries, key=lambda e: e["name"].lower()),
+            "partial_hours_by_name": partial_hours_by_name,
+            "partial_range_by_name": partial_range_by_name,
             "unassigned": sorted(unassigned),
             "reserves": sorted(reserves),
             # JS uses this to route auto-removed people back to the right

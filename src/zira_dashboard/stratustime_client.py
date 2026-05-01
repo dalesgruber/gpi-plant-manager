@@ -383,5 +383,55 @@ def time_off_names_for_day(day) -> list[str]:
     return [e["name"] for e in time_off_entries_for_day(day)]
 
 
+def partial_off_intervals_for_day(day) -> dict[str, list]:
+    """Return {name: [(start_utc, end_utc), ...]} of partial-off intervals on `day`.
+
+    Only includes entries where:
+    - StatusType == 1 (approved)
+    - DurationPerDaySecs < 28800 (under 8h, i.e., partial)
+    - StartDateTimeSchema and EndDateTimeSchema fall on the same day as `day`
+
+    Returns datetime objects in UTC for overlap math against shift windows.
+    Multi-day requests and full-day off entries are excluded.
+    """
+    from datetime import datetime as _dt, timedelta, timezone
+    from . import shift_config
+
+    # Reuse the same 7-day window the existing helper queries to share cache.
+    start_d = day - timedelta(days=3)
+    end_d = day + timedelta(days=3)
+    requests_ = get_time_off_requests(start_d, end_d)
+    emp_map = _employee_id_to_name_map()
+    out: dict[str, list] = {}
+    site_tz = shift_config.SITE_TZ
+    for r in requests_:
+        if r.get("StatusType") != 1:
+            continue
+        secs = r.get("DurationPerDaySecs") or 0
+        if secs >= 28800:  # full-day; not partial
+            continue
+        s_str = r.get("StartDateTimeSchema") or ""
+        e_str = r.get("EndDateTimeSchema") or ""
+        if not s_str or not e_str:
+            continue
+        if s_str[:10] != e_str[:10] or s_str[:10] != day.isoformat():
+            continue  # not on `day` or spans multiple days
+        try:
+            s_local = _dt.fromisoformat(s_str).replace(tzinfo=site_tz)
+            e_local = _dt.fromisoformat(e_str).replace(tzinfo=site_tz)
+        except (ValueError, TypeError):
+            continue
+        s_utc = s_local.astimezone(timezone.utc)
+        e_utc = e_local.astimezone(timezone.utc)
+        if e_utc <= s_utc:
+            continue
+        emp_id = str(r.get("EmpIdentifier") or "")
+        name = emp_map.get(emp_id)
+        if not name:
+            continue
+        out.setdefault(name, []).append((s_utc, e_utc))
+    return out
+
+
 # Public deep-link to StratusTime's time-off page (for "Manage in StratusTime ↗" links).
 STRATUSTIME_TIME_OFF_URL = "https://stratustime.centralservers.com/"

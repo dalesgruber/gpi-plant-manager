@@ -322,3 +322,67 @@ def test_cache_clear_resets_per_test(env_creds):
     """Sanity check that the autouse cache reset works."""
     stc._cache_set(("test_key",), "value")
     assert stc._cache_get(("test_key",)) == "value"
+
+
+def test_partial_off_intervals_excludes_full_day(env_creds):
+    requests_payload = {
+        "Report": {},
+        "Results": [
+            # Full day = 8h; should be excluded
+            {"ID": 1, "EmpIdentifier": "100", "StatusType": 1, "DurationPerDaySecs": 28800,
+             "StartDateTimeSchema": "2026-04-29T07:00:00", "EndDateTimeSchema": "2026-04-29T15:00:00",
+             "PayTypeName": "PTO", "IncludeWeekends": False},
+            # Partial 1h
+            {"ID": 2, "EmpIdentifier": "200", "StatusType": 1, "DurationPerDaySecs": 3600,
+             "StartDateTimeSchema": "2026-04-29T09:00:00", "EndDateTimeSchema": "2026-04-29T10:00:00",
+             "PayTypeName": "Early Leave", "IncludeWeekends": False},
+        ],
+    }
+    employees_payload = {"Report": {}, "Results": [
+        _fake_emp_data("100", "Alice", "Smith"),
+        _fake_emp_data("200", "Bob", "Jones"),
+    ]}
+    import json as _json
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserTimeOffRequest":
+            return 200, _json.dumps(requests_payload)
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    with patch.object(stc, "_post", side_effect=fake_post):
+        intervals = stc.partial_off_intervals_for_day(date(2026, 4, 29))
+    assert "Alice Smith" not in intervals  # full-day excluded
+    assert "Bob Jones" in intervals
+    assert len(intervals["Bob Jones"]) == 1
+
+
+def test_partial_off_intervals_excludes_unapproved(env_creds):
+    requests_payload = {
+        "Report": {},
+        "Results": [{
+            "ID": 1, "EmpIdentifier": "100", "StatusType": 2,  # not 1
+            "DurationPerDaySecs": 3600,
+            "StartDateTimeSchema": "2026-04-29T09:00:00",
+            "EndDateTimeSchema": "2026-04-29T10:00:00",
+            "PayTypeName": "Early Leave", "IncludeWeekends": False,
+        }],
+    }
+    employees_payload = {"Report": {}, "Results": [_fake_emp_data("100", "Bob", "Jones")]}
+    import json as _json
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserTimeOffRequest":
+            return 200, _json.dumps(requests_payload)
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    with patch.object(stc, "_post", side_effect=fake_post):
+        intervals = stc.partial_off_intervals_for_day(date(2026, 4, 29))
+    assert intervals == {}

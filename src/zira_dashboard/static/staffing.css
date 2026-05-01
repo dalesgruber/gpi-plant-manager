@@ -76,6 +76,17 @@
     border-radius: 999px; font-size: 0.65rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.5px; vertical-align: 1px;
   }
+  .partial-hours-badge {
+    display: inline-block; margin-left: 0.25rem;
+    background: var(--warn-dim); color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    font-size: 0.65rem; font-weight: 600;
+    vertical-align: 1px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
   .timeoff .ts-note { font-size: 0.72rem; color: var(--muted); margin-top: 0.6rem; font-style: italic; }
   .timeoff .ts-note a { color: var(--accent); text-decoration: none; }
   .timeoff .ts-note a:hover { text-decoration: underline; }

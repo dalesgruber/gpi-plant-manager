@@ -56,12 +56,29 @@ def _recycling_day_data(d, now, is_today_d):
     available = elapsed * len(active_stations)
     uptime_minutes = max(0, available - total_downtime)
     elapsed_hours = elapsed / 60.0 if elapsed else 0.0
-    total_recycling_people = sum(
-        len(sched.assignments.get(loc.name, []))
-        for loc in staffing.LOCATIONS
-        if work_centers_store.value_stream(loc) == "Recycled"
+
+    # Per-person effective minutes during [shift_start, now-or-shift-end] on this day,
+    # subtracting any partial-day StratusTime off intervals that overlap.
+    shift_start_local_for_mh = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
+    shift_end_local_for_mh = datetime.combine(d, shift_config.shift_end_for(d), tzinfo=shift_config.SITE_TZ)
+    window_end_local = (
+        min(now.astimezone(shift_config.SITE_TZ), shift_end_local_for_mh)
+        if is_today_d else shift_end_local_for_mh
     )
-    total_man_hours = total_recycling_people * elapsed_hours
+    window_start_utc = shift_start_local_for_mh.astimezone(timezone.utc)
+    window_end_utc = window_end_local.astimezone(timezone.utc)
+
+    total_man_minutes = 0
+    total_recycling_people = 0
+    for loc in staffing.LOCATIONS:
+        if work_centers_store.value_stream(loc) != "Recycled":
+            continue
+        for person_name in sched.assignments.get(loc.name, []):
+            total_recycling_people += 1
+            total_man_minutes += staffing.effective_minutes_worked(
+                person_name, d, window_start_utc, window_end_utc,
+            )
+    total_man_hours = total_man_minutes / 60.0
 
     dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
     dismantlers.sort(key=lambda r: r.station.name)
@@ -493,13 +510,31 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
 
     sched_for_labels = staffing.load_schedule(d)
     station_names = {s.name for s in stations}
-    people_count = sum(
-        len(ops) for wc, ops in sched_for_labels.assignments.items()
-        if wc != staffing.TIME_OFF_KEY and ops and wc in station_names
+
+    # Per-person effective minutes during [shift_start, now-or-shift-end],
+    # subtracting StratusTime partial-off intervals.
+    shift_start_local_for_mh = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
+    shift_end_local_for_mh = datetime.combine(d, shift_config.shift_end_for(d), tzinfo=shift_config.SITE_TZ)
+    window_end_local = (
+        min(now.astimezone(shift_config.SITE_TZ), shift_end_local_for_mh)
+        if is_today else shift_end_local_for_mh
     )
-    pph_per_person = (
-        pallets_per_hour / people_count if people_count > 0 else 0.0
-    )
+    window_start_utc = shift_start_local_for_mh.astimezone(timezone.utc)
+    window_end_utc = window_end_local.astimezone(timezone.utc)
+
+    total_man_minutes_new = 0
+    total_new_vs_people = 0
+    for wc_name, ops in sched_for_labels.assignments.items():
+        if wc_name == staffing.TIME_OFF_KEY or not ops or wc_name not in station_names:
+            continue
+        for person_name in ops:
+            total_new_vs_people += 1
+            total_man_minutes_new += staffing.effective_minutes_worked(
+                person_name, d, window_start_utc, window_end_utc,
+            )
+    total_man_hours = total_man_minutes_new / 60.0
+    people_count = total_new_vs_people
+    pph_per_person = (total_units / total_man_hours) if total_man_hours > 0 else 0.0
 
     def _color(pct: float | None) -> str | None:
         if pct is None:

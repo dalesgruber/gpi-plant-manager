@@ -283,7 +283,7 @@
                 <summary>
                   <span class="dd-summary-text">
                     {% if row.assigned %}
-                      {% for a in row.assigned %}<span class="lvl-{{ a.level }}">{{ a.name }}{{ cert_badges(a.name, person_certs) }}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for a in row.assigned %}<span class="lvl-{{ a.level }}">{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge" title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}</span>{% endif %}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% else %}
                       <span class="empty">—</span>
                     {% endif %}

@@ -456,3 +456,30 @@ SKILL_LABELS = {
 
 def skill_color(level: int) -> str:
     return SKILL_COLORS.get(int(level), SKILL_COLORS[0])
+
+
+def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -> int:
+    """Minutes the person `name` was actually working in [window_start_utc, window_end_utc]
+    on `day`, after subtracting any partial-day StratusTime off-intervals that overlap.
+
+    Falls back to the full window width when StratusTime is unreachable or the
+    person has no partial-off on `day`.
+
+    `window_start_utc` and `window_end_utc` must be timezone-aware UTC datetimes.
+    """
+    from . import stratustime_client
+    if window_end_utc <= window_start_utc:
+        return 0
+    base = int((window_end_utc - window_start_utc).total_seconds() // 60)
+    try:
+        intervals_by_name = stratustime_client.partial_off_intervals_for_day(day)
+    except Exception:
+        return base
+    intervals = intervals_by_name.get(name) or []
+    overlap_min = 0
+    for s, e in intervals:
+        lo = max(s, window_start_utc)
+        hi = min(e, window_end_utc)
+        if hi > lo:
+            overlap_min += int((hi - lo).total_seconds() // 60)
+    return max(0, base - overlap_min)
