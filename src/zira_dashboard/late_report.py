@@ -111,6 +111,46 @@ def cleared_request_ids_for_day(day) -> set[int]:
     return {int(r["request_id"]) for r in rows}
 
 
+def clear_non_work_shift(day, emp_id: str) -> None:
+    """Hide a StratusTime non-work-shift entry (manager-entered Unpaid
+    Time, etc.) for `day` + `emp_id`. The V1 punch endpoint doesn't
+    expose a stable per-entry id, so we key on (day, emp_id)."""
+    db.execute(
+        """
+        INSERT INTO cleared_non_work_shifts (day, emp_id) VALUES (%s, %s)
+        ON CONFLICT (day, emp_id) DO NOTHING
+        """,
+        (day, str(emp_id)),
+    )
+
+
+def restore_non_work_shift(day, emp_id: str) -> None:
+    db.execute(
+        "DELETE FROM cleared_non_work_shifts WHERE day = %s AND emp_id = %s",
+        (day, str(emp_id)),
+    )
+
+
+def cleared_non_work_emp_ids_for_day(day) -> set[str]:
+    rows = db.query(
+        "SELECT emp_id FROM cleared_non_work_shifts WHERE day = %s",
+        (day,),
+    )
+    return {str(r["emp_id"]) for r in rows}
+
+
+def cleared_non_work_for_day(day) -> list[dict]:
+    return db.query(
+        """
+        SELECT emp_id, declared_at
+        FROM cleared_non_work_shifts
+        WHERE day = %s
+        ORDER BY declared_at ASC
+        """,
+        (day,),
+    )
+
+
 def cleared_partials_for_day(day) -> list[dict]:
     """Return list of {request_id, declared_at} for the Time Off
     'Cleared today' restore footer."""

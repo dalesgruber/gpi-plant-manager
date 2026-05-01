@@ -278,6 +278,18 @@ CREATE TABLE IF NOT EXISTS cleared_time_off (
 );
 CREATE INDEX IF NOT EXISTS cleared_time_off_day_idx ON cleared_time_off(day);
 
+-- cleared_non_work_shifts: per-day, per-emp opt-out for StratusTime
+-- non-work-shift entries (manager-entered Unpaid Time, etc.) that don't
+-- have a request_id. Same idea as cleared_time_off but keyed by emp_id
+-- because the V1 punch endpoint doesn't expose a stable id per entry.
+CREATE TABLE IF NOT EXISTS cleared_non_work_shifts (
+  day            DATE NOT NULL,
+  emp_id         TEXT NOT NULL,
+  declared_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, emp_id)
+);
+CREATE INDEX IF NOT EXISTS cleared_non_work_shifts_day_idx ON cleared_non_work_shifts(day);
+
 CREATE TABLE IF NOT EXISTS manual_absences (
   day            DATE NOT NULL,
   emp_id         TEXT NOT NULL,

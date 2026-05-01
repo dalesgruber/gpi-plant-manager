@@ -135,8 +135,8 @@
             <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ e.time_range or (e.hours ~ 'h') }}{% endif %}">
               <span class="name">{{ e.name }}{{ cert_badges(e.name, person_certs) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}</span>
               <span class="ts-meta">{{ e.pay_type }}{% if is_partial %} · {% if e.time_range %}off {{ e.time_range }}{% else %}{{ e.hours }}h{% endif %}{% endif %}</span>
-              {% if is_partial and e.request_id %}
-                <button type="button" class="time-off-clear" data-request-id="{{ e.request_id }}" data-day="{{ day }}" data-name="{{ e.name }}" title="Clear this partial — they actually worked through it" aria-label="Clear partial for {{ e.name }}">×</button>
+              {% if is_partial and (e.request_id or e.emp_id) %}
+                <button type="button" class="time-off-clear" {% if e.request_id %}data-request-id="{{ e.request_id }}"{% endif %}{% if e.emp_id %} data-emp-id="{{ e.emp_id }}"{% endif %} data-day="{{ day }}" data-name="{{ e.name }}" title="Clear this partial — they actually worked through it" aria-label="Clear partial for {{ e.name }}">×</button>
               {% endif %}
             </li>
           {% endfor %}
@@ -151,7 +151,7 @@
             {% for c in cleared_partials_today %}
               <li>
                 <span>{{ c.name }}{% if c.time_range %} · {{ c.time_range }}{% endif %}</span>
-                <button type="button" class="time-off-restore" data-request-id="{{ c.request_id }}" data-day="{{ day }}">restore</button>
+                <button type="button" class="time-off-restore" {% if c.request_id %}data-request-id="{{ c.request_id }}"{% endif %}{% if c.emp_id %} data-emp-id="{{ c.emp_id }}"{% endif %} data-day="{{ day }}">restore</button>
               </li>
             {% endfor %}
           </ul>
@@ -309,7 +309,7 @@
                 <summary>
                   <span class="dd-summary-text">
                     {% if visible_assigned %}
-                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge" title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}{% if partial_request_by_name and a.name in partial_request_by_name %}<button type="button" class="partial-clear" data-request-id="{{ partial_request_by_name[a.name] }}" data-day="{{ day }}" data-name="{{ a.name }}" title="Clear this partial — they actually worked through it" aria-label="Clear partial for {{ a.name }}">×</button>{% endif %}</span>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge" title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}{% if partial_clear_by_name and a.name in partial_clear_by_name %}<button type="button" class="partial-clear" {% if partial_clear_by_name[a.name].request_id %}data-request-id="{{ partial_clear_by_name[a.name].request_id }}"{% endif %}{% if partial_clear_by_name[a.name].emp_id %} data-emp-id="{{ partial_clear_by_name[a.name].emp_id }}"{% endif %} data-day="{{ day }}" data-name="{{ a.name }}" title="Clear this partial — they actually worked through it" aria-label="Clear partial for {{ a.name }}">×</button>{% endif %}</span>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% endif %}
                     {% if _wc_attribs_for_row %}
                       {% for attrib in _wc_attribs_for_row %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }}">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
@@ -1102,7 +1102,8 @@
     const btn = clearBtn || restoreBtn;
     const day = btn.dataset.day;
     const requestId = btn.dataset.requestId;
-    if (!day || !requestId) return;
+    const empId = btn.dataset.empId;
+    if (!day || (!requestId && !empId)) return;
     const isClear = !!clearBtn;
     if (isClear) {
       const name = btn.dataset.name || 'this person';
@@ -1111,10 +1112,13 @@
     btn.disabled = true;
     try {
       const url = isClear ? '/api/staffing/clear-partial' : '/api/staffing/restore-partial';
+      const payload = {day};
+      if (requestId) payload.request_id = Number(requestId);
+      else if (empId) payload.emp_id = empId;
       const resp = await fetch(url, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({day, request_id: Number(requestId)}),
+        body: JSON.stringify(payload),
       });
       const j = await resp.json();
       if (j.ok) {

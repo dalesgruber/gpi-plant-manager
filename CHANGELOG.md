@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 6:00 PM
+
+- **Partial × button now works for non-work-shift partials too** — Jose Luis's partial wasn't a regular StratusTime time-off request, it was a manager-entered "non-work shift" via the V1 punch endpoint (no `request_id`), so the × button was silently never rendering for him. Two changes: (1) every partial pill now gets a × regardless of source — request-id partials post to `cleared_time_off`, non-work-shift partials post to a new `cleared_non_work_shifts (day, emp_id)` table. (2) Added the same fallback in the Time Off section's per-row clear and the "Cleared today" restore list.
+
 ### 5:45 PM
 
 - **Absent entries now red** — only true absences (derived no-punch + manager-declared Manual Absent) render in red on the scheduler's Time Off section and on the time-off calendar. Unpaid Time and other non-work-shift entries stay blue with the rest of the planned time-off. Three states: blue (planned PTO / Unpaid), amber (partial), red (absent).

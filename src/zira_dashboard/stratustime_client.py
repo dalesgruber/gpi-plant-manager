@@ -701,6 +701,11 @@ def time_off_entries_for_day(day) -> list[dict]:
         cleared_req_ids = late_report.cleared_request_ids_for_day(day)
     except Exception:
         cleared_req_ids = set()
+    try:
+        from . import late_report as _lr2
+        cleared_emp_ids = _lr2.cleared_non_work_emp_ids_for_day(day)
+    except Exception:
+        cleared_emp_ids = set()
     out = []
     for r in requests_:
         if r.get("StatusType") != 1:
@@ -726,6 +731,7 @@ def time_off_entries_for_day(day) -> list[dict]:
             time_range = ""
         out.append({
             "name": name,
+            "emp_id": emp_id,
             "pay_type": r.get("PayTypeName") or "",
             "hours": round(secs / 3600.0, 1),
             "time_range": time_range,
@@ -744,6 +750,8 @@ def time_off_entries_for_day(day) -> list[dict]:
         if nw.get("apply_date") != target_iso:
             continue
         emp_id = nw.get("emp_id") or ""
+        if emp_id and emp_id in cleared_emp_ids:
+            continue
         name = roster_map.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
         in_str = (nw.get("in_time") or "").strip()
         out_str = (nw.get("out_time") or "").strip()
@@ -766,6 +774,7 @@ def time_off_entries_for_day(day) -> list[dict]:
             continue
         out.append({
             "name": name,
+            "emp_id": emp_id,
             "pay_type": nw.get("pay_type_name") or "Non-Work",
             "hours": hours,
             "time_range": time_range,
