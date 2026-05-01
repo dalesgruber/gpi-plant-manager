@@ -140,9 +140,20 @@
   .side .empty { color: var(--muted); font-style: italic; padding: 0.3rem 0; font-size: 0.85rem; }
 
   /* Main scheduler title bar */
-  .title-bar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
-  .title-bar h2 { margin: 0; font-size: clamp(1rem, 1.2vw + 0.6rem, 1.2rem); font-weight: 700; }
+  .title-bar {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.55rem; margin-bottom: 0.85rem;
+  }
+  .title-bar h2 {
+    margin: 0; font-size: clamp(1.1rem, 1.4vw + 0.7rem, 1.4rem); font-weight: 700;
+    text-align: center;
+  }
   .title-bar .ver { color: var(--muted); font-size: 0.8rem; font-weight: 400; margin-left: 0.3rem; }
+  .title-bar-actions {
+    display: flex; flex-wrap: wrap; gap: 0.6rem;
+    align-items: center; justify-content: center;
+    width: 100%;
+  }
   .title-bar .date-input {
     background: var(--panel-2); color: var(--fg);
     border: 1px solid var(--border); border-radius: 6px;
@@ -167,7 +178,7 @@
   }
   .title-bar .day-hot:hover { color: var(--fg); border-color: var(--muted); }
   .title-bar .day-hot.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-dim); }
-  .title-bar .title-actions { margin-left: auto; display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .title-bar .title-actions { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
   .title-bar .publish-btn { background: var(--accent); color: white; border: 1px solid var(--accent); border-radius: 6px; padding: 0.45rem 1rem; font: inherit; font-weight: 700; cursor: pointer; }
   .title-bar .publish-btn:hover { filter: brightness(1.08); }
   /* Icon-only variants of .publish-btn (Print + Post-to-Slack). */

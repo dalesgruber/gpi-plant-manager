@@ -157,6 +157,7 @@
   <main class="panel">
     <div class="title-bar">
       <h2>Daily Plant Scheduler</h2>
+      <div class="title-bar-actions">
       <input type="date" id="day-picker" value="{{ day }}" class="date-input" title="Jump to another day">
       <a href="/staffing?day={{ today }}" class="day-hot {% if day == today %}active{% endif %}" title="Jump to today">Today</a>
       <a href="/staffing?day={{ tomorrow }}" class="day-hot {% if day == tomorrow %}active{% endif %}" title="Jump to the next working day">Next Day</a>
@@ -239,6 +240,7 @@
           </button>
           <button type="submit" name="action" value="publish" class="publish-btn">{{ 'Re-publish' if published else 'Publish' }}</button>
         {% endif %}
+      </div>
       </div>
     </div>
 
