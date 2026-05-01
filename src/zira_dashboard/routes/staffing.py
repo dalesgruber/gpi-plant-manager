@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import schedule_store, shift_config, staffing, work_centers_store
+from .. import schedule_store, shift_config, staffing, stratustime_client, work_centers_store
 from ..deps import templates
 
 router = APIRouter()
@@ -72,9 +72,14 @@ def staffing_page(
     active_people = [p for p in roster if p.active]
     all_by_name = {p.name: p for p in roster}
 
-    # Time Off list (stored under TIME_OFF_KEY in assignments). Pulled up here so
-    # we can filter time-off names out of every WC's pool and the Reserves list.
-    time_off_names = sched.assignments.get(staffing.TIME_OFF_KEY, [])
+    # Time Off list — sourced from StratusTime (sub-project #2). Pulled up here
+    # so we can filter time-off names out of every WC's pool and the Reserves list.
+    # If StratusTime is unreachable, fall back to an empty list (page still renders).
+    try:
+        time_off_entries = stratustime_client.time_off_entries_for_day(d)
+    except Exception:
+        time_off_entries = []
+    time_off_names = [e["name"] for e in time_off_entries]
     time_off_set = set(time_off_names)
 
     _options_cache: dict[tuple[str, ...], list[dict]] = {}
@@ -192,17 +197,6 @@ def staffing_page(
         for loc in staffing.LOCATIONS
     }
 
-    # Time Off picker pool (the "+ Add" select). time_off_names / time_off_set
-    # were computed above so they could filter the per-WC pools.
-    time_off_pool = [
-        {
-            "name": p.name,
-            "selected": p.name in time_off_set,
-        }
-        for p in active_people
-    ]
-    time_off_pool.sort(key=lambda r: r["name"].lower())
-
     # Unscheduled = active non-reserve people with no station and not on time off.
     # Reserves (office staff / managers) live in their own list regardless of state.
     assigned_today = {
@@ -245,7 +239,7 @@ def staffing_page(
             "testing_day": bool(sched.testing_day),
             "publish_block_reasons": publish_block_reasons,
             "time_off_names": sorted(time_off_names),
-            "time_off_pool": time_off_pool,
+            "time_off_entries": sorted(time_off_entries, key=lambda e: e["name"].lower()),
             "unassigned": sorted(unassigned),
             "reserves": sorted(reserves),
             # JS uses this to route auto-removed people back to the right
@@ -291,25 +285,9 @@ async def staffing_save(
             picked_defaults = form.getlist(f"default__{loc.name}")
             clean_defaults = [n.strip() for n in picked_defaults if n and n.strip()]
             work_centers_store.save_one(loc, {"default_people": clean_defaults})
-    time_off_picked = form.getlist(f"loc__{staffing.TIME_OFF_KEY}")
-    time_off_clean = [n.strip() for n in time_off_picked if n and n.strip()]
-    if time_off_clean:
-        assignments[staffing.TIME_OFF_KEY] = time_off_clean
-
-    # Mutual exclusion (defense in depth): a name can't be in both Time Off and
-    # a WC. Time Off wins; drop those names from every WC's assignment list.
-    # The JS pre-cleans before submitting, so this only fires on inconsistent
-    # data (e.g. a stale tab posting alongside a fresh one).
-    if time_off_clean:
-        to_set = set(time_off_clean)
-        for loc_name in list(assignments.keys()):
-            if loc_name == staffing.TIME_OFF_KEY:
-                continue
-            cleaned = [n for n in assignments[loc_name] if n not in to_set]
-            if cleaned:
-                assignments[loc_name] = cleaned
-            else:
-                assignments.pop(loc_name, None)
+    # Time-off is now sourced from StratusTime (sub-project #2). The scheduler UI
+    # no longer collects time-off entries via form fields, so we ignore any
+    # `loc____time_off` values that a stale tab might still be posting.
 
     action = (form.get("action") or "save").strip().lower()
     override = (form.get("override") or "").strip() == "1"
@@ -459,3 +437,17 @@ async def staffing_hours_save(request: Request):
     sched.custom_hours = {"start": start_s, "end": end_s, "breaks": breaks_out}
     staffing.save_schedule(sched)
     return JSONResponse({"ok": True})
+
+
+@router.get("/api/stratustime/refresh")
+def stratustime_refresh(back: str | None = Query(default=None)):
+    """Bust the StratusTime in-process cache, then redirect back.
+
+    Triggered by a plain `<a>` link from scheduler / time-off pages.
+    """
+    stratustime_client.cache_clear()
+    target = back or "/staffing"
+    # Basic safety: only allow same-origin paths.
+    if not target.startswith("/"):
+        target = "/staffing"
+    return RedirectResponse(target, status_code=303)

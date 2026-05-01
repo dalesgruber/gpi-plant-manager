@@ -201,3 +201,147 @@ def list_employees() -> list[dict]:
         if isinstance(results, list):
             return results
     return []
+
+
+# --- Time-off + employee directory caching ---
+
+# (cache_key) -> (value, expires_at_epoch_seconds)
+_data_cache: dict[tuple, tuple[object, float]] = {}
+DATA_CACHE_TTL_SECONDS = 5 * 60
+
+
+def _cache_get(key):
+    entry = _data_cache.get(key)
+    if entry is None:
+        return None
+    value, expires_at = entry
+    if expires_at < time.time():
+        return None
+    return value
+
+
+def _cache_set(key, value):
+    _data_cache[key] = (value, time.time() + DATA_CACHE_TTL_SECONDS)
+
+
+def cache_clear() -> None:
+    """Drop all cached data (token cache untouched)."""
+    _data_cache.clear()
+
+
+def _wcf_date(epoch_ms: int) -> str:
+    return f"/Date({epoch_ms}+0000)/"
+
+
+def _epoch_ms(d) -> int:
+    """Convert a `datetime.date` to UTC epoch ms (midnight)."""
+    from datetime import datetime, timezone
+    dt = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def _employee_id_to_name_map() -> dict[str, str]:
+    """{ EmpIdentifier: 'FirstName LastName' } — cached 5 min."""
+    cached = _cache_get(("emp_map",))
+    if cached is not None:
+        return cached
+    out: dict[str, str] = {}
+    for emp in list_employees():
+        emp_id = emp.get("EmpIdentifier")
+        first = (emp.get("FirstName") or "").strip()
+        last = (emp.get("LastName") or "").strip()
+        if emp_id and (first or last):
+            out[str(emp_id)] = f"{first} {last}".strip()
+    _cache_set(("emp_map",), out)
+    return out
+
+
+def get_time_off_requests(start_d, end_d) -> list[dict]:
+    """Return raw time-off request dicts for [start_d, end_d] (inclusive).
+
+    StratusTime caps each call at a 60-day window — caller passes ranges
+    within that. Cached 5 minutes per (start, end).
+    """
+    key = ("time_off", start_d.isoformat(), end_d.isoformat())
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    status, parsed = authenticated_post("GetUserTimeOffRequest", {
+        "StartDate": _wcf_date(_epoch_ms(start_d)),
+        "EndDate": _wcf_date(_epoch_ms(end_d)),
+        "DateTimeSchema": 0,
+        "IgnoreDeletedRequests": True,
+        "IgnoreDetails": False,
+        "DataAction": {"Name": "SELECT-ALL", "Values": []},
+    })
+    if status < 200 or status >= 300 or not isinstance(parsed, dict):
+        return []
+    results = parsed.get("Results")
+    if not isinstance(results, list):
+        return []
+    _cache_set(key, results)
+    return results
+
+
+def _request_covers_day(req: dict, day) -> bool:
+    """True if the time-off request `req` includes `day`.
+
+    Uses StartDateTimeSchema/EndDateTimeSchema (ISO local strings).
+    Honors `IncludeWeekends` — if False, skips Sat/Sun within the range.
+    """
+    from datetime import date as _date
+    s_str = (req.get("StartDateTimeSchema") or "")[:10]  # YYYY-MM-DD
+    e_str = (req.get("EndDateTimeSchema") or "")[:10]
+    if not s_str or not e_str:
+        return False
+    try:
+        s = _date.fromisoformat(s_str)
+        e = _date.fromisoformat(e_str)
+    except ValueError:
+        return False
+    if not (s <= day <= e):
+        return False
+    if not req.get("IncludeWeekends", False) and day.weekday() >= 5:
+        return False
+    return True
+
+
+def time_off_entries_for_day(day) -> list[dict]:
+    """Return list of {name, pay_type, hours, status_type, request_id} for `day`.
+
+    Treats StatusType==1 as approved/active. Other StatusType values are
+    skipped (likely pending/rejected). Names come from the employee map;
+    unmapped EmpIdentifiers are surfaced as 'Unknown ({id})' so it's visible.
+    """
+    # Use a 7-day window centered on `day` — small request, hits cache often.
+    from datetime import timedelta
+    start_d = day - timedelta(days=3)
+    end_d = day + timedelta(days=3)
+    requests_ = get_time_off_requests(start_d, end_d)
+    emp_map = _employee_id_to_name_map()
+    out = []
+    for r in requests_:
+        if r.get("StatusType") != 1:
+            continue
+        if not _request_covers_day(r, day):
+            continue
+        emp_id = str(r.get("EmpIdentifier") or "")
+        name = emp_map.get(emp_id) or f"Unknown ({emp_id})"
+        secs = r.get("DurationPerDaySecs") or 0
+        out.append({
+            "name": name,
+            "pay_type": r.get("PayTypeName") or "",
+            "hours": round(secs / 3600.0, 1),
+            "status_type": r.get("StatusType"),
+            "request_id": r.get("ID"),
+        })
+    return out
+
+
+def time_off_names_for_day(day) -> list[str]:
+    """Just the names — convenience for callers that only need a list of strings."""
+    return [e["name"] for e in time_off_entries_for_day(day)]
+
+
+# Public deep-link to StratusTime's time-off page (for "Manage in StratusTime ↗" links).
+STRATUSTIME_TIME_OFF_URL = "https://stratustime.centralservers.com/"

@@ -7,19 +7,28 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
-from .. import staffing
-from ..deps import _iter_saved_schedule_files, templates
+from .. import stratustime_client
+from ..deps import templates
 
 router = APIRouter()
 
 
-def _time_off_by_day() -> dict[date, list[str]]:
-    """Flatten all saved schedules → {date: [people off]}."""
-    out: dict[date, list[str]] = {}
-    for day, sched in _iter_saved_schedule_files():
-        names = sched.assignments.get(staffing.TIME_OFF_KEY, []) or []
-        if names:
-            out[day] = list(names)
+def _time_off_by_day(start_d: date, end_d: date) -> dict[date, list[dict]]:
+    """Return {day: [time_off_entry, ...]} for [start_d, end_d] inclusive,
+    sourced from StratusTime. Each entry is a dict with keys
+    name / pay_type / hours / status_type / request_id.
+
+    Falls back to an empty list per day if StratusTime is unreachable, so the
+    page always renders.
+    """
+    out: dict[date, list[dict]] = {}
+    cursor = start_d
+    while cursor <= end_d:
+        try:
+            out[cursor] = stratustime_client.time_off_entries_for_day(cursor)
+        except Exception:
+            out[cursor] = []
+        cursor += timedelta(days=1)
     return out
 
 
@@ -35,7 +44,40 @@ def staffing_time_off(
         cursor = date.fromisoformat(date_) if date_ else today
     except ValueError:
         cursor = today
-    off_map = _time_off_by_day()
+
+    # Compute the visible date range so we only fetch StratusTime data for what
+    # the user actually sees (cached 5 min per day inside the client).
+    if scale == "day":
+        range_start = cursor
+        range_end = cursor
+    elif scale == "week":
+        monday = cursor - timedelta(days=cursor.weekday())
+        range_start = monday
+        range_end = monday + timedelta(days=6)
+    elif scale == "month":
+        first = cursor.replace(day=1)
+        # Month grid includes leading + trailing days from adjacent months.
+        range_start = first - timedelta(days=first.weekday())
+        if first.month == 12:
+            next_first = first.replace(year=first.year + 1, month=1)
+        else:
+            next_first = first.replace(month=first.month + 1)
+        last = next_first - timedelta(days=1)
+        # Trailing days to fill out the last week (Mon-start, Sun-end).
+        range_end = last + timedelta(days=(6 - last.weekday()))
+    elif scale == "quarter":
+        q_start_month = ((cursor.month - 1) // 3) * 3 + 1
+        range_start = date(cursor.year, q_start_month, 1)
+        # End of quarter = day before the start of the next quarter.
+        end_month = q_start_month + 3
+        end_year = cursor.year + (1 if end_month > 12 else 0)
+        end_month = ((end_month - 1) % 12) + 1
+        range_end = date(end_year, end_month, 1) - timedelta(days=1)
+    else:  # year
+        range_start = date(cursor.year, 1, 1)
+        range_end = date(cursor.year, 12, 31)
+
+    off_map = _time_off_by_day(range_start, range_end)
 
     import calendar as _cal
     ctx: dict = {

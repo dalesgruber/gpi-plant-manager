@@ -41,6 +41,12 @@
 {% endblock %}
 
 {% block content %}
+<div class="ts-header" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;padding:0.5rem 0.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px">
+  <a href="https://stratustime.centralservers.com/" target="_blank" rel="noopener" class="ts-deeplink-btn" style="background:var(--accent);color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↗ Open StratusTime</a>
+  <a href="/api/stratustime/refresh?back={{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" class="ts-refresh-btn" style="background:var(--panel-2);color:var(--fg);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↻ Refresh</a>
+  <span class="ts-note" style="color:var(--muted);font-size:0.78rem;font-style:italic">All time-off entries are live from StratusTime · cached 5 min</span>
+</div>
+
 <div class="cal-header">
   <div class="title">{{ heading }}</div>
   <div style="display:flex;gap:0.4rem">
@@ -61,7 +67,11 @@
     <h2>{{ cursor_label }}</h2>
     {% if day_names %}
       <div class="day-view-list">
-        {% for n in day_names %}<span class="off-pill">{{ n }}</span>{% endfor %}
+        {% for e in day_names %}
+          <span class="off-pill" title="{{ e.pay_type }} · {{ e.hours }}h">
+            {{ e.name }}{% if e.pay_type %} <span style="opacity:0.75;font-weight:400">· {{ e.pay_type }}{% if e.hours and e.hours < 8 %} · {{ e.hours }}h{% endif %}</span>{% endif %}
+          </span>
+        {% endfor %}
       </div>
     {% else %}
       <div class="empty-state">No one is off this day.</div>
@@ -77,7 +87,11 @@
       {% for d in week_days %}
         <td{% if d.is_today %} class="today"{% endif %}>
           {% if d.names %}
-            <div class="off-pills">{% for n in d.names %}<span class="off-pill">{{ n }}</span>{% endfor %}</div>
+            <div class="off-pills">
+              {% for e in d.names %}
+                <span class="off-pill" title="{{ e.pay_type }} · {{ e.hours }}h">{{ e.name }}{% if e.hours and e.hours < 8 %} · {{ e.hours }}h{% endif %}</span>
+              {% endfor %}
+            </div>
           {% else %}
             <div class="off-none">—</div>
           {% endif %}
@@ -98,7 +112,11 @@
             <td class="{% if d.outside %}outside{% endif %}{% if d.is_today %} today{% endif %}{% if d.weekend %} weekend{% endif %}">
               <div class="day-num">{{ d.num }}</div>
               {% if d.names %}
-                <div class="off-pills">{% for n in d.names %}<span class="off-pill">{{ n }}</span>{% endfor %}</div>
+                <div class="off-pills">
+                  {% for e in d.names %}
+                    <span class="off-pill" title="{{ e.pay_type }} · {{ e.hours }}h">{{ e.name }}{% if e.hours and e.hours < 8 %} · {{ e.hours }}h{% endif %}</span>
+                  {% endfor %}
+                </div>
               {% endif %}
             </td>
           {% endfor %}
@@ -157,6 +175,6 @@
 {% endif %}
 
 <p class="hint" style="margin-top:1rem">
-  Time-off data is currently sourced from the Plant Scheduler's Time Off column per day. In a later iteration this will be fed by your Odoo HR time-off requests.
+  Time-off data is sourced live from StratusTime (cached 5 minutes). To add or edit a time-off request, click <em>↗ Open StratusTime</em> above. Click <em>↻ Refresh</em> to bust the cache and re-fetch.
 </p>
 {% endblock %}

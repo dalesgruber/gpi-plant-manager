@@ -121,23 +121,22 @@
     </div>
 
     <div class="section timeoff">
-      <h3>Time Off ☀️ <span class="count">{{ time_off_names|length }}</span></h3>
-      <div class="picker">
-        <div class="pills" data-loc="__time_off">
-          {% for n in time_off_names %}
-            <span class="pill lvl-2" data-name="{{ n }}">
-              {{ n }}{{ cert_badges(n, person_certs) }}<button type="button" class="pill-x" aria-label="remove">×</button>
-              <input type="hidden" name="loc____time_off" value="{{ n }}">
-            </span>
+      <h3>Time Off ☀️ <span class="count">{{ time_off_entries|length }}</span>
+        <a href="https://stratustime.centralservers.com/" target="_blank" rel="noopener" class="ts-deeplink" title="Manage time-off in StratusTime">↗</a>
+      </h3>
+      {% if time_off_entries %}
+        <ul class="time-off-list">
+          {% for e in time_off_entries %}
+            <li class="time-off-row" title="{{ e.pay_type }} · {{ e.hours }}h">
+              <span class="name">{{ e.name }}{{ cert_badges(e.name, person_certs) }}</span>
+              <span class="ts-meta">{{ e.pay_type }}{% if e.hours and e.hours < 8 %} · {{ e.hours }}h{% endif %}</span>
+            </li>
           {% endfor %}
-        </div>
-        <select class="add-select" data-loc="__time_off" data-neutral="1">
-          <option value="">+ Add</option>
-          {% for p in time_off_pool if not p.selected %}
-            <option value="{{ p.name }}|2">{{ p.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
+        </ul>
+      {% else %}
+        <p class="empty">— none —</p>
+      {% endif %}
+      <p class="ts-note">From StratusTime · cached 5 min · <a href="/api/stratustime/refresh?back=/staffing?day={{ day }}">Refresh now</a></p>
     </div>
 
     <div class="section reserves">

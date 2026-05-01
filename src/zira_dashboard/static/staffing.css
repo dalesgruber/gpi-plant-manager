@@ -62,6 +62,15 @@
   }
   .side .section.unscheduled h3 { border-left-color: var(--warn); }
   .side .section.timeoff     h3 { border-left-color: #60a5fa; }
+  .timeoff .ts-deeplink { color: var(--accent); margin-left: 0.4rem; text-decoration: none; font-size: 0.9em; }
+  .timeoff .time-off-list { list-style: none; margin: 0; padding: 0; }
+  .timeoff .time-off-row { display: flex; flex-direction: column; padding: 0.25rem 0; border-bottom: 1px solid var(--panel-2); }
+  .timeoff .time-off-row:last-child { border-bottom: none; }
+  .timeoff .time-off-row .name { font-weight: 500; }
+  .timeoff .time-off-row .ts-meta { font-size: 0.78rem; color: var(--muted); }
+  .timeoff .ts-note { font-size: 0.72rem; color: var(--muted); margin-top: 0.6rem; font-style: italic; }
+  .timeoff .ts-note a { color: var(--accent); text-decoration: none; }
+  .timeoff .ts-note a:hover { text-decoration: underline; }
   .side .section.reserves    h3 { border-left-color: #a78bfa; }
   .side .section h3 .count {
     display: inline-block;

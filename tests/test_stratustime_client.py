@@ -20,8 +20,10 @@ def env_creds(monkeypatch):
 @pytest.fixture(autouse=True)
 def reset_token_cache():
     stc._token_cache = None
+    stc._data_cache.clear()
     yield
     stc._token_cache = None
+    stc._data_cache.clear()
 
 
 def test_health_check_unconfigured_when_no_env_vars(monkeypatch):
@@ -164,3 +166,110 @@ def test_list_employees_returns_empty_on_no_token(env_creds):
     with patch.object(stc, "_post", return_value=(401, "denied")):
         result = stc.list_employees()
     assert result == []
+
+
+# --- Time-off helpers (sub-project #2) ---
+
+from datetime import date
+
+
+def _fake_emp_data(empid, first, last):
+    return {"EmpIdentifier": empid, "FirstName": first, "LastName": last}
+
+
+def _fake_request(empid, start_iso, end_iso, status=1, secs=28800, paytype="PTO", include_weekends=False):
+    return {
+        "ID": 1,
+        "EmpIdentifier": empid,
+        "StartDateTimeSchema": start_iso + "T07:00:00",
+        "EndDateTimeSchema": end_iso + "T15:00:00",
+        "StatusType": status,
+        "DurationPerDaySecs": secs,
+        "PayTypeName": paytype,
+        "IncludeWeekends": include_weekends,
+    }
+
+
+def test_request_covers_day_simple_range():
+    req = _fake_request("1", "2026-05-04", "2026-05-06", include_weekends=True)
+    assert stc._request_covers_day(req, date(2026, 5, 4)) is True
+    assert stc._request_covers_day(req, date(2026, 5, 5)) is True
+    assert stc._request_covers_day(req, date(2026, 5, 6)) is True
+    assert stc._request_covers_day(req, date(2026, 5, 3)) is False
+    assert stc._request_covers_day(req, date(2026, 5, 7)) is False
+
+
+def test_request_covers_day_skips_weekends_when_flag_false():
+    # Range covers Mon-Sun; flag false should hide Sat (5/9) and Sun (5/10).
+    req = _fake_request("1", "2026-05-04", "2026-05-10", include_weekends=False)
+    assert stc._request_covers_day(req, date(2026, 5, 8)) is True   # Friday
+    assert stc._request_covers_day(req, date(2026, 5, 9)) is False  # Saturday
+    assert stc._request_covers_day(req, date(2026, 5, 10)) is False # Sunday
+
+
+def test_time_off_entries_for_day_filters_by_status(env_creds):
+    requests_payload = {
+        "Report": {},
+        "Results": [
+            _fake_request("100", "2026-05-04", "2026-05-04", status=1),
+            _fake_request("200", "2026-05-04", "2026-05-04", status=2),  # pending? skipped
+        ],
+    }
+    employees_payload = {
+        "Report": {},
+        "Results": [
+            _fake_emp_data("100", "Alice", "Smith"),
+            _fake_emp_data("200", "Bob", "Jones"),
+        ],
+    }
+    import json as _json
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserTimeOffRequest":
+            return 200, _json.dumps(requests_payload)
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    with patch.object(stc, "_post", side_effect=fake_post):
+        entries = stc.time_off_entries_for_day(date(2026, 5, 4))
+    assert len(entries) == 1
+    assert entries[0]["name"] == "Alice Smith"
+
+
+def test_time_off_entries_for_day_unmapped_emp_id(env_creds):
+    requests_payload = {
+        "Report": {},
+        "Results": [_fake_request("999", "2026-05-04", "2026-05-04")],
+    }
+    employees_payload = {"Report": {}, "Results": []}
+    import json as _json
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserTimeOffRequest":
+            return 200, _json.dumps(requests_payload)
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    with patch.object(stc, "_post", side_effect=fake_post):
+        entries = stc.time_off_entries_for_day(date(2026, 5, 4))
+    assert len(entries) == 1
+    assert "999" in entries[0]["name"]
+
+
+def test_cache_clear_drops_data_cache(env_creds):
+    stc._cache_set(("time_off", "x", "y"), [{"foo": "bar"}])
+    assert stc._cache_get(("time_off", "x", "y")) is not None
+    stc.cache_clear()
+    assert stc._cache_get(("time_off", "x", "y")) is None
+
+
+def test_cache_clear_resets_per_test(env_creds):
+    """Sanity check that the autouse cache reset works."""
+    stc._cache_set(("test_key",), "value")
+    assert stc._cache_get(("test_key",)) == "value"
