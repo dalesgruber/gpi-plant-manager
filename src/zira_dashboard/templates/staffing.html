@@ -1095,11 +1095,7 @@
   async function _doPartialAction(target, isClear) {
     const day = target.dataset.day;
     const name = target.dataset.name;
-    console.log('[partial]', isClear ? 'clear' : 'restore', 'for', name, 'on', day);
-    if (!day || !name) {
-      console.warn('[partial] missing day/name on target', target);
-      return;
-    }
+    if (!day || !name) return;
     if (isClear) {
       if (!confirm(`Clear ${name}'s partial off for today? They’ll show as fully available.`)) return;
     }
@@ -1165,7 +1161,6 @@
         e.stopPropagation();
         const id = btn.dataset.attributionId;
         const name = btn.dataset.name || 'this attribution';
-        console.log('[attribution] remove', id, 'for', name);
         if (!id) return;
         if (!confirm(`Remove ${name}'s attribution at this work center?`)) return;
         btn.disabled = true;

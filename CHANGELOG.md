@@ -4,6 +4,15 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 8:45 PM
+
+- **Refactor pass: caches, DRY, shared thread pool** — five small changes that compound:
+  - `staffing.load_roster()` now caches in-process for 60s (invalidated on `save_roster()` and on Odoo sync). Was hitting Postgres with a JOIN-heavy query on every page render that touched the roster.
+  - `stratustime_client` now uses a single module-level shared `ThreadPoolExecutor` for fan-out fetches inside `time_off_entries_for_day` and `_for_range`, instead of creating a fresh pool per call. Skips the per-call thread-creation overhead.
+  - DRY'd the post-mutation cache-bust pattern: every endpoint that writes to Postgres was repeating `stratustime_client.cache_clear() + _bust_late_report_cache() + _http_cache.invalidate_today_cache()`. Now `_bust_after_mutation()` covers all three in one call.
+  - Removed leftover debug `console.log` lines from the partial-clear and attribution-clear handlers.
+  - Confirmed `staffing.load_schedule()` was already cached per-day with proper invalidation — no change needed there.
+
 ### 8:15 PM
 
 - **× on saved retro WC attributions** — Jose Luis's "partial pill" turned out not to be a partial-day off entry at all — it was a saved retro WC attribution (manager said "Jose Luis worked 7:01a-1:01p here"). Different data source, different table, different fix. Every amber attribution pill on the scheduler grid now has a small white-on-red ✕ button. Click it, confirm, and the attribution is removed (calls the existing /api/staffing/attribute/{id} DELETE endpoint, then the leaderboards / dashboards stop crediting that person for that work center).

@@ -211,9 +211,30 @@ def _default_assignments_from_plant_scheduler() -> dict[str, list[str]]:
 
 # ---------- roster ----------
 
+# In-process cache. Roster doesn't change between Odoo syncs, so a 60 s
+# TTL is plenty fresh and saves a JOIN-heavy query on every page render.
+_ROSTER_CACHE: tuple[list[Person], float] | None = None
+_ROSTER_CACHE_LOCK = RLock()
+_ROSTER_CACHE_TTL_SECONDS = 60.0
+
+
+def _invalidate_roster_cache() -> None:
+    global _ROSTER_CACHE
+    with _ROSTER_CACHE_LOCK:
+        _ROSTER_CACHE = None
+
+
 def load_roster() -> list[Person]:
     """Load all people + their skill levels from Postgres. Inactive people
-    are returned too (sorted to the bottom)."""
+    are returned too (sorted to the bottom). Cached in-process for 60 s;
+    invalidated on save_roster()."""
+    import time as _time
+    global _ROSTER_CACHE
+    with _ROSTER_CACHE_LOCK:
+        if _ROSTER_CACHE is not None:
+            cached, expires_at = _ROSTER_CACHE
+            if _time.time() < expires_at:
+                return cached
     from . import db
     rows = db.query(
         "SELECT p.id, p.name, p.active, p.reserve, p.odoo_id, "
@@ -234,6 +255,8 @@ def load_roster() -> list[Person]:
             skills={k: int(v) for k, v in (json.loads(r["skills_json"]) or {}).items()},
             employee_id=r["odoo_id"],
         ))
+    with _ROSTER_CACHE_LOCK:
+        _ROSTER_CACHE = (out, _time.time() + _ROSTER_CACHE_TTL_SECONDS)
     return out
 
 
@@ -270,6 +293,7 @@ def save_roster(people: list[Person]) -> None:
                         "skill_id = (SELECT id FROM skills WHERE name = %s)",
                         (p.name, skill_name),
                     )
+    _invalidate_roster_cache()
 
 
 # ---------- daily schedule ----------

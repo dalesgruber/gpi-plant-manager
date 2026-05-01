@@ -144,8 +144,9 @@ def sync(force: bool = False) -> SyncResult:
     _write_last_sync(pulled_at)
 
     # Bust caches that depend on the freshly-synced data.
-    from . import cert_lookup
+    from . import cert_lookup, staffing
     cert_lookup.invalidate_cache()
+    staffing._invalidate_roster_cache()
 
     return SyncResult(
         ok=True, refreshed=True, employee_count=len(employees),

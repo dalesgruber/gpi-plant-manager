@@ -201,6 +201,14 @@ def health_check() -> dict:
 EMPLOYEE_LIST_TTL_SECONDS = 30 * 60  # employee roster rarely changes — cache aggressively
 
 
+# Module-level shared thread pool for fan-out fetches inside
+# time_off_entries_for_day / _for_range. Reusing one pool across calls
+# avoids the per-call thread-creation overhead and the GC churn of
+# Python's ThreadPoolExecutor context manager.
+from concurrent.futures import ThreadPoolExecutor as _TPE
+_SHARED_POOL = _TPE(max_workers=12, thread_name_prefix="stratustime")
+
+
 def list_employees() -> list[dict]:
     """Smoke fetch via GetUserBasic (DataAction SELECT-ALL).
 
@@ -701,15 +709,13 @@ def time_off_entries_for_day(day) -> list[dict]:
     unmapped EmpIdentifiers are surfaced as 'Unknown ({id})' so it's visible.
     """
     # Use a 7-day window centered on `day` — small request, hits cache often.
-    from concurrent.futures import ThreadPoolExecutor
     from datetime import timedelta
     start_d = day - timedelta(days=3)
     end_d = day + timedelta(days=3)
 
-    # Fan out everything we need in parallel. Most StratusTime sub-fetches
-    # have their own caches, so on a warm path this is near-free; on a
-    # cold path (post-deploy or after cache TTL) parallelism cuts the
-    # ~3-4s sequential chain to whichever sub-call is slowest.
+    # Fan out everything we need in parallel via the module-level pool.
+    # Most sub-fetches are cached, so on a warm path this is near-free;
+    # on a cold path parallelism cuts ~3-4s sequential to the slowest call.
     def _safe(fn, *a, default=None):
         try:
             return fn(*a)
@@ -717,27 +723,23 @@ def time_off_entries_for_day(day) -> list[dict]:
             return default
 
     from . import late_report as _lr
-    with ThreadPoolExecutor(max_workers=7) as pool:
-        f_requests = pool.submit(_safe, get_time_off_requests, start_d, end_d, default=[])
-        f_non_work = pool.submit(_safe, get_non_work_shifts, start_d, end_d, default=[])
-        f_cleared_req = pool.submit(_safe, _lr.cleared_request_ids_for_day, day, default=set())
-        f_cleared_emp = pool.submit(_safe, _lr.cleared_non_work_emp_ids_for_day, day, default=set())
-        f_cleared_names = pool.submit(_safe, _lr.cleared_partial_names_for_day, day, default=set())
-        f_manual = pool.submit(_safe, _lr.absences_for_day, day, default=[])
-        # roster_map / full_map walk list_employees() — likely cached, but
-        # if cold we want them resolving in parallel with the StratusTime
-        # fetches above.
-        f_roster_map = pool.submit(_emp_id_to_roster_name_map)
-        f_full_map = pool.submit(_employee_id_to_name_map)
+    f_requests = _SHARED_POOL.submit(_safe, get_time_off_requests, start_d, end_d, default=[])
+    f_non_work = _SHARED_POOL.submit(_safe, get_non_work_shifts, start_d, end_d, default=[])
+    f_cleared_req = _SHARED_POOL.submit(_safe, _lr.cleared_request_ids_for_day, day, default=set())
+    f_cleared_emp = _SHARED_POOL.submit(_safe, _lr.cleared_non_work_emp_ids_for_day, day, default=set())
+    f_cleared_names = _SHARED_POOL.submit(_safe, _lr.cleared_partial_names_for_day, day, default=set())
+    f_manual = _SHARED_POOL.submit(_safe, _lr.absences_for_day, day, default=[])
+    f_roster_map = _SHARED_POOL.submit(_emp_id_to_roster_name_map)
+    f_full_map = _SHARED_POOL.submit(_employee_id_to_name_map)
 
-        requests_ = f_requests.result() or []
-        non_work = f_non_work.result() or []
-        cleared_req_ids = f_cleared_req.result() or set()
-        cleared_emp_ids = f_cleared_emp.result() or set()
-        cleared_names = f_cleared_names.result() or set()
-        manual_abs_rows = f_manual.result() or []
-        roster_map = f_roster_map.result() or {}
-        full_map = f_full_map.result() or {}
+    requests_ = f_requests.result() or []
+    non_work = f_non_work.result() or []
+    cleared_req_ids = f_cleared_req.result() or set()
+    cleared_emp_ids = f_cleared_emp.result() or set()
+    cleared_names = f_cleared_names.result() or set()
+    manual_abs_rows = f_manual.result() or []
+    roster_map = f_roster_map.result() or {}
+    full_map = f_full_map.result() or {}
     out = []
     for r in requests_:
         if r.get("StatusType") != 1:
@@ -875,7 +877,6 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
     Derived absences only fire for `today`, so they're added only if
     `today` falls within the range.
     """
-    from concurrent.futures import ThreadPoolExecutor
     from datetime import datetime as _dt, timedelta, timezone as _tz
 
     if end_d < start_d:
@@ -893,24 +894,23 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
             return default
 
     from . import late_report as _lr
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        f_requests = pool.submit(_safe, get_time_off_requests, sx_start, sx_end, default=[])
-        f_non_work = pool.submit(_safe, get_non_work_shifts, sx_start, sx_end, default=[])
-        f_cleared_req = pool.submit(_safe, _lr.cleared_request_ids_for_range, start_d, end_d, default={})
-        f_cleared_emp = pool.submit(_safe, _lr.cleared_non_work_emp_ids_for_range, start_d, end_d, default={})
-        f_cleared_names = pool.submit(_safe, _lr.cleared_partial_names_for_range, start_d, end_d, default={})
-        f_manual = pool.submit(_safe, _lr.absences_for_range, start_d, end_d, default={})
-        f_roster_map = pool.submit(_emp_id_to_roster_name_map)
-        f_full_map = pool.submit(_employee_id_to_name_map)
+    f_requests = _SHARED_POOL.submit(_safe, get_time_off_requests, sx_start, sx_end, default=[])
+    f_non_work = _SHARED_POOL.submit(_safe, get_non_work_shifts, sx_start, sx_end, default=[])
+    f_cleared_req = _SHARED_POOL.submit(_safe, _lr.cleared_request_ids_for_range, start_d, end_d, default={})
+    f_cleared_emp = _SHARED_POOL.submit(_safe, _lr.cleared_non_work_emp_ids_for_range, start_d, end_d, default={})
+    f_cleared_names = _SHARED_POOL.submit(_safe, _lr.cleared_partial_names_for_range, start_d, end_d, default={})
+    f_manual = _SHARED_POOL.submit(_safe, _lr.absences_for_range, start_d, end_d, default={})
+    f_roster_map = _SHARED_POOL.submit(_emp_id_to_roster_name_map)
+    f_full_map = _SHARED_POOL.submit(_employee_id_to_name_map)
 
-        requests_ = f_requests.result() or []
-        non_work = f_non_work.result() or []
-        cleared_req_by_day = f_cleared_req.result() or {}
-        cleared_emp_by_day = f_cleared_emp.result() or {}
-        cleared_names_by_day = f_cleared_names.result() or {}
-        manual_abs_by_day = f_manual.result() or {}
-        roster_map = f_roster_map.result() or {}
-        full_map = f_full_map.result() or {}
+    requests_ = f_requests.result() or []
+    non_work = f_non_work.result() or []
+    cleared_req_by_day = f_cleared_req.result() or {}
+    cleared_emp_by_day = f_cleared_emp.result() or {}
+    cleared_names_by_day = f_cleared_names.result() or {}
+    manual_abs_by_day = f_manual.result() or {}
+    roster_map = f_roster_map.result() or {}
+    full_map = f_full_map.result() or {}
 
     # Pre-filter approved requests once. _request_covers_day is cheap
     # (string compare), so per-day looping over the filtered list is fine.

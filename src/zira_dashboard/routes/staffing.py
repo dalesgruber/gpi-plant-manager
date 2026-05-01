@@ -907,6 +907,18 @@ def _bust_late_report_cache() -> None:
     _LATE_REPORT_CACHE["expires_at"] = 0.0
 
 
+def _bust_after_mutation() -> None:
+    """Drop every cache that could now be stale after a write.
+
+    Called from POST endpoints that mutate Postgres state (clear-partial,
+    declare-absent, snooze, attribute, etc.). Drops the StratusTime
+    in-process cache, the late-report response cache, and the today
+    bucket of the response cache."""
+    stratustime_client.cache_clear()
+    _bust_late_report_cache()
+    _http_cache.invalidate_today_cache()
+
+
 @router.post("/api/late-report/declare-absent")
 async def late_report_declare_absent(request: Request):
     """Mark a scheduled person as Absent for today.
@@ -933,8 +945,7 @@ async def late_report_declare_absent(request: Request):
         )
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear(); _bust_late_report_cache()
-    _http_cache.invalidate_today_cache()
+    _bust_after_mutation()
     return JSONResponse({"ok": True})
 
 
@@ -979,8 +990,7 @@ async def late_report_undo_absent(request: Request):
         late_report.undo_absent(today, emp_id)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear(); _bust_late_report_cache()
-    _http_cache.invalidate_today_cache()
+    _bust_after_mutation()
     return JSONResponse({"ok": True})
 
 
@@ -1023,8 +1033,7 @@ async def staffing_clear_partial(request: Request):
             late_report.clear_non_work_shift(day, str(emp_id))
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear(); _bust_late_report_cache()
-    _http_cache.invalidate_today_cache()
+    _bust_after_mutation()
     return JSONResponse({"ok": True})
 
 
@@ -1055,8 +1064,7 @@ async def staffing_restore_partial(request: Request):
             late_report.restore_non_work_shift(day, str(emp_id))
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear(); _bust_late_report_cache()
-    _http_cache.invalidate_today_cache()
+    _bust_after_mutation()
     return JSONResponse({"ok": True})
 
 
@@ -1152,7 +1160,7 @@ def stratustime_refresh(back: str | None = Query(default=None)):
 
     Triggered by a plain `<a>` link from scheduler / time-off pages.
     """
-    stratustime_client.cache_clear(); _bust_late_report_cache()
+    _bust_after_mutation()
     target = back or "/staffing"
     # Basic safety: only allow same-origin paths.
     if not target.startswith("/"):
