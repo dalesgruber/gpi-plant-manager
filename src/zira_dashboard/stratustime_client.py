@@ -538,6 +538,113 @@ def _request_covers_day(req: dict, day) -> bool:
     return True
 
 
+ABSENT_BUFFER_MINUTES = 30
+"""How long after shift-start to wait before marking a no-punch person as
+'absent'. Gives latecomers time to actually arrive before they get
+flagged as a derived absence."""
+
+
+def derived_absences_for_day(day) -> list[dict]:
+    """Compute 'absent' people for `day` by combining schedule + punch state.
+
+    StratusTime UI flags people as 'Absent' when they're scheduled to
+    work but haven't punched in by shift-start. The flag isn't stored
+    anywhere queryable — it's computed in real time. This helper does the
+    same derivation:
+
+      1. Fetch the StratusTime schedule for `day` (GetUserSchedule)
+      2. Fetch each scheduled person's attendance via attendance_for_day
+      3. If the shift started more than ABSENT_BUFFER_MINUTES ago AND the
+         person has no_punch status AND no time-off / non-work entry
+         covers them → flag as derived absent.
+
+    Only fires for `day == today`. Past/future days return [].
+
+    Returns dicts compatible with time_off_entries_for_day's shape, with
+    `derived: True` so the UI can label them differently.
+    """
+    from datetime import datetime as _dt, timedelta
+    from . import shift_config
+
+    today_d = _dt.now(timezone.utc).date()
+    if day != today_d:
+        return []
+    site_tz = shift_config.SITE_TZ
+    now_local = _dt.now(timezone.utc).astimezone(site_tz)
+    shift_start_local = _dt.combine(day, shift_config.shift_start_for(day), tzinfo=site_tz)
+    cutoff = shift_start_local + timedelta(minutes=ABSENT_BUFFER_MINUTES)
+    if now_local < cutoff:
+        return []  # too early to flag
+
+    # Pull StratusTime schedule for today — anyone with a schedule entry
+    # is "expected to work."
+    start_ms = _epoch_ms(day)
+    end_ms = _epoch_ms(day + timedelta(days=1))
+    status, parsed = authenticated_post("GetUserSchedule", {
+        "StartDate": _wcf_date(start_ms),
+        "EndDate": _wcf_date(end_ms),
+        "DateTimeSchema": 0,
+        "DataAction": {"Name": "SELECT-ALL", "Values": []},
+    })
+    if status < 200 or status >= 300 or not isinstance(parsed, dict):
+        return []
+    sched_results = parsed.get("Results") or []
+    target_iso = day.isoformat()
+    scheduled_emp_ids: set[str] = set()
+    for r in sched_results:
+        s = (r.get("StartDateTimeSchema") or "")[:10]
+        if s != target_iso:
+            continue
+        eid = str(r.get("EmpIdentifier") or "")
+        if eid:
+            scheduled_emp_ids.add(eid)
+    if not scheduled_emp_ids:
+        return []
+
+    # Check each scheduled emp's attendance.
+    att = attendance_for_day(day, sorted(scheduled_emp_ids))
+
+    # Build a set of empids who already have a time-off / non-work entry
+    # covering today, so we don't double-flag them.
+    excluded_emp_ids: set[str] = set()
+    try:
+        for r in get_time_off_requests(day - timedelta(days=3), day + timedelta(days=3)):
+            if r.get("StatusType") != 1:
+                continue
+            if not _request_covers_day(r, day):
+                continue
+            excluded_emp_ids.add(str(r.get("EmpIdentifier") or ""))
+    except Exception:
+        pass
+    try:
+        for nw in get_non_work_shifts(day - timedelta(days=3), day + timedelta(days=3)):
+            if nw.get("apply_date") == target_iso:
+                excluded_emp_ids.add(nw.get("emp_id") or "")
+    except Exception:
+        pass
+
+    roster_map = _emp_id_to_roster_name_map()
+    full_map = _employee_id_to_name_map()
+    out: list[dict] = []
+    for emp_id, info in att.items():
+        if info.get("status") != "no_punch":
+            continue
+        if emp_id in excluded_emp_ids:
+            continue
+        name = roster_map.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
+        out.append({
+            "name": name,
+            "pay_type": "Absent",
+            "hours": 8.0,
+            "time_range": "",
+            "status_type": None,
+            "request_id": None,
+            "non_work": True,
+            "derived": True,
+        })
+    return out
+
+
 def time_off_entries_for_day(day) -> list[dict]:
     """Return list of {name, pay_type, hours, status_type, request_id} for `day`.
 
@@ -623,6 +730,18 @@ def time_off_entries_for_day(day) -> list[dict]:
             "request_id": None,
             "non_work": True,              # marker so UI can label differently
         })
+
+    # Layer in derived absences — anyone scheduled today who hasn't
+    # punched in by shift_start + buffer and isn't already in the list.
+    try:
+        derived = derived_absences_for_day(day)
+    except Exception:
+        derived = []
+    listed_names = {e["name"] for e in out}
+    for d in derived:
+        if d["name"] in listed_names:
+            continue
+        out.append(d)
 
     return out
 
