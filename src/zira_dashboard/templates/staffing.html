@@ -84,6 +84,8 @@
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center">
     <span id="testing-pill" class="pub-pill" style="{% if not testing_day %}display:none;{% endif %}background:var(--warn-dim);color:var(--warn)">Testing Day</span>
+    <button type="button" class="undo-btn header-undo-redo" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
+    <button type="button" class="redo-btn header-undo-redo" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
   </div>
 </header>
 
@@ -195,8 +197,6 @@
         </div>
       </div>
       <button type="button" id="clear-schedule-btn" class="clear-btn">Reset to defaults</button>
-      <button type="button" class="undo-btn" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
-      <button type="button" class="redo-btn" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
       {% if has_snapshot %}
         <div class="view-toggle" role="tablist" aria-label="Draft vs posted view">
           <a href="/staffing?day={{ day }}&amp;view=draft"
@@ -303,9 +303,13 @@
                        data-max="{{ row.max_ops if row.max_ops is not none else '' }}">
                 <summary>
                   <span class="dd-summary-text">
+                    {% set wc_attribs = attributions_by_wc.get(row.loc.name, []) if attributions_by_wc else [] %}
                     {% if row.assigned %}
-                      {% for a in row.assigned %}<span class="lvl-{{ a.level }}">{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge" title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}</span>{% endif %}{% if attendance_by_name and a.name in attendance_by_name %}{% set att = attendance_by_name[a.name] %}{% if att.status == 'on_time' %}<span class="att-badge att-on-time" title="Clocked in {{ att.clocked_in_at }} (on time)">✓</span>{% elif att.status == 'late' %}<span class="att-badge att-late" title="Clocked in {{ att.clocked_in_at }} ({{ att.minutes_late }}m late)">⚠ +{{ att.minutes_late }}m</span>{% elif att.status == 'no_punch' %}<span class="att-badge att-no-punch" title="No clock-in yet today">✗</span>{% elif att.status == 'clocked_out' %}<span class="att-badge att-clocked-out" title="Clocked out at {{ att.clocked_in_at }}">⏸</span>{% endif %}{% endif %}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
-                    {% else %}
+                      {% for a in row.assigned %}<span class="lvl-{{ a.level }}">{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge" title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}</span>{% endif %}{% if attendance_by_name and a.name in attendance_by_name %}{% set att = attendance_by_name[a.name] %}{% if att.status == 'on_time' %}<span class="att-badge att-on-time" title="Clocked in {{ att.clocked_in_at }} (on time)">✓</span>{% elif att.status == 'late' %}<span class="att-badge att-late" title="Clocked in {{ att.clocked_in_at }} ({{ att.minutes_late }}m late)">⚠ +{{ att.minutes_late }}m</span>{% elif att.status == 'no_punch' %}<span class="att-badge att-no-punch" title="No clock-in yet today">✗</span>{% elif att.status == 'clocked_out' %}<span class="att-badge att-clocked-out" title="Clocked out at {{ att.clocked_in_at }}">⏸</span>{% endif %}{% endif %}</span>{% if not loop.last or wc_attribs %}<span class="sep">, </span>{% endif %}{% endfor %}
+                    {% endif %}
+                    {% if wc_attribs %}
+                      {% for attrib in wc_attribs %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }}">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
+                    {% elif not row.assigned %}
                       <span class="empty">—</span>
                     {% endif %}
                   </span>

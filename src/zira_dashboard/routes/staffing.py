@@ -187,22 +187,31 @@ def staffing_page(
 
     # Saved-today list: existing attributions for the modal's "Saved today"
     # sub-list with delete buttons. Same try/except guard as the todo list.
+    # Also bucket by WC so each row of the scheduler can render attribution
+    # pills (amber, with a time-range tag) alongside its scheduled pills.
     assignments_done: list[dict] = []
+    attributions_by_wc: dict[str, list[dict]] = {}
     try:
-        from .. import wc_attributions
+        from .. import stratustime_client, wc_attributions
         site_tz = shift_config.SITE_TZ
         for r in wc_attributions.for_day(d):
             s_local = r["start_utc"].astimezone(site_tz)
             e_local = r["end_utc"].astimezone(site_tz)
-            assignments_done.append({
+            entry = {
                 "id": r["id"],
                 "wc_name": r["wc_name"],
                 "person_name": r["person_name"],
                 "first_label": s_local.strftime("%I:%M %p").lstrip("0"),
                 "last_label": e_local.strftime("%I:%M %p").lstrip("0"),
-            })
+                "time_range": stratustime_client._fmt_time_range(
+                    s_local.isoformat(), e_local.isoformat()
+                ),
+            }
+            assignments_done.append(entry)
+            attributions_by_wc.setdefault(r["wc_name"], []).append(entry)
     except Exception:
         assignments_done = []
+        attributions_by_wc = {}
     all_active_people = sorted(p.name for p in active_people)
 
     # Per-person hours-off-today (for partial entries) so the scheduler
@@ -398,6 +407,7 @@ def staffing_page(
                 "person_certs": person_certs,
                 "assignments_todo": assignments_todo,
                 "assignments_done": assignments_done,
+                "attributions_by_wc": attributions_by_wc,
                 "all_active_people": all_active_people,
             },
         )

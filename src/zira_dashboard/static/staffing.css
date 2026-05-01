@@ -470,20 +470,36 @@
 
   /* Save toast (top-center) — shared with skills + settings. */
 
-  /* Title-bar Undo / Redo icon buttons — same as People Matrix toolbar. */
-  .title-bar button.undo-btn,
-  .title-bar button.redo-btn {
+  /* Header Undo / Redo icon buttons — same look as Settings page. */
+  header.app .header-undo-redo {
     background: transparent; color: var(--fg);
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 0.3rem 0.6rem;
-    font: inherit; font-size: 1.15rem; font-weight: 700;
-    line-height: 1;
-    cursor: pointer;
+    padding: 0.25rem 0.6rem;
+    font: inherit; font-size: 1.05rem; font-weight: 700;
+    line-height: 1; cursor: pointer;
   }
-  .title-bar button.undo-btn:hover:not(:disabled),
-  .title-bar button.redo-btn:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; }
-  .title-bar button.undo-btn:disabled,
-  .title-bar button.redo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  header.app .header-undo-redo:hover:not(:disabled) { border-color: #60a5fa; color: #60a5fa; }
+  header.app .header-undo-redo:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Retro WC attribution pill — appears in a WC row alongside the
+     scheduled people, color-coded amber to mark "actually worked here
+     for part of the day" (sourced from wc_time_attributions). */
+  .lvl-attribution {
+    background: var(--warn-dim); color: var(--warn);
+    border: 1px solid var(--warn);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    font-size: 0.82rem; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 0.3rem;
+  }
+  .lvl-attribution .attribution-range {
+    font-size: 0.66rem;
+    background: var(--warn); color: white;
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
 
   /* Per-WC notes column */
   .wc-note-cell textarea {
