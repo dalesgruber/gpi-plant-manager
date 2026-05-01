@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 5:45 PM
+
+- **Absent entries now red** — derived absences, manager-declared "Manual Absent", and StratusTime non-work-shift entries (Pascual case) all render in red on the Time Off section of the scheduler AND on the time-off calendar (day/week/month views). Planned PTO and partials keep their existing blue/amber so the eye distinguishes "expected to be off" from "didn't show / forced absent."
+
 ### 5:35 PM
 
 - **Partial × button now actually visible** — the clear button on partial pills was rendering but with transparent-on-amber styling that made it invisible. Now a small white circle with a red × and a subtle shadow, scales up slightly on hover. Same treatment on the Time Off section's clear buttons.

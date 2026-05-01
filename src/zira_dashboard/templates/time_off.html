@@ -36,6 +36,7 @@
   }
   .off-pill.full { background: #dbeafe; color: #1d4ed8; }
   .off-pill.partial { background: var(--warn-dim); color: var(--warn); border: 1px solid var(--warn); }
+  .off-pill.absent { background: #fee2e2; color: #991b1b; border: 1px solid #b91c1c; font-weight: 700; }
   .off-none { color: var(--muted); font-size: 0.7rem; font-style: italic; }
 
   /* day view */
@@ -79,8 +80,9 @@
       <div class="day-view-list">
         {% for e in day_names %}
           {% set is_partial = e.hours is not none and e.hours < 8 %}
+          {% set is_absent = e.non_work %}
           {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-          <span class="off-pill {% if is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">
+          <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">
             {{ e.name }}{% if e.pay_type %} <span style="opacity:0.75;font-weight:400">· {{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}</span>{% endif %}
           </span>
         {% endfor %}
@@ -102,8 +104,9 @@
             <div class="off-pills">
               {% for e in d.names %}
                 {% set is_partial = e.hours is not none and e.hours < 8 %}
+                {% set is_absent = e.non_work %}
                 {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-                <span class="off-pill {% if is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
+                <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
               {% endfor %}
             </div>
           {% else %}
@@ -129,8 +132,9 @@
                 <div class="off-pills">
                   {% for e in d.names %}
                     {% set is_partial = e.hours is not none and e.hours < 8 %}
-                {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-                <span class="off-pill {% if is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
+                    {% set is_absent = e.non_work %}
+                    {% set partial_label = e.time_range or (e.hours ~ 'h') %}
+                    <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
                   {% endfor %}
                 </div>
               {% endif %}

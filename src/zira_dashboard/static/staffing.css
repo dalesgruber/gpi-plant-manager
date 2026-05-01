@@ -68,6 +68,12 @@
   .timeoff .time-off-row:last-child { border-bottom: none; }
   .timeoff .time-off-row.full { border-left-color: #60a5fa; }
   .timeoff .time-off-row.partial { border-left-color: var(--warn); background: var(--warn-dim); }
+  .timeoff .time-off-row.absent {
+    border-left-color: #b91c1c;
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .timeoff .time-off-row.absent .ts-meta { color: #b91c1c; }
   .timeoff .time-off-row .name { font-weight: 500; }
   .timeoff .time-off-row .ts-meta { font-size: 0.78rem; color: var(--muted); }
   .timeoff .partial-tag {
