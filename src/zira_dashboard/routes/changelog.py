@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 router = APIRouter()
 
@@ -79,6 +79,20 @@ def changelog_html() -> HTMLResponse:
         return HTMLResponse("<p>No changelog yet.</p>")
     text = CHANGELOG_PATH.read_text(encoding="utf-8")
     return HTMLResponse(_md_to_html(text))
+
+
+@router.get("/changelog/latest")
+def changelog_latest() -> JSONResponse:
+    """Return the most recent date heading in CHANGELOG.md as ISO YYYY-MM-DD.
+
+    The frontend uses this to decide whether to show a "new entry" dot
+    next to the footer link. Compares against localStorage.changelog_seen.
+    """
+    if not CHANGELOG_PATH.exists():
+        return JSONResponse({"latest_date": None})
+    text = CHANGELOG_PATH.read_text(encoding="utf-8")
+    m = re.search(r"^##\s+(\d{4}-\d{2}-\d{2})", text, re.MULTILINE)
+    return JSONResponse({"latest_date": m.group(1) if m else None})
 
 
 @router.get("/changelog.md", response_class=PlainTextResponse)

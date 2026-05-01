@@ -23,8 +23,21 @@
   .app-footer .changelog-link {
     color: var(--muted, #6b7280);
     text-decoration: none;
+    position: relative;
   }
   .app-footer .changelog-link:hover { color: var(--accent, #16a34a); }
+  .app-footer .changelog-link.has-new {
+    color: var(--accent, #16a34a);
+    font-weight: 600;
+  }
+  .app-footer .changelog-link.has-new::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent, #16a34a);
+    margin-right: 0.35rem;
+    vertical-align: 1px;
+  }
 
   .changelog-modal[hidden] { display: none; }
   .changelog-modal {
@@ -91,6 +104,20 @@
   var body = document.getElementById('changelog-body');
   if (!btn || !modal) return;
   var loaded = false;
+  var latestDate = null;
+
+  // Check whether there's a newer entry than the user has seen.
+  fetch('/changelog/latest')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      latestDate = data && data.latest_date;
+      if (!latestDate) return;
+      var seen = '';
+      try { seen = localStorage.getItem('changelog_seen') || ''; } catch (e) {}
+      if (latestDate > seen) btn.classList.add('has-new');
+    })
+    .catch(function () { /* offline / first-load — silently skip */ });
+
   function open(e) {
     if (e) e.preventDefault();
     modal.hidden = false;
@@ -100,6 +127,11 @@
         .then(function (r) { return r.text(); })
         .then(function (html) { body.innerHTML = html; loaded = true; })
         .catch(function () { body.innerHTML = '<p>Could not load changelog.</p>'; });
+    }
+    // Mark as read.
+    if (latestDate) {
+      try { localStorage.setItem('changelog_seen', latestDate); } catch (e) {}
+      btn.classList.remove('has-new');
     }
   }
   function close() {
