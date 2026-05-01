@@ -49,7 +49,7 @@
 
 
   /* Main layout */
-  .layout { padding: 1rem 1.5rem; display: grid; grid-template-columns: 200px minmax(0, 1fr) 280px; gap: 1rem; }
+  .layout { padding: 1rem 1.5rem; display: grid; grid-template-columns: 200px minmax(0, 1fr) 280px; gap: 1rem; max-width: 1500px; margin-left: auto; margin-right: auto; }
   .day-context { min-width: 0; }
   .side .section h3 {
     margin: 0 0 0.55rem;
