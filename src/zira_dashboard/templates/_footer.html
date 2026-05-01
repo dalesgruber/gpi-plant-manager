@@ -285,11 +285,12 @@
       navBadge = document.createElement('a');
       navBadge.href = '#';
       navBadge.className = 'assign-todo-nav-badge';
-      navBadge.title = 'Production happened at unscheduled work centers — click to attribute';
+      navBadge.title = 'Production happened at unscheduled work centers — click to assign';
       navBadge.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
-      anchor.parentNode.insertBefore(navBadge, anchor);
+      // Always sits to the RIGHT of the Settings link.
+      anchor.parentNode.insertBefore(navBadge, anchor.nextSibling);
     }
-    navBadge.innerHTML = '⚠ <span class="cnt">' + data.count + '</span> to attribute';
+    navBadge.innerHTML = '⚠ <span class="cnt">' + data.count + '</span> to Assign';
   }
 
   function openModal() {

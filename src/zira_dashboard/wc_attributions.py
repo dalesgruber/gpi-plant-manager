@@ -84,6 +84,12 @@ def unattributed_for_day(day: date, client) -> list[dict]:
     }
     attributed_wcs = set(people_by_wc(day).keys())
 
+    # STATIONS uses short names (e.g., "Trim Saw", "Junior 2") while
+    # LOCATIONS / schedules use the WC display name (e.g., "Trim Saw 1",
+    # "Junior #2"). Map by meter_id so a schedule on "Trim Saw 1" is
+    # recognized for the station with the matching meter.
+    meter_to_loc_name = {loc.meter_id: loc.name for loc in staffing.LOCATIONS if loc.meter_id}
+
     # All metered work centers, regardless of cell. Production at any metered
     # WC without a schedule entry deserves to surface as a todo (Junior 2,
     # Trim Saw, etc., not just Recycling-cell stations).
@@ -97,7 +103,8 @@ def unattributed_for_day(day: date, client) -> list[dict]:
     for r in results:
         if r.units <= UNATTRIBUTED_MIN_UNITS:
             continue
-        wc = r.station.name
+        # Use the LOCATION display name when available (matches the schedule).
+        wc = meter_to_loc_name.get(r.station.meter_id, r.station.name)
         if wc in scheduled_wcs or wc in attributed_wcs:
             continue
         # Pull first/last sample times from active_intervals for time bounds.
