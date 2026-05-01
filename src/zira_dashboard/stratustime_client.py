@@ -287,17 +287,69 @@ def _employee_id_to_name_map() -> dict[str, str]:
 
 
 def name_to_emp_id_map() -> dict[str, str]:
-    """Reverse of _employee_id_to_name_map: 'FirstName LastName' → 'EmpIdentifier'.
+    """Roster name → EmpIdentifier.
 
-    Cached separately from emp_map but populated from the same source.
+    The app's roster uses short names ("Lauro", "Jesus M") while StratusTime
+    stores them as "FirstName LastName" ("Lauro Lopez", "Jesus Martinez").
+    Walks the roster + StratusTime employees and matches them with these
+    rules in order:
+      1. Exact full-name match.
+      2. Roster name = "First L" where L is the last-name initial.
+      3. Roster name = first name only — take the unique candidate.
     """
     cached = _cache_get(("name_to_id_map",))
     if cached is not None:
         return cached
-    forward = _employee_id_to_name_map()
-    inverted = {name: emp_id for emp_id, name in forward.items()}
-    _cache_set(("name_to_id_map",), inverted)
-    return inverted
+
+    by_first: dict[str, list[tuple[str, str, str]]] = {}
+    full_name_map: dict[str, str] = {}
+    for emp in list_employees():
+        emp_id = str(emp.get("EmpIdentifier") or "")
+        first = (emp.get("FirstName") or "").strip()
+        last = (emp.get("LastName") or "").strip()
+        if not emp_id or not first:
+            continue
+        if last:
+            full_name_map[f"{first} {last}".strip()] = emp_id
+        by_first.setdefault(first.lower(), []).append((emp_id, first, last))
+
+    out: dict[str, str] = {}
+    try:
+        from . import staffing
+        roster = staffing.load_roster()
+    except Exception:
+        roster = []
+    for p in roster:
+        if not getattr(p, "active", True):
+            continue
+        rname = (p.name or "").strip()
+        if not rname:
+            continue
+        if rname in full_name_map:
+            out[rname] = full_name_map[rname]
+            continue
+        parts = rname.split()
+        first = parts[0]
+        candidates = by_first.get(first.lower(), [])
+        if not candidates:
+            continue
+        if len(parts) >= 2 and len(parts[1]) >= 1:
+            init = parts[1][0].upper()
+            for emp_id, fn, ln in candidates:
+                if ln and ln[0].upper() == init:
+                    out[rname] = emp_id
+                    break
+            continue
+        if len(candidates) == 1:
+            out[rname] = candidates[0][0]
+
+    _cache_set(("name_to_id_map",), out)
+    return out
+
+
+def _emp_id_to_roster_name_map() -> dict[str, str]:
+    """Inverse of name_to_emp_id_map: EmpIdentifier → roster name."""
+    return {v: k for k, v in name_to_emp_id_map().items()}
 
 
 def get_time_off_requests(start_d, end_d) -> list[dict]:
@@ -392,7 +444,12 @@ def time_off_entries_for_day(day) -> list[dict]:
     start_d = day - timedelta(days=3)
     end_d = day + timedelta(days=3)
     requests_ = get_time_off_requests(start_d, end_d)
-    emp_map = _employee_id_to_name_map()
+    # Use ROSTER names so downstream filtering (Time Off picker exclusions,
+    # partial_hours_by_name lookups, etc.) matches the scheduler's
+    # canonical names. Falls back to StratusTime's "First Last" if the
+    # roster doesn't have a match.
+    roster_map = _emp_id_to_roster_name_map()
+    full_map = _employee_id_to_name_map()
     out = []
     for r in requests_:
         if r.get("StatusType") != 1:
@@ -400,7 +457,7 @@ def time_off_entries_for_day(day) -> list[dict]:
         if not _request_covers_day(r, day):
             continue
         emp_id = str(r.get("EmpIdentifier") or "")
-        name = emp_map.get(emp_id) or f"Unknown ({emp_id})"
+        name = roster_map.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
         secs = r.get("DurationPerDaySecs") or 0
         start_str = r.get("StartDateTimeSchema") or ""
         end_str = r.get("EndDateTimeSchema") or ""
@@ -445,7 +502,11 @@ def partial_off_intervals_for_day(day) -> dict[str, list]:
     start_d = day - timedelta(days=3)
     end_d = day + timedelta(days=3)
     requests_ = get_time_off_requests(start_d, end_d)
-    emp_map = _employee_id_to_name_map()
+    # Use ROSTER names so the keys match `a.name` in scheduler templates
+    # and per-person lookups. Fall back to StratusTime full name when the
+    # roster doesn't have a match (so the data is still surfaced).
+    roster_map = _emp_id_to_roster_name_map()
+    full_map = _employee_id_to_name_map()
     out: dict[str, list] = {}
     site_tz = shift_config.SITE_TZ
     for r in requests_:
@@ -470,7 +531,7 @@ def partial_off_intervals_for_day(day) -> dict[str, list]:
         if e_utc <= s_utc:
             continue
         emp_id = str(r.get("EmpIdentifier") or "")
-        name = emp_map.get(emp_id)
+        name = roster_map.get(emp_id) or full_map.get(emp_id)
         if not name:
             continue
         out.setdefault(name, []).append((s_utc, e_utc))
