@@ -4,6 +4,16 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 6:45 PM
+
+- **Whole-site speed pass** — five concentrated changes that should compound into a 3-5× speedup on cold pages and basically eliminate the chain on hot ones:
+  - `time_off_entries_for_day` was 5 sequential StratusTime/DB sub-fetches (time-off requests → roster maps → DB cleared sets → non-work shifts → derived absences → manual absences). Now all 7 of those run in parallel via a per-call ThreadPoolExecutor; on a cold path you wait for the slowest sub-call instead of the sum.
+  - The `GetUserSchedule` call inside `derived_absences_for_day` was uncached — every call hit StratusTime fresh. Now cached 60s.
+  - `list_employees()` was being re-fetched whenever both the `name_to_emp_id_map` and `_employee_id_to_name_map` caches missed (common pattern). Now caches the raw employee list directly for 30 min — derived maps stay at 5 min but they reuse the cached list.
+  - `/api/late-report` (polled by every page's footer every 60s) now caches its full JSON response in-process for 30s. Most polls become a dict lookup instead of a StratusTime + DB chain. Cache busts automatically when anyone declares an absence, snoozes, or clears a partial.
+  - `/staffing` page's tail work (Zira API call for unattributed WCs, DB query for saved attributions) moved into the same parallel pool that already runs alongside attendance — was sequential after the executor closed.
+  - App-startup pre-warm now also warms today's full time-off chain (not just the employee directory) so the first user after a Railway redeploy hits warm caches everywhere.
+
 ### 6:15 PM
 
 - **Click the partial pill itself to clear it** — the × button wasn't surfacing well visually, so the whole partial pill is now the click target. Hovering the amber 9-10a badge changes it to a darker amber and grows it slightly; clicking pops a confirm dialog with the person's name. Same on the Time Off section's partial rows. Capture-phase listener so the click doesn't toggle the WC's dropdown.

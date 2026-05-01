@@ -198,6 +198,9 @@ def health_check() -> dict:
     }
 
 
+EMPLOYEE_LIST_TTL_SECONDS = 30 * 60  # employee roster rarely changes — cache aggressively
+
+
 def list_employees() -> list[dict]:
     """Smoke fetch via GetUserBasic (DataAction SELECT-ALL).
 
@@ -205,18 +208,24 @@ def list_employees() -> list[dict]:
       Badge, Email, EmpIdentifier, FirstName, LastName, Phone1/2/3,
       Status, TimeZoneDisplayName, ...
     Returns [] on failure (caller should display health_check details first).
+
+    Cached 30 min — many downstream maps derive from this. Cache_clear()
+    drops it along with the other caches.
     """
+    cached = _cache_get_with_ttl(("list_employees",), EMPLOYEE_LIST_TTL_SECONDS)
+    if cached is not None:
+        return cached
     status, parsed = authenticated_post("GetUserBasic", {
         "EffectiveDate": _now_wcf_date(),
         "DataAction": {"Name": "SELECT-ALL", "Values": []},
     })
-    if status < 200 or status >= 300:
-        return []
-    if isinstance(parsed, dict):
+    out: list[dict] = []
+    if 200 <= status < 300 and isinstance(parsed, dict):
         results = parsed.get("Results")
         if isinstance(results, list):
-            return results
-    return []
+            out = results
+    _cache_set_with_ttl(("list_employees",), out, EMPLOYEE_LIST_TTL_SECONDS)
+    return out
 
 
 # --- Time-off + employee directory caching ---
@@ -607,27 +616,34 @@ def derived_absences_for_day(day) -> list[dict]:
         return []  # too early to flag
 
     # Pull StratusTime schedule for today — anyone with a schedule entry
-    # is "expected to work."
-    start_ms = _epoch_ms(day)
-    end_ms = _epoch_ms(day + timedelta(days=1))
-    status, parsed = authenticated_post("GetUserSchedule", {
-        "StartDate": _wcf_date(start_ms),
-        "EndDate": _wcf_date(end_ms),
-        "DateTimeSchema": 0,
-        "DataAction": {"Name": "SELECT-ALL", "Values": []},
-    })
-    if status < 200 or status >= 300 or not isinstance(parsed, dict):
-        return []
-    sched_results = parsed.get("Results") or []
+    # is "expected to work." Cached 60 s — schedule entries don't move
+    # mid-shift; this avoids an uncached StratusTime hit on every page
+    # render that touches time-off entries.
     target_iso = day.isoformat()
-    scheduled_emp_ids: set[str] = set()
-    for r in sched_results:
-        s = (r.get("StartDateTimeSchema") or "")[:10]
-        if s != target_iso:
-            continue
-        eid = str(r.get("EmpIdentifier") or "")
-        if eid:
-            scheduled_emp_ids.add(eid)
+    sched_cache_key = ("user_schedule_today_ids", target_iso)
+    scheduled_emp_ids = _cache_get_with_ttl(sched_cache_key, 60)
+    if scheduled_emp_ids is None:
+        start_ms = _epoch_ms(day)
+        end_ms = _epoch_ms(day + timedelta(days=1))
+        status, parsed = authenticated_post("GetUserSchedule", {
+            "StartDate": _wcf_date(start_ms),
+            "EndDate": _wcf_date(end_ms),
+            "DateTimeSchema": 0,
+            "DataAction": {"Name": "SELECT-ALL", "Values": []},
+        })
+        if status < 200 or status >= 300 or not isinstance(parsed, dict):
+            return []
+        sched_results = parsed.get("Results") or []
+        ids: set[str] = set()
+        for r in sched_results:
+            s = (r.get("StartDateTimeSchema") or "")[:10]
+            if s != target_iso:
+                continue
+            eid = str(r.get("EmpIdentifier") or "")
+            if eid:
+                ids.add(eid)
+        scheduled_emp_ids = ids
+        _cache_set_with_ttl(sched_cache_key, scheduled_emp_ids, 60)
     if not scheduled_emp_ids:
         return []
 
@@ -635,7 +651,9 @@ def derived_absences_for_day(day) -> list[dict]:
     att = attendance_for_day(day, sorted(scheduled_emp_ids))
 
     # Build a set of empids who already have a time-off / non-work entry
-    # covering today, so we don't double-flag them.
+    # covering today, so we don't double-flag them. Both fetches are
+    # already cache-warmed by time_off_entries_for_day above (which runs
+    # before us), so these are essentially free DB-of-cache lookups.
     excluded_emp_ids: set[str] = set()
     try:
         for r in get_time_off_requests(day - timedelta(days=3), day + timedelta(days=3)):
@@ -683,29 +701,41 @@ def time_off_entries_for_day(day) -> list[dict]:
     unmapped EmpIdentifiers are surfaced as 'Unknown ({id})' so it's visible.
     """
     # Use a 7-day window centered on `day` — small request, hits cache often.
+    from concurrent.futures import ThreadPoolExecutor
     from datetime import timedelta
     start_d = day - timedelta(days=3)
     end_d = day + timedelta(days=3)
-    requests_ = get_time_off_requests(start_d, end_d)
-    # Use ROSTER names so downstream filtering (Time Off picker exclusions,
-    # partial_hours_by_name lookups, etc.) matches the scheduler's
-    # canonical names. Falls back to StratusTime's "First Last" if the
-    # roster doesn't have a match.
-    roster_map = _emp_id_to_roster_name_map()
-    full_map = _employee_id_to_name_map()
-    # Per-day, per-request opt-outs (Jose Luis case: PTO partial filed but
-    # the person actually worked through it — manager clears it from the
-    # scheduler).
-    try:
-        from . import late_report
-        cleared_req_ids = late_report.cleared_request_ids_for_day(day)
-    except Exception:
-        cleared_req_ids = set()
-    try:
-        from . import late_report as _lr2
-        cleared_emp_ids = _lr2.cleared_non_work_emp_ids_for_day(day)
-    except Exception:
-        cleared_emp_ids = set()
+
+    # Fan out everything we need in parallel. Most StratusTime sub-fetches
+    # have their own caches, so on a warm path this is near-free; on a
+    # cold path (post-deploy or after cache TTL) parallelism cuts the
+    # ~3-4s sequential chain to whichever sub-call is slowest.
+    def _safe(fn, *a, default=None):
+        try:
+            return fn(*a)
+        except Exception:
+            return default
+
+    from . import late_report as _lr
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        f_requests = pool.submit(_safe, get_time_off_requests, start_d, end_d, default=[])
+        f_non_work = pool.submit(_safe, get_non_work_shifts, start_d, end_d, default=[])
+        f_cleared_req = pool.submit(_safe, _lr.cleared_request_ids_for_day, day, default=set())
+        f_cleared_emp = pool.submit(_safe, _lr.cleared_non_work_emp_ids_for_day, day, default=set())
+        f_manual = pool.submit(_safe, _lr.absences_for_day, day, default=[])
+        # roster_map / full_map walk list_employees() — likely cached, but
+        # if cold we want them resolving in parallel with the StratusTime
+        # fetches above.
+        f_roster_map = pool.submit(_emp_id_to_roster_name_map)
+        f_full_map = pool.submit(_employee_id_to_name_map)
+
+        requests_ = f_requests.result() or []
+        non_work = f_non_work.result() or []
+        cleared_req_ids = f_cleared_req.result() or set()
+        cleared_emp_ids = f_cleared_emp.result() or set()
+        manual_abs_rows = f_manual.result() or []
+        roster_map = f_roster_map.result() or {}
+        full_map = f_full_map.result() or {}
     out = []
     for r in requests_:
         if r.get("StatusType") != 1:
@@ -740,11 +770,8 @@ def time_off_entries_for_day(day) -> list[dict]:
         })
 
     # Layer in "non-work shift" punches — manager-entered manual absences
-    # that don't appear in GetUserTimeOffRequest.
-    try:
-        non_work = get_non_work_shifts(start_d, end_d)
-    except Exception:
-        non_work = []
+    # that don't appear in GetUserTimeOffRequest. (`non_work` was fetched
+    # above in the parallel pool.)
     target_iso = day.isoformat()
     for nw in non_work:
         if nw.get("apply_date") != target_iso:
@@ -799,30 +826,25 @@ def time_off_entries_for_day(day) -> list[dict]:
     # Layer in manager-declared absences from the Late/Absence Report.
     # These take precedence — a manager pressing "Declare Absent" should
     # always show this person in the Time Off section regardless of what
-    # StratusTime reports.
-    try:
-        from . import late_report
-        for r in late_report.absences_for_day(day):
-            nm = r["name"]
-            emp_id = r["emp_id"]
-            # Prefer the roster-friendly name if we have one (in case the
-            # caller passed a StratusTime full name when declaring).
-            roster_name = roster_map.get(emp_id) or full_map.get(emp_id) or nm
-            if roster_name in listed_names:
-                continue
-            out.append({
-                "name": roster_name,
-                "pay_type": "Manual Absent",
-                "hours": 8.0,
-                "time_range": "",
-                "status_type": None,
-                "request_id": None,
-                "non_work": True,
-                "manual_absent": True,
-            })
-            listed_names.add(roster_name)
-    except Exception:
-        pass
+    # StratusTime reports. (`manual_abs_rows` was fetched in the parallel
+    # pool above.)
+    for r in manual_abs_rows:
+        nm = r["name"]
+        emp_id = r["emp_id"]
+        roster_name = roster_map.get(emp_id) or full_map.get(emp_id) or nm
+        if roster_name in listed_names:
+            continue
+        out.append({
+            "name": roster_name,
+            "pay_type": "Manual Absent",
+            "hours": 8.0,
+            "time_range": "",
+            "status_type": None,
+            "request_id": None,
+            "non_work": True,
+            "manual_absent": True,
+        })
+        listed_names.add(roster_name)
 
     return out
 

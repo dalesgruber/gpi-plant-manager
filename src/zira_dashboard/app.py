@@ -91,8 +91,16 @@ def _prewarm_stratustime() -> None:
 
     def _warm() -> None:
         try:
+            from datetime import datetime as _dt, timezone as _tz
             from . import stratustime_client
+            # Warm employee directory + the two name maps that derive from it.
             stratustime_client._employee_id_to_name_map()
+            stratustime_client.name_to_emp_id_map()
+            # Warm today's time-off-entries chain (requests, non-work shifts,
+            # derived absences). This is what /staffing and /api/late-report
+            # ultimately gate on, so the first user gets a warm cache.
+            today = _dt.now(_tz.utc).date()
+            stratustime_client.time_off_entries_for_day(today)
         except Exception as e:  # noqa: BLE001 — pre-warm must never bubble
             _log.warning("StratusTime pre-warm failed: %s", e)
 

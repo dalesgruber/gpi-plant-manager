@@ -150,12 +150,30 @@ def staffing_page(
     # attendance fetch is fired AFTER the schedule resolves (it needs
     # `sched.assignments`) but still runs concurrently with the rest of
     # the page-prep work.
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    def _safe_assignments_todo():
+        try:
+            from .. import wc_attributions
+            from ..deps import client as zira_client
+            return wc_attributions.unattributed_for_day(d, zira_client)
+        except Exception:
+            return []
+
+    def _safe_assignments_done():
+        try:
+            from .. import wc_attributions
+            return wc_attributions.for_day(d)
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
         with _Phase(phases, "db"):
             f_certs = pool.submit(cert_lookup.load_person_certs)
             f_roster = pool.submit(staffing.load_roster)
             f_sched = pool.submit(staffing.load_schedule, d)
             f_time_off_entries = pool.submit(_safe_time_off_entries, d)
+            # Independent of schedule/roster — fire immediately.
+            f_assignments_todo = pool.submit(_safe_assignments_todo)
+            f_assignments_done = pool.submit(_safe_assignments_done)
             person_certs = f_certs.result()
             roster = f_roster.result()
             sched = f_sched.result()
@@ -202,17 +220,11 @@ def staffing_page(
     active_people = [p for p in roster if p.active]
     all_by_name = {p.name: p for p in roster}
 
-    # Retro WC attributions ("Assignments to Do"). Lists metered WCs that
-    # produced units today but have no one scheduled. Wrapped in try/except
-    # so a transient StratusTime / Zira / Postgres failure doesn't break the
-    # scheduler page.
+    # Drain the parallel-pool futures for the two assignment lists.
+    site_tz = shift_config.SITE_TZ
     assignments_todo: list[dict] = []
     try:
-        from .. import wc_attributions
-        from ..deps import client as zira_client
-        todo = wc_attributions.unattributed_for_day(d, zira_client)
-        site_tz = shift_config.SITE_TZ
-        for item in todo:
+        for item in (f_assignments_todo.result() or []):
             first = item["first_sample_utc"].astimezone(site_tz)
             last = item["last_sample_utc"].astimezone(site_tz)
             assignments_todo.append({
@@ -226,16 +238,10 @@ def staffing_page(
     except Exception:
         assignments_todo = []
 
-    # Saved-today list: existing attributions for the modal's "Saved today"
-    # sub-list with delete buttons. Same try/except guard as the todo list.
-    # Also bucket by WC so each row of the scheduler can render attribution
-    # pills (amber, with a time-range tag) alongside its scheduled pills.
     assignments_done: list[dict] = []
     attributions_by_wc: dict[str, list[dict]] = {}
     try:
-        from .. import stratustime_client, wc_attributions
-        site_tz = shift_config.SITE_TZ
-        for r in wc_attributions.for_day(d):
+        for r in (f_assignments_done.result() or []):
             s_local = r["start_utc"].astimezone(site_tz)
             e_local = r["end_utc"].astimezone(site_tz)
             entry = {
@@ -794,6 +800,9 @@ def assignments_todo_json():
     return JSONResponse(out)
 
 
+_LATE_REPORT_CACHE: dict = {"value": None, "expires_at": 0.0}
+
+
 @router.get("/api/late-report")
 def late_report_json():
     """JSON snapshot for the global Late/Absence Report badge + modal.
@@ -802,8 +811,16 @@ def late_report_json():
       late:     [{emp_id, name, minutes_late}]   — currently late, actionable
       snoozed:  [{emp_id, name, until_iso, mins_remaining}] — silenced, will recheck
       count:    len(late)                         — drives the badge visibility
+
+    Polled by the footer on every page every 60 s, so we cache the
+    response in-process for 30 s. That makes most polls a dict lookup
+    instead of a StratusTime + DB chain.
     """
     from .. import late_report
+    now_ts = time.time()
+    cached = _LATE_REPORT_CACHE.get("value")
+    if cached is not None and now_ts < _LATE_REPORT_CACHE.get("expires_at", 0):
+        return JSONResponse(cached)
     today = datetime.now(timezone.utc).date()
     out: dict = {"count": 0, "today": today.isoformat(), "late": [], "snoozed": []}
     try:
@@ -846,7 +863,14 @@ def late_report_json():
         out["count"] = len(out["late"])
     except Exception:
         pass
+    _LATE_REPORT_CACHE["value"] = out
+    _LATE_REPORT_CACHE["expires_at"] = now_ts + 30.0
     return JSONResponse(out)
+
+
+def _bust_late_report_cache() -> None:
+    _LATE_REPORT_CACHE["value"] = None
+    _LATE_REPORT_CACHE["expires_at"] = 0.0
 
 
 @router.post("/api/late-report/declare-absent")
@@ -875,7 +899,7 @@ async def late_report_declare_absent(request: Request):
         )
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear()
+    stratustime_client.cache_clear(); _bust_late_report_cache()
     _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
@@ -921,7 +945,7 @@ async def late_report_undo_absent(request: Request):
         late_report.undo_absent(today, emp_id)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear()
+    stratustime_client.cache_clear(); _bust_late_report_cache()
     _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
@@ -957,7 +981,7 @@ async def staffing_clear_partial(request: Request):
             late_report.clear_non_work_shift(day, str(emp_id))
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear()
+    stratustime_client.cache_clear(); _bust_late_report_cache()
     _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
@@ -984,7 +1008,7 @@ async def staffing_restore_partial(request: Request):
             late_report.restore_non_work_shift(day, str(emp_id))
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    stratustime_client.cache_clear()
+    stratustime_client.cache_clear(); _bust_late_report_cache()
     _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
@@ -1081,7 +1105,7 @@ def stratustime_refresh(back: str | None = Query(default=None)):
 
     Triggered by a plain `<a>` link from scheduler / time-off pages.
     """
-    stratustime_client.cache_clear()
+    stratustime_client.cache_clear(); _bust_late_report_cache()
     target = back or "/staffing"
     # Basic safety: only allow same-origin paths.
     if not target.startswith("/"):
