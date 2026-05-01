@@ -523,6 +523,10 @@
        class="settings-nav-item {% if active_section == 'schedule' %}active{% endif %}">
       Company Schedule
     </a>
+    <a href="?section=integrations"
+       class="settings-nav-item {% if active_section == 'integrations' %}active{% endif %}">
+      Integrations
+    </a>
   </aside>
 
   <div class="settings-content">
@@ -762,6 +766,35 @@
 
     </details>
   </form>
+
+  <!-- Integrations -->
+  <section class="panel" id="integrations-panel"
+           {% if active_section != 'integrations' %}style="display:none"{% endif %}>
+    <h2>Integrations</h2>
+    <h3 style="margin-top:0.8rem">StratusTime</h3>
+    {% if integration_status is none %}
+      <p style="color:var(--muted)">Loading…</p>
+    {% elif not integration_status.configured %}
+      <p style="color:var(--bad)">❌ Not configured. Set <code>STRATUSTIME_SHARED_KEY</code> and <code>STRATUSTIME_WS_PASSWORD</code> env vars on Railway.</p>
+    {% elif integration_status.ok %}
+      <p style="color:var(--good)">✓ Connected via <strong>{{ integration_status.scheme }}</strong> auth.</p>
+      <p style="font-size:0.85rem;color:var(--muted)">Endpoint: <code>{{ integration_status.endpoint }}</code> · Status {{ integration_status.status }}</p>
+      <details>
+        <summary>Response preview</summary>
+        <pre style="font-size:0.78rem;background:var(--panel-2);padding:0.6rem;border-radius:6px;overflow:auto">{{ integration_status.body_preview }}</pre>
+      </details>
+    {% else %}
+      <p style="color:var(--bad)">❌ Auth failed. Tried {{ integration_status.attempts|length }} scheme{{ '' if integration_status.attempts|length == 1 else 's' }}.</p>
+      <details open>
+        <summary>Diagnostic trail</summary>
+        <ul style="font-size:0.85rem">
+          {% for a in integration_status.attempts %}
+            <li><strong>{{ a.scheme }}</strong> — HTTP {{ a.status }}: <code>{{ a.body_preview }}</code></li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+  </section>
   </div>
 </div>
 </main>

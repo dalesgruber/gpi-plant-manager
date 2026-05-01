@@ -47,8 +47,12 @@ def settings_page(
     saved: int = Query(default=0),
     section: str = Query(default="work_centers"),
 ):
-    if section not in ("work_centers", "schedule"):
+    if section not in ("work_centers", "schedule", "integrations"):
         section = "work_centers"
+    integration_status = None
+    if section == "integrations":
+        from .. import stratustime_client
+        integration_status = stratustime_client.health_check()
     from .. import odoo_sync
     # TTL-checked sync so /settings self-heals after a Railway redeploy
     # where the ephemeral roster.json got reset to the legacy seed.
@@ -154,6 +158,7 @@ def settings_page(
             "active_section": section,
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
+            "integration_status": integration_status,
         },
     )
 
