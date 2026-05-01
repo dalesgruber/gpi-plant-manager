@@ -88,23 +88,34 @@
     white-space: nowrap;
   }
   .partial-hours-badge .partial-clear {
-    display: inline-block; margin-left: 0.25rem;
-    background: transparent; color: var(--warn);
-    border: none; padding: 0; cursor: pointer;
-    font: inherit; font-size: 0.85rem; line-height: 1;
-    opacity: 0.7;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 0.35rem;
+    background: white; color: #b91c1c;
+    border: 1.5px solid #b91c1c; border-radius: 50%;
+    width: 0.95rem; height: 0.95rem; min-width: 0.95rem;
+    padding: 0; cursor: pointer;
+    font: 700 0.7rem/1 sans-serif;
+    vertical-align: -2px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    transition: transform 0.1s ease, background 0.1s ease, color 0.1s ease;
   }
   .partial-hours-badge .partial-clear:hover {
-    opacity: 1; color: var(--bad, #ef4444);
+    background: #b91c1c; color: white;
+    transform: scale(1.2);
   }
   .time-off-row .time-off-clear {
-    background: transparent; border: none; cursor: pointer;
-    color: var(--muted, #6b7280); font-size: 1rem; line-height: 1;
-    padding: 0 0.35rem; margin-left: 0.3rem; border-radius: 4px;
-    opacity: 0.65;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-left: 0.4rem;
+    background: white; color: #b91c1c;
+    border: 1.5px solid #b91c1c; border-radius: 50%;
+    width: 1.15rem; height: 1.15rem;
+    padding: 0; cursor: pointer;
+    font: 700 0.85rem/1 sans-serif;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
   }
   .time-off-row .time-off-clear:hover {
-    color: var(--bad, #ef4444); opacity: 1; background: var(--panel-2, #f1f4f7);
+    background: #b91c1c; color: white;
+    transform: scale(1.1);
   }
   .cleared-partials {
     margin-top: 0.6rem; padding-top: 0.5rem;

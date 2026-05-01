@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 5:35 PM
+
+- **Partial × button now actually visible** — the clear button on partial pills was rendering but with transparent-on-amber styling that made it invisible. Now a small white circle with a red × and a subtle shadow, scales up slightly on hover. Same treatment on the Time Off section's clear buttons.
+
 ### 5:30 PM
 
 - **Clear a partial-day off when it's wrong** — every amber partial pill on the scheduler (and every partial entry in the Time Off section) now has a small × button. Click it, confirm, and that partial is hidden for the day: no badge, no `partial_hours_by_name` deduction, gone from the Time Off list. The StratusTime request itself isn't touched, so other days render normally. A "Cleared today" footer in the Time Off section lets you restore a mis-clicked clear with one click. Use case: Jose Luis filed PTO 9-10a but actually worked through it — × the partial and he goes back to being a normal scheduled person.
