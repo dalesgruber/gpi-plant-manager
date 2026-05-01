@@ -290,6 +290,20 @@ CREATE TABLE IF NOT EXISTS cleared_non_work_shifts (
 );
 CREATE INDEX IF NOT EXISTS cleared_non_work_shifts_day_idx ON cleared_non_work_shifts(day);
 
+-- cleared_partials_by_name: clear key on (day, name). Catch-all for any
+-- partial entry the user wants to suppress, regardless of source —
+-- works even when the underlying StratusTime entry has neither a
+-- request_id nor a usable emp_id (which is why the previous (day,
+-- request_id) and (day, emp_id) approaches missed Jose Luis's case).
+-- Names align with the scheduler's roster names.
+CREATE TABLE IF NOT EXISTS cleared_partials_by_name (
+  day            DATE NOT NULL,
+  name           TEXT NOT NULL,
+  declared_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, name)
+);
+CREATE INDEX IF NOT EXISTS cleared_partials_by_name_day_idx ON cleared_partials_by_name(day);
+
 CREATE TABLE IF NOT EXISTS manual_absences (
   day            DATE NOT NULL,
   emp_id         TEXT NOT NULL,

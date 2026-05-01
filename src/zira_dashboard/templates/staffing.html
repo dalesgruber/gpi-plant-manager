@@ -132,8 +132,8 @@
           {% for e in time_off_entries %}
             {% set is_partial = e.hours is not none and e.hours < 8 %}
             {% set is_absent = e.derived or e.manual_absent %}
-            {% set is_clearable = is_partial and (e.request_id or e.emp_id) %}
-            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}"{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}"{% if e.request_id %} data-request-id="{{ e.request_id }}"{% endif %}{% if e.emp_id %} data-emp-id="{{ e.emp_id }}"{% endif %} title="Click to clear this partial — {{ e.pay_type }} · off {{ e.time_range or (e.hours ~ 'h') }}"{% else %} title="{{ e.pay_type }}{% if is_partial %} · off {{ e.time_range or (e.hours ~ 'h') }}{% endif %}"{% endif %}>
+            {% set is_clearable = is_partial %}
+            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}"{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.pay_type }} · off {{ e.time_range or (e.hours ~ 'h') }}"{% else %} title="{{ e.pay_type }}{% if is_partial %} · off {{ e.time_range or (e.hours ~ 'h') }}{% endif %}"{% endif %}>
               <span class="name">{{ e.name }}{{ cert_badges(e.name, person_certs) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}</span>
               <span class="ts-meta">{{ e.pay_type }}{% if is_partial %} · {% if e.time_range %}off {{ e.time_range }}{% else %}{{ e.hours }}h{% endif %}{% endif %}</span>
             </li>
@@ -149,7 +149,7 @@
             {% for c in cleared_partials_today %}
               <li>
                 <span>{{ c.name }}{% if c.time_range %} · {{ c.time_range }}{% endif %}</span>
-                <button type="button" class="time-off-restore" {% if c.request_id %}data-request-id="{{ c.request_id }}"{% endif %}{% if c.emp_id %} data-emp-id="{{ c.emp_id }}"{% endif %} data-day="{{ day }}">restore</button>
+                <button type="button" class="time-off-restore" data-day="{{ day }}" data-name="{{ c.name }}">restore</button>
               </li>
             {% endfor %}
           </ul>
@@ -307,7 +307,7 @@
                 <summary>
                   <span class="dd-summary-text">
                     {% if visible_assigned %}
-                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge{% if partial_clear_by_name and a.name in partial_clear_by_name %} clearable{% endif %}"{% if partial_clear_by_name and a.name in partial_clear_by_name %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ a.name }}"{% if partial_clear_by_name[a.name].request_id %} data-request-id="{{ partial_clear_by_name[a.name].request_id }}"{% endif %}{% if partial_clear_by_name[a.name].emp_id %} data-emp-id="{{ partial_clear_by_name[a.name].emp_id }}"{% endif %} title="Click to clear this partial — they actually worked through it"{% else %} title="Off {{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}"{% endif %}>{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}</span>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<span class="partial-hours-badge clearable" role="button" tabindex="0" data-day="{{ day }}" data-name="{{ a.name }}" title="Click to clear this partial for {{ a.name }} — they actually worked through it">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }}</span>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% endif %}
                     {% if _wc_attribs_for_row %}
                       {% for attrib in _wc_attribs_for_row %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }}">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}</span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
@@ -1096,17 +1096,13 @@
   // <details>/<summary> default toggle inside the scheduler dropdown.
   async function _doPartialAction(target, isClear) {
     const day = target.dataset.day;
-    const requestId = target.dataset.requestId;
-    const empId = target.dataset.empId;
-    if (!day || (!requestId && !empId)) return;
+    const name = target.dataset.name;
+    if (!day || !name) return;
     if (isClear) {
-      const name = target.dataset.name || 'this person';
       if (!confirm(`Clear ${name}'s partial off for today? They’ll show as fully available.`)) return;
     }
     const url = isClear ? '/api/staffing/clear-partial' : '/api/staffing/restore-partial';
-    const payload = {day};
-    if (requestId) payload.request_id = Number(requestId);
-    else if (empId) payload.emp_id = empId;
+    const payload = {day, name};
     target.style.opacity = '0.5';
     try {
       const resp = await fetch(url, {

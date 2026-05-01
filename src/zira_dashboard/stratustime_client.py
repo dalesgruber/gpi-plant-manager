@@ -717,11 +717,12 @@ def time_off_entries_for_day(day) -> list[dict]:
             return default
 
     from . import late_report as _lr
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=7) as pool:
         f_requests = pool.submit(_safe, get_time_off_requests, start_d, end_d, default=[])
         f_non_work = pool.submit(_safe, get_non_work_shifts, start_d, end_d, default=[])
         f_cleared_req = pool.submit(_safe, _lr.cleared_request_ids_for_day, day, default=set())
         f_cleared_emp = pool.submit(_safe, _lr.cleared_non_work_emp_ids_for_day, day, default=set())
+        f_cleared_names = pool.submit(_safe, _lr.cleared_partial_names_for_day, day, default=set())
         f_manual = pool.submit(_safe, _lr.absences_for_day, day, default=[])
         # roster_map / full_map walk list_employees() — likely cached, but
         # if cold we want them resolving in parallel with the StratusTime
@@ -733,6 +734,7 @@ def time_off_entries_for_day(day) -> list[dict]:
         non_work = f_non_work.result() or []
         cleared_req_ids = f_cleared_req.result() or set()
         cleared_emp_ids = f_cleared_emp.result() or set()
+        cleared_names = f_cleared_names.result() or set()
         manual_abs_rows = f_manual.result() or []
         roster_map = f_roster_map.result() or {}
         full_map = f_full_map.result() or {}
@@ -846,6 +848,18 @@ def time_off_entries_for_day(day) -> list[dict]:
         })
         listed_names.add(roster_name)
 
+    # Final filter: drop any *partial* entry whose roster name was cleared
+    # via the by-name fallback. Full-day absences (manual_absent / derived)
+    # are intentionally not affected — those have their own undo paths.
+    if cleared_names:
+        out = [
+            e for e in out
+            if not (
+                0 < (e.get("hours") or 0) < 8
+                and e.get("name") in cleared_names
+            )
+        ]
+
     return out
 
 
@@ -879,11 +893,12 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
             return default
 
     from . import late_report as _lr
-    with ThreadPoolExecutor(max_workers=7) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         f_requests = pool.submit(_safe, get_time_off_requests, sx_start, sx_end, default=[])
         f_non_work = pool.submit(_safe, get_non_work_shifts, sx_start, sx_end, default=[])
         f_cleared_req = pool.submit(_safe, _lr.cleared_request_ids_for_range, start_d, end_d, default={})
         f_cleared_emp = pool.submit(_safe, _lr.cleared_non_work_emp_ids_for_range, start_d, end_d, default={})
+        f_cleared_names = pool.submit(_safe, _lr.cleared_partial_names_for_range, start_d, end_d, default={})
         f_manual = pool.submit(_safe, _lr.absences_for_range, start_d, end_d, default={})
         f_roster_map = pool.submit(_emp_id_to_roster_name_map)
         f_full_map = pool.submit(_employee_id_to_name_map)
@@ -892,6 +907,7 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
         non_work = f_non_work.result() or []
         cleared_req_by_day = f_cleared_req.result() or {}
         cleared_emp_by_day = f_cleared_emp.result() or {}
+        cleared_names_by_day = f_cleared_names.result() or {}
         manual_abs_by_day = f_manual.result() or {}
         roster_map = f_roster_map.result() or {}
         full_map = f_full_map.result() or {}
@@ -1000,6 +1016,15 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
             })
             listed_names.add(roster_name)
 
+        cleared_names_today = cleared_names_by_day.get(cursor, set())
+        if cleared_names_today:
+            day_out = [
+                e for e in day_out
+                if not (
+                    0 < (e.get("hours") or 0) < 8
+                    and e.get("name") in cleared_names_today
+                )
+            ]
         out[cursor] = day_out
         cursor += timedelta(days=1)
 

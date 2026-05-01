@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 7:50 PM
+
+- **Clear-partial finally works for everyone** — root cause: the click target was conditionally rendered based on whether the underlying StratusTime entry had a `request_id` OR an `emp_id`. Jose Luis's partial came from a path where both happened to be empty, so the pill rendered without the `clearable` class and clicks did nothing. New approach: clear by **name** (the natural key from the user's perspective). Every partial pill is now always clickable, and the backend writes (day, name) to a new `cleared_partials_by_name` table that gets honored on render. Same simplification on the Time Off section rows. The endpoint still accepts the old request_id/emp_id payload shapes for back-compat until the page reloads with new JS.
+
 ### 7:30 PM
 
 - **/time-off page rebuilt around a single bulk fetch** — month view was making ~42 sequential calls to `time_off_entries_for_day`, year view ~365. Each call spawned its own thread pool and ran 5+ DB queries. New `time_off_entries_for_range` does the entire calendar in ONE pass: one StratusTime requests fetch, one non-work-shifts fetch, three bulk DB queries (cleared partials, cleared non-work, manual absences) — then bucketizes by day in memory. Should be 5-15× faster for month/year views.

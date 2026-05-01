@@ -350,6 +350,14 @@ def staffing_page(
                     "name": nm,
                     "time_range": "",
                 })
+            # Cleared by-name (catch-all path — primary going forward)
+            for row in _lr.cleared_partial_names_today_list(d):
+                cleared_partials_today.append({
+                    "request_id": None,
+                    "emp_id": None,
+                    "name": row["name"],
+                    "time_range": "",
+                })
     except Exception:
         cleared_partials_today = []
 
@@ -980,14 +988,16 @@ async def late_report_undo_absent(request: Request):
 async def staffing_clear_partial(request: Request):
     """Hide a partial-day time-off entry from the scheduler for one day.
 
-    Two paths share this endpoint:
-      - StratusTime time-off request: body has `request_id`. Writes to
-        cleared_time_off (day, request_id).
-      - StratusTime non-work-shift: body has `emp_id` (the V1 punch
-        endpoint doesn't expose a stable per-entry id, so we key by
-        emp_id). Writes to cleared_non_work_shifts (day, emp_id).
+    Primary path: clear by NAME. The user thinks in roster names ('Jose
+    Luis'), and that's the most reliable key — works regardless of
+    whether the underlying StratusTime entry has a request_id, emp_id,
+    or neither.
 
-    Body: {day: ISO date, request_id?: int, emp_id?: str}
+    Body: {day: ISO date, name: str}
+
+    Back-compat: also still accepts {request_id} or {emp_id} (those
+    paths write to their dedicated cleared tables) so old client code
+    keeps working until the page reloads with new JS.
     """
     from datetime import date as _date
     from .. import late_report
@@ -996,12 +1006,18 @@ async def staffing_clear_partial(request: Request):
         day = _date.fromisoformat(body["day"])
     except (KeyError, TypeError, ValueError) as e:
         return JSONResponse({"ok": False, "error": f"bad day: {e}"}, status_code=400)
+    name = (body.get("name") or "").strip()
     request_id = body.get("request_id")
     emp_id = body.get("emp_id")
-    if not request_id and not emp_id:
-        return JSONResponse({"ok": False, "error": "request_id or emp_id required"}, status_code=400)
+    if not name and not request_id and not emp_id:
+        return JSONResponse(
+            {"ok": False, "error": "name (preferred), request_id, or emp_id required"},
+            status_code=400,
+        )
     try:
-        if request_id:
+        if name:
+            late_report.clear_partial_by_name(day, name)
+        elif request_id:
             late_report.clear_time_off_request(day, int(request_id))
         else:
             late_report.clear_non_work_shift(day, str(emp_id))
@@ -1014,8 +1030,7 @@ async def staffing_clear_partial(request: Request):
 
 @router.post("/api/staffing/restore-partial")
 async def staffing_restore_partial(request: Request):
-    """Undo clear-partial — partial reappears on next render. Same body
-    shape as clear-partial."""
+    """Undo clear-partial. Same body shape as clear-partial."""
     from datetime import date as _date
     from .. import late_report
     body = await request.json()
@@ -1023,12 +1038,18 @@ async def staffing_restore_partial(request: Request):
         day = _date.fromisoformat(body["day"])
     except (KeyError, TypeError, ValueError) as e:
         return JSONResponse({"ok": False, "error": f"bad day: {e}"}, status_code=400)
+    name = (body.get("name") or "").strip()
     request_id = body.get("request_id")
     emp_id = body.get("emp_id")
-    if not request_id and not emp_id:
-        return JSONResponse({"ok": False, "error": "request_id or emp_id required"}, status_code=400)
+    if not name and not request_id and not emp_id:
+        return JSONResponse(
+            {"ok": False, "error": "name, request_id, or emp_id required"},
+            status_code=400,
+        )
     try:
-        if request_id:
+        if name:
+            late_report.restore_partial_by_name(day, name)
+        elif request_id:
             late_report.restore_time_off_request(day, int(request_id))
         else:
             late_report.restore_non_work_shift(day, str(emp_id))

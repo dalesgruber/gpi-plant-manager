@@ -151,6 +151,57 @@ def cleared_non_work_for_day(day) -> list[dict]:
     )
 
 
+def clear_partial_by_name(day, name: str) -> None:
+    """Catch-all clear: hide a partial entry on `day` for `name`. Works
+    regardless of whether the underlying entry has a request_id, emp_id,
+    or neither. Uses the scheduler's roster name as the key."""
+    db.execute(
+        """
+        INSERT INTO cleared_partials_by_name (day, name) VALUES (%s, %s)
+        ON CONFLICT (day, name) DO NOTHING
+        """,
+        (day, name),
+    )
+
+
+def restore_partial_by_name(day, name: str) -> None:
+    db.execute(
+        "DELETE FROM cleared_partials_by_name WHERE day = %s AND name = %s",
+        (day, name),
+    )
+
+
+def cleared_partial_names_for_day(day) -> set[str]:
+    rows = db.query(
+        "SELECT name FROM cleared_partials_by_name WHERE day = %s",
+        (day,),
+    )
+    return {r["name"] for r in rows}
+
+
+def cleared_partial_names_for_range(start_d, end_d) -> dict:
+    rows = db.query(
+        "SELECT day, name FROM cleared_partials_by_name WHERE day BETWEEN %s AND %s",
+        (start_d, end_d),
+    )
+    out: dict = {}
+    for r in rows:
+        out.setdefault(r["day"], set()).add(r["name"])
+    return out
+
+
+def cleared_partial_names_today_list(day) -> list[dict]:
+    return db.query(
+        """
+        SELECT name, declared_at
+        FROM cleared_partials_by_name
+        WHERE day = %s
+        ORDER BY declared_at ASC
+        """,
+        (day,),
+    )
+
+
 def cleared_request_ids_for_range(start_d, end_d) -> dict:
     """Bulk version of cleared_request_ids_for_day for [start_d, end_d].
     Returns {date: set(request_id, ...)}. One DB query for the whole range."""
