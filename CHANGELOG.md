@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-01
 
+### 8:15 PM
+
+- **× on saved retro WC attributions** — Jose Luis's "partial pill" turned out not to be a partial-day off entry at all — it was a saved retro WC attribution (manager said "Jose Luis worked 7:01a-1:01p here"). Different data source, different table, different fix. Every amber attribution pill on the scheduler grid now has a small white-on-red ✕ button. Click it, confirm, and the attribution is removed (calls the existing /api/staffing/attribute/{id} DELETE endpoint, then the leaderboards / dashboards stop crediting that person for that work center).
+
 ### 8:00 PM
 
 - **Partial pill is now a real `<button>` with a visible ✕** — the previous span-with-`role="button"` rendered fine but document-delegated clicks on elements inside `<summary>` are unreliable in some browsers (the details toggle wins). Three changes: (1) the partial pill is now a real `<button type="button">`, which gets a built-in browser exemption from triggering the details toggle when clicked inside `<summary>`; (2) the time text now ends with a small `✕` so it visibly reads as a clear-action; (3) handlers are bound directly to each button on page load, not via document delegation, so the click can't be eaten by anything in between. Console logs `[partial] clear for <name> on <date>` so you can verify in DevTools that the click fires.
