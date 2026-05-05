@@ -1,4 +1,7 @@
 from datetime import date
+from unittest.mock import patch
+
+from zira_dashboard import production_history
 from zira_dashboard.production_history import attribute_for_day
 
 
@@ -166,3 +169,42 @@ def test_rank_by_category_filters_to_category_wcs_and_threshold():
     assert "Adrian" not in names
     assert "Iban" not in names
     assert rows[0]["pct_of_target"] == 96.0
+
+
+def test_attribution_per_day_returns_one_entry_per_day_in_order():
+    """attribution_per_day returns a list of (day, attribution_dict) tuples
+    in date-ascending order, one entry per day in the [start, end] range
+    inclusive. Each attribution_dict matches what attribution_for() would
+    return for that day individually."""
+    start = date(2026, 4, 27)  # Monday
+    end = date(2026, 4, 29)    # Wednesday
+
+    def _fake_attribution_for(d, client):
+        return {f"P{d.day}": {"WC1": {"units": float(d.day), "downtime": 0.0,
+                                      "hours": 8.0, "days_worked": 1}}}
+
+    with patch.object(production_history, "attribution_for", side_effect=_fake_attribution_for):
+        out = production_history.attribution_per_day(start, end, client=None)
+
+    assert [day for day, _ in out] == [date(2026, 4, 27), date(2026, 4, 28), date(2026, 4, 29)]
+    assert out[0][1] == {"P27": {"WC1": {"units": 27.0, "downtime": 0.0, "hours": 8.0, "days_worked": 1}}}
+    assert out[1][1]["P28"]["WC1"]["units"] == 28.0
+    assert out[2][1]["P29"]["WC1"]["units"] == 29.0
+
+
+def test_attribution_per_day_keeps_empty_days_in_list():
+    """Days where attribution_for returns {} still appear in the output
+    list (with an empty dict value) so the date axis stays predictable
+    for callers that need to know which days were checked."""
+    def _fake(d, client):
+        if d == date(2026, 4, 28):
+            return {}
+        return {"P": {"WC": {"units": 1.0, "downtime": 0.0, "hours": 8.0, "days_worked": 1}}}
+
+    with patch.object(production_history, "attribution_for", side_effect=_fake):
+        out = production_history.attribution_per_day(date(2026, 4, 27), date(2026, 4, 29), client=None)
+
+    assert len(out) == 3
+    assert out[0][1] != {}
+    assert out[1][1] == {}
+    assert out[2][1] != {}

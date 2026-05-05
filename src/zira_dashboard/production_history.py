@@ -143,6 +143,41 @@ def attribution_for(d: date, client) -> dict[str, dict[str, dict[str, float]]]:
     )
 
 
+def attribution_per_day(
+    start: date,
+    end: date,
+    client,
+) -> list[tuple[date, dict[str, dict[str, dict[str, float]]]]]:
+    """Per-day attribution across [start, end] inclusive.
+
+    Returns a list of (day, attribution_dict) tuples in date-ascending
+    order. Each attribution_dict has the same shape as
+    `attribution_for(day, client)`. Days with no published schedule
+    yield an empty dict (kept in the list so callers can distinguish
+    "checked, found nothing" from "didn't check").
+
+    Days are fetched concurrently via a thread pool — same pool sizing
+    as `attribution_range` so multi-month ranges don't pay sequential
+    per-day latency. The shared `cached_leaderboard` cache means
+    repeated calls for the same range return instantly.
+    """
+    from datetime import timedelta
+    from concurrent.futures import ThreadPoolExecutor
+
+    days: list[date] = []
+    cursor = start
+    while cursor <= end:
+        days.append(cursor)
+        cursor += timedelta(days=1)
+
+    if not days:
+        return []
+
+    with ThreadPoolExecutor(max_workers=min(8, len(days))) as pool:
+        dailies = list(pool.map(lambda d: attribution_for(d, client), days))
+    return list(zip(days, dailies))
+
+
 def attribution_range(
     start: date,
     end: date,
