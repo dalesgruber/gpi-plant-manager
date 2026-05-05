@@ -408,6 +408,25 @@
   </section>
 
 </div>
+
+<div id="lb-popup-bd" class="popover-backdrop">
+  <div class="popover" role="dialog" aria-modal="true" aria-labelledby="lb-popup-title">
+    <h4 id="lb-popup-title">…</h4>
+    <table class="pc-popup" id="lb-popup-table">
+      <thead>
+        <tr><th>Date</th><th>Work Centers</th><th class="num">Units</th><th class="num">Downtime</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="lb-popup-empty" style="color:var(--muted);font-style:italic;margin-top:0.5rem;display:none">
+      No production days for this person in the selected range.
+    </p>
+    <div class="actions">
+      <a id="lb-popup-card-link" href="#" class="primary">Open full player card →</a>
+      <button type="button" onclick="closeLbPopup()">Close</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -429,6 +448,73 @@ function toggleAll(btn) {
     btn.innerHTML = '&#9662; Show all (' + totalRows + ')';
   }
 }
+</script>
+<script>
+async function openLbPopup(btn) {
+  const name = btn.dataset.name;
+  const wc = btn.dataset.wc || '';
+  const group = btn.dataset.group || '';
+  const start = btn.dataset.start;
+  const end = btn.dataset.end;
+
+  const scopeLabel = wc ? wc : (group + ' group');
+  document.getElementById('lb-popup-title').textContent =
+    `${name} — ${scopeLabel} · ${start} → ${end}`;
+
+  const cardUrl = `/staffing/people/${encodeURIComponent(name)}?start=${start}&end=${end}`;
+  document.getElementById('lb-popup-card-link').href = cardUrl;
+
+  const bd = document.getElementById('lb-popup-bd');
+  bd.classList.add('show');
+  const tbody = document.querySelector('#lb-popup-table tbody');
+  tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Loading…</td></tr>';
+  document.getElementById('lb-popup-empty').style.display = 'none';
+
+  const params = new URLSearchParams({ name, start, end });
+  if (wc) params.set('wc', wc); else params.set('group', group);
+
+  try {
+    const r = await fetch('/api/staffing/leaderboards/person-days?' + params);
+    if (!r.ok) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--bad)">Failed to load (HTTP ' + r.status + ').</td></tr>';
+      return;
+    }
+    const data = await r.json();
+    renderLbPopupRows(data.rows || []);
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--bad)">Failed to load: ' + (e.message || 'network error') + '</td></tr>';
+  }
+}
+
+function renderLbPopupRows(rows) {
+  const tbody = document.querySelector('#lb-popup-table tbody');
+  const empty = document.getElementById('lb-popup-empty');
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><a href="/recycling?start=${r.date}&end=${r.date}">${r.date}</a></td>
+      <td>${(r.wcs || []).join(', ')}</td>
+      <td class="num">${Math.round(r.units || 0).toLocaleString()}</td>
+      <td class="num">${Math.round(r.downtime || 0).toLocaleString()}</td>
+    </tr>
+  `).join('');
+}
+
+function closeLbPopup() {
+  document.getElementById('lb-popup-bd').classList.remove('show');
+}
+
+document.getElementById('lb-popup-bd').addEventListener('click', e => {
+  if (e.target.id === 'lb-popup-bd') closeLbPopup();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLbPopup();
+});
 </script>
 <script>
 (function initLeaderboards() {

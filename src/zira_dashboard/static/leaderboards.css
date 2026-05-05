@@ -166,3 +166,44 @@
   .lb-inactive-wrap[open] > summary { color: var(--fg); }
   .lb-inactive-wrap .lb-section { opacity: 0.85; }
   .lb-inactive-content { margin-top: 0.5rem; }
+
+/* ---- Drill-down popup (per-person days contributing to an averages widget) ---- */
+.popover-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
+}
+.popover-backdrop.show { display: flex; }
+.popover {
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 1rem 1.25rem; max-width: 34rem; width: 90%;
+  max-height: 80vh; overflow: auto;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+}
+.popover h4 { margin: 0 0 0.6rem; font-size: 0.95rem; font-weight: 700; }
+.popover .actions {
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  margin-top: 0.9rem; flex-wrap: wrap;
+}
+.popover .actions a, .popover .actions button {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.4rem 0.85rem;
+  font: inherit; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+  background: var(--panel-2); color: var(--fg);
+}
+.popover .actions a.primary,
+.popover .actions button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.popover .actions a:hover, .popover .actions button:hover { filter: brightness(1.08); }
+table.pc-popup { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+table.pc-popup th, table.pc-popup td {
+  padding: 0.4rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left;
+}
+table.pc-popup th {
+  color: var(--muted); font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+table.pc-popup td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.pc-popup a { color: var(--accent); }
