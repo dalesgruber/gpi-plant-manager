@@ -1,6 +1,5 @@
 # tests/test_progress.py
 from datetime import date, datetime, time, timezone
-from unittest.mock import patch
 
 from zira_dashboard import progress as progress_mod
 from zira_dashboard import shift_config, staffing
