@@ -4,6 +4,13 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-05
 
+### 9:42 AM
+
+- **Three dashboard chart fixes** —
+  (1) Multi-day range progress charts now anchor 15-minute buckets to the global standard shift hours, so a custom-hours day starting at 7:18 no longer creates a duplicate 7:18 bar adjacent to the standard 7:15 bar — its production lands in whichever standard bucket each sample's actual timestamp falls into. Single-day pages, including single custom-hours days, are unchanged.
+  (2) Pallets-by-Work-Center bar charts now show the per-WC vertical goal line in multi-day range mode (previously hidden). The line uses the per-WC expected production summed across the range, prorated by each day's productive intervals — so it correctly reflects the work centers' actual working time over the date range.
+  (3) Both the 15-minute progress chart and the daily cumulative progress chart now render the actual unit count inside each bar (top-anchored, white text). The cumulative chart's label moved from above-the-bar to inside; the 15-minute chart got a new in-bar label. Empty buckets render no label.
+
 ### 7:29 AM
 
 - **Post to Slack actually works again** — the underlying error the previous deploy surfaced was `int() argument must be a string... not 'Query'`. Cause: `share.py` calls the existing `/staffing` handler as a regular Python function to get the rendered HTML, but that handler uses FastAPI's `Query(default=...)` for `publish_blocked` and `view`. When you bypass the router and call the function directly, those defaults arrive *as Query objects*, not as their inner values — so `int(publish_blocked or 0)` inside the page builder blew up. Fixed by passing explicit `publish_blocked=0, view="draft"` at the call site, plus a regression test that asserts the kwargs are concrete ints/strings (so a future "cleanup" can't reintroduce the bug). Posting today's schedule to Slack should now succeed end-to-end.
