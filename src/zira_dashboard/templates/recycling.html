@@ -324,8 +324,9 @@
             {% set h = (cum_a / scale * 100.0) if scale else 0 %}
             <div class="col {% if hit %}hit{% else %}miss{% endif %} {% if b.in_progress %}in-progress{% endif %}"
                  title="{{ b.label }} · {{ '{:,}'.format(cum_a|int) }} cumulative (target {{ '{:,}'.format(cum_t|int) }})">
-              <span class="bar-label">{{ '{:,}'.format(cum_a|int) }}</span>
-              <div class="bar" style="height: {{ h }}%"></div>
+              <div class="bar" style="height: {{ h }}%">
+                {% if cum_a > 0 %}<span class="bar-label">{{ '{:,}'.format(cum_a|int) }}</span>{% endif %}
+              </div>
             </div>
           {% endfor %}
         </div>
