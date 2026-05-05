@@ -597,20 +597,25 @@
     background: var(--good);
     border-radius: 2px 2px 0 0;
     min-height: 1px;
+    position: relative;
   }
   .cum-progress .col.miss .bar { background: var(--bad); }
   .cum-progress .col.in-progress .bar { opacity: 0.7; }
   .cum-progress .bar-label {
     position: absolute;
-    bottom: calc(100% + 1px);
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.6rem;
+    top: 2px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.72rem;
     font-weight: 500;
     font-variant-numeric: tabular-nums;
-    color: var(--fg);
-    white-space: nowrap;
+    color: #fff;
     pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    line-height: 1;
   }
   .cum-progress .target-line {
     position: absolute;
