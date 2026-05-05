@@ -13,8 +13,8 @@ from .shift_config import SITE_TZ, breaks_for, shift_end_for, shift_start_for, w
 TargetFn = Callable[[datetime, datetime], float]
 
 
-def _in_any_break(day: date, t: time) -> bool:
-    return any(b.start <= t < b.end for b in breaks_for(day))
+def _in_any_break(breaks_iter, t: time) -> bool:
+    return any(b.start <= t < b.end for b in breaks_iter)
 
 
 def _default_target(
@@ -70,6 +70,8 @@ def progress_buckets(
     if edge <= start:
         return []
 
+    day_breaks = breaks_for(day)
+
     buckets: list[dict] = []
     cursor = start
     delta = timedelta(minutes=bucket_minutes)
@@ -77,7 +79,7 @@ def progress_buckets(
         b_start = cursor
         b_end = cursor + delta
         cursor = b_end
-        if _in_any_break(day, b_start.time()):
+        if _in_any_break(day_breaks, b_start.time()):
             continue  # wholly inside a break period
         actual = sum(u for ts, u in samples if b_start <= ts < b_end)
         # For the current (in-progress) bucket, don't penalize — show only actual.
