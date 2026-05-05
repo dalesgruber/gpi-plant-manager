@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-05
 
+### 1:10 PM
+
+- **Drill-down popups on leaderboards averages widgets + per-day rows on the player card** — clicking any operator name on any averages widget on `/staffing/leaderboards` (per-WC and per-group, active and inactive) now opens a modal showing that person's days contributing to the widget's average over the page's selected range. Each row's date hyperlinks to the `/recycling` dashboard for that single day, and a primary "Open full player card" button opens the full player card with the same timeframe carried through. The player card itself now has a per-day-per-WC breakdown table below the existing per-WC summary, with date hyperlinks into the recycling dashboard. Speed-first: the leaderboards page render adds zero work for this feature; popup data lazy-loads on click via a new `/api/staffing/leaderboards/person-days` endpoint with TTL caching (1 h for past-only ranges, 60 s when today is included), so repeated opens skip re-aggregation entirely.
+
 ### 12:14 PM
 
 - **Refactor pass — DRY, dead-code removal, shared helpers** — seven small commits to clean up duplication and trim the codebase by ~150 lines without changing behavior:
