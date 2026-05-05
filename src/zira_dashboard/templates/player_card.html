@@ -72,4 +72,23 @@
 {% else %}
 <p style="color:var(--muted);font-style:italic">No published-day production for {{ name }} in this range.</p>
 {% endif %}
+
+{% if day_rows %}
+<h3 style="margin-top:1rem">Per-day breakdown</h3>
+<table class="pc">
+  <thead>
+    <tr><th>Date</th><th>Work Center</th><th class="num">Units</th><th class="num">Downtime (min)</th></tr>
+  </thead>
+  <tbody>
+    {% for r in day_rows %}
+    <tr>
+      <td><a href="/recycling?start={{ r.date }}&end={{ r.date }}">{{ r.date }}</a></td>
+      <td>{{ r.wc }}</td>
+      <td class="num">{{ '{:,.0f}'.format(r.units) }}</td>
+      <td class="num">{{ '{:,.0f}'.format(r.downtime) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 {% endblock %}
