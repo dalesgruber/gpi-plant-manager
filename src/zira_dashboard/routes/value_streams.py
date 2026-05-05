@@ -391,9 +391,7 @@ def recycling(
         max_e = max((r["expected"] for r in out), default=0)
         base = max(max_u, max_e)
         scale = (base * 1.1) if base > 0 else 1.0
-        # Hide target tick line for multi-day ranges: it represents "where you should be by now"
-        # which only makes sense for an in-progress single day.
-        has_target_line = (max_e > 0) and not is_range
+        has_target_line = (max_e > 0)
         for r in out:
             r["pct"] = (r["units"] / scale * 100.0) if scale else 0.0
             r["target_pct"] = (r["expected"] / scale * 100.0) if (scale and has_target_line) else None
