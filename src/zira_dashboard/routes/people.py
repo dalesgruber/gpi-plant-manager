@@ -50,6 +50,18 @@ def staffing_player_card(
             ((s, lvl) for s, lvl in p.skills.items() if lvl >= 1),
             key=lambda kv: -kv[1],
         )
+    # Per-day-per-WC rows for the breakdown table. Newest first.
+    day_rows: list[dict] = []
+    for day, daily in production_history.attribution_per_day(start_d, end_d, client):
+        person_data = daily.get(name, {})
+        for wc_name, totals in person_data.items():
+            day_rows.append({
+                "date": day.isoformat(),
+                "wc": wc_name,
+                "units": totals["units"],
+                "downtime": totals["downtime"],
+            })
+    day_rows.sort(key=lambda r: (r["date"], r["wc"]), reverse=True)
     return templates.TemplateResponse(
         request,
         "player_card.html",
@@ -64,5 +76,6 @@ def staffing_player_card(
             "total_downtime": round(total_downtime, 1),
             "total_days": total_days,
             "skills": skills,
+            "day_rows": day_rows,
         },
     )
