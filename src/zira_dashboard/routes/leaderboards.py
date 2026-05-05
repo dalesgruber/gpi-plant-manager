@@ -11,6 +11,13 @@ from .. import settings_store, staffing
 from ..deps import client, resolve_range, templates
 from ..production_history import attribution_per_day
 from ..stations import Station
+from .._cache import TTLCache
+
+# Cached responses by (name, scope-key, start, end). Past-only ranges
+# get the longer TTL; ranges that include today get the shorter one
+# so a fresh-published schedule shows up on the next click.
+_PERSON_DAYS_CACHE_TODAY = TTLCache(ttl_seconds=60.0, max_entries=128)
+_PERSON_DAYS_CACHE_PAST = TTLCache(ttl_seconds=3600.0, max_entries=512)
 
 
 def averages_for_wc(
@@ -397,6 +404,8 @@ def person_days_json(
     """Per-day breakdown of a person's production within a scope (a single
     WC or a category group) over [start, end] inclusive. Used by the
     leaderboards averages popup. Returns rows sorted newest-first.
+    Cached per (name, scope, range) — 60s TTL when the range includes
+    today, 1h TTL otherwise.
     """
     if (wc and group) or (not wc and not group):
         return JSONResponse({"error": "exactly one of wc / group must be set"}, status_code=400)
@@ -408,14 +417,23 @@ def person_days_json(
     if end_d < start_d:
         return JSONResponse({"error": "end must be on or after start"}, status_code=400)
 
-    # Build the WC-name filter set.
+    scope_key = f"wc:{wc}" if wc else f"group:{group}"
+    cache_key = (name, scope_key, start_d.isoformat(), end_d.isoformat())
+    today = datetime.now(timezone.utc).date()
+    includes_today = start_d <= today <= end_d
+    cache = _PERSON_DAYS_CACHE_TODAY if includes_today else _PERSON_DAYS_CACHE_PAST
+    cached = cache.peek(cache_key)
+    if cached is not None:
+        return JSONResponse(cached)
+
     if wc:
         wc_filter = {wc}
     else:
-        # group: gather every LOCATIONS entry whose .skill equals the group name.
         wc_filter = {loc.name for loc in staffing.LOCATIONS if loc.skill == group}
         if not wc_filter:
-            return JSONResponse({"rows": []})
+            payload = {"rows": []}
+            cache.set(cache_key, payload)
+            return JSONResponse(payload)
 
     rows: list[dict] = []
     for day, daily in attribution_per_day(start_d, end_d, client):
@@ -430,4 +448,6 @@ def person_days_json(
             "downtime": sum(t["downtime"] for t in matching.values()),
         })
     rows.sort(key=lambda r: r["date"], reverse=True)
-    return JSONResponse({"rows": rows})
+    payload = {"rows": rows}
+    cache.set(cache_key, payload)
+    return JSONResponse(payload)

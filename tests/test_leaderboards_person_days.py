@@ -88,3 +88,32 @@ def test_person_days_returns_empty_rows_when_no_match():
         r = client.get("/api/staffing/leaderboards/person-days?name=Carlos&wc=Repair-1&start=2026-04-27&end=2026-04-27")
     assert r.status_code == 200
     assert r.json() == {"rows": []}
+
+
+def test_person_days_caches_response(monkeypatch):
+    """Repeated calls for the same (name, scope, range) hit the cache and
+    don't re-call attribution_per_day."""
+    from datetime import date
+    from zira_dashboard.routes import leaderboards as lb_mod
+
+    # Clear caches so the test starts clean.
+    if hasattr(lb_mod._PERSON_DAYS_CACHE_TODAY, "invalidate"):
+        lb_mod._PERSON_DAYS_CACHE_TODAY.invalidate()
+    if hasattr(lb_mod._PERSON_DAYS_CACHE_PAST, "invalidate"):
+        lb_mod._PERSON_DAYS_CACHE_PAST.invalidate()
+
+    fake = [(date(2026, 4, 27), {"Carlos": {"Repair-1": _attr(95)}})]
+    call_count = {"n": 0}
+    def _spy(*args, **kwargs):
+        call_count["n"] += 1
+        return fake
+
+    monkeypatch.setattr(lb_mod, "attribution_per_day", _spy)
+    client = TestClient(app)
+
+    url = "/api/staffing/leaderboards/person-days?name=Carlos&wc=Repair-1&start=2026-04-27&end=2026-04-27"
+    client.get(url)
+    client.get(url)
+    client.get(url)
+
+    assert call_count["n"] == 1, "expected only the first call to hit attribution_per_day"
