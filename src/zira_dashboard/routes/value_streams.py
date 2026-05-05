@@ -276,23 +276,10 @@ def recycling(
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
 ):
-    from datetime import date as _date
-    from ..deps import _window_dates
+    from ..deps import resolve_range
 
     today = datetime.now(timezone.utc).date()
-    custom_range_active = False
-    start_d: _date
-    end_d: _date
-    if start and end:
-        try:
-            start_d = _date.fromisoformat(start)
-            end_d = _date.fromisoformat(end)
-            if end_d >= start_d:
-                custom_range_active = True
-        except ValueError:
-            start_d, end_d = _window_dates(window, today)
-    if not custom_range_active:
-        start_d, end_d = _window_dates(window, today)
+    start_d, end_d, custom_range_active = resolve_range(window, start, end, today)
 
     is_today = (start_d == end_d == today)
     is_range = (start_d != end_d)

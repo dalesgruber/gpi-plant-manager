@@ -70,6 +70,31 @@ def _window_dates(window: str, today_d: date) -> tuple[date, date]:
     return monday, today_d
 
 
+def resolve_range(
+    window: str,
+    start: str | None,
+    end: str | None,
+    today_d: date,
+) -> tuple[date, date, bool]:
+    """Resolve (start_d, end_d, custom_range_active) from query params.
+
+    A custom range from explicit ?start=YYYY-MM-DD&end=YYYY-MM-DD wins
+    when both parse and end >= start; otherwise falls back to a named
+    `window` preset via _window_dates(). The boolean tells the template
+    which range chip to highlight.
+    """
+    if start and end:
+        try:
+            start_d = date.fromisoformat(start)
+            end_d = date.fromisoformat(end)
+            if end_d >= start_d:
+                return start_d, end_d, True
+        except ValueError:
+            pass
+    start_d, end_d = _window_dates(window, today_d)
+    return start_d, end_d, False
+
+
 def _filter_stations(category: str | None):
     if not category or category == "All":
         return list(STATIONS)

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import settings_store, staffing
-from ..deps import _window_dates, client, templates
+from ..deps import client, resolve_range, templates
 from ..stations import Station
 
 
@@ -137,7 +137,6 @@ def staffing_leaderboards(
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
 ):
-    from datetime import date as _date
     from .. import cert_lookup
     from .. import leaderboard_settings_store as lstore
     from .. import production_history
@@ -146,17 +145,7 @@ def staffing_leaderboards(
     person_certs = cert_lookup.load_person_certs()
 
     today_d = datetime.now(timezone.utc).date()
-    custom_range_active = False
-    if start and end:
-        try:
-            start_d = _date.fromisoformat(start)
-            end_d = _date.fromisoformat(end)
-            if end_d >= start_d:
-                custom_range_active = True
-        except ValueError:
-            start_d, end_d = _window_dates(window, today_d)
-    if not custom_range_active:
-        start_d, end_d = _window_dates(window, today_d)
+    start_d, end_d, custom_range_active = resolve_range(window, start, end, today_d)
 
     records = production_history.daily_records(start_d, end_d, client)
 
