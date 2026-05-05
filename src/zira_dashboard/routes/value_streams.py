@@ -17,6 +17,36 @@ from ..stations import Station, recycling_stations
 router = APIRouter()
 
 
+def _who_by_wc(assignments: dict[str, list[str]], day) -> dict[str, str]:
+    """Map work-center name → " + "-joined operator string for the dashboard
+    `who` labels. Starts from the schedule assignments, then layers in retro
+    WC attributions on top so saved attributions appear immediately on the
+    bar / downtime widgets. Dedupes scheduled-then-attributed people, keeps
+    scheduled order first.
+    """
+    out: dict[str, str] = {}
+    for wc_name, ops in assignments.items():
+        if wc_name == staffing.TIME_OFF_KEY or not ops:
+            continue
+        out[wc_name] = " + ".join(ops)
+    try:
+        from .. import wc_attributions
+        for wc_name, names in wc_attributions.people_by_wc(day).items():
+            if not names:
+                continue
+            existing = out.get(wc_name, "")
+            existing_names = [n.strip() for n in existing.split(" + ") if n.strip()] if existing else []
+            seen, combined = set(), []
+            for n in existing_names + list(names):
+                if n and n not in seen:
+                    seen.add(n)
+                    combined.append(n)
+            out[wc_name] = " + ".join(combined)
+    except Exception:
+        pass
+    return out
+
+
 def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     """Compute the per-day numbers for the recycling dashboard.
 
@@ -35,31 +65,7 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     results = leaderboard(client, stations, d, now_utc=now if is_today_d else None)
 
     sched = staffing.load_schedule(d)
-    who_by_wc: dict[str, str] = {}
-    for wc_name, ops in sched.assignments.items():
-        if wc_name == staffing.TIME_OFF_KEY or not ops:
-            continue
-        who_by_wc[wc_name] = " + ".join(ops)
-
-    # Layer in retro WC attributions so a saved attribution shows up
-    # immediately on the dashboard's bar/downtime widgets in the `who` slot.
-    try:
-        from .. import wc_attributions
-        for wc_name, names in wc_attributions.people_by_wc(d).items():
-            if not names:
-                continue
-            existing = who_by_wc.get(wc_name, "")
-            existing_names = [n.strip() for n in existing.split(" + ") if n.strip()] if existing else []
-            # Dedupe: if a name is both scheduled and attributed at the same
-            # WC, list them once. Order: scheduled first, then attribution-only.
-            seen, combined = set(), []
-            for n in existing_names + list(names):
-                if n and n not in seen:
-                    seen.add(n)
-                    combined.append(n)
-            who_by_wc[wc_name] = " + ".join(combined)
-    except Exception:
-        pass
+    who_by_wc = _who_by_wc(sched.assignments, d)
 
     ACTIVE_UNITS_THRESHOLD = 5
     active_wc_names: set[str] = set(who_by_wc.keys())
@@ -610,29 +616,7 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
         hue = 130 if delta > 0 else 0
         return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
 
-    who_by_wc: dict[str, str] = {}
-    for wc_name, ops in sched_for_labels.assignments.items():
-        if wc_name == staffing.TIME_OFF_KEY or not ops:
-            continue
-        who_by_wc[wc_name] = " + ".join(ops)
-
-    try:
-        from .. import wc_attributions
-        for wc_name, names in wc_attributions.people_by_wc(d).items():
-            if not names:
-                continue
-            existing = who_by_wc.get(wc_name, "")
-            existing_names = [n.strip() for n in existing.split(" + ") if n.strip()] if existing else []
-            # Dedupe: if a name is both scheduled and attributed at the same
-            # WC, list them once. Order: scheduled first, then attribution-only.
-            seen, combined = set(), []
-            for n in existing_names + list(names):
-                if n and n not in seen:
-                    seen.add(n)
-                    combined.append(n)
-            who_by_wc[wc_name] = " + ".join(combined)
-    except Exception:
-        pass
+    who_by_wc = _who_by_wc(sched_for_labels.assignments, d)
 
     bars: list[dict] = []
     for r in results:
