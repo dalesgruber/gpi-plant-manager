@@ -301,61 +301,7 @@
     </div>
   {%- endmacro %}
 
-  {% macro cumulative_progress_chart(buckets) -%}
-    {# Running totals computed in-template via namespace accumulator. #}
-    {% set acc = namespace(actual=[], target=[], a=0, t=0) %}
-    {% for b in buckets %}
-      {% set acc.a = acc.a + b.actual %}
-      {% set acc.t = acc.t + b.target %}
-      {% set _ = acc.actual.append(acc.a) %}
-      {% set _ = acc.target.append(acc.t) %}
-    {% endfor %}
-    {% set max_a = acc.actual[-1] if acc.actual else 0 %}
-    {% set max_t = acc.target[-1] if acc.target else 0 %}
-    {% set scale = max_a if max_a > max_t else max_t %}
-    {% if scale <= 0 %}{% set scale = 1 %}{% endif %}
-    {% set n = buckets|length %}
-
-    <div class="cum-progress" style="--n-cols: {{ n }}">
-      <div class="legend">
-        <span><span class="swatch-line"></span>Target</span>
-        <span><span class="swatch-dot"></span>Pallets</span>
-      </div>
-      <div class="plot">
-        <div class="bars">
-          {% for b in buckets %}
-            {% set i = loop.index0 %}
-            {% set cum_a = acc.actual[i] %}
-            {% set cum_t = acc.target[i] %}
-            {% set hit = cum_a >= cum_t %}
-            {% set h = (cum_a / scale * 100.0) if scale else 0 %}
-            <div class="col {% if hit %}hit{% else %}miss{% endif %} {% if b.in_progress %}in-progress{% endif %}"
-                 title="{{ b.label }} · {{ '{:,}'.format(cum_a|int) }} cumulative (target {{ '{:,}'.format(cum_t|int) }})">
-              <div class="bar" style="height: {{ h }}%">
-                {% if cum_a > 0 %}<span class="bar-label">{{ '{:,}'.format(cum_a|int) }}</span>{% endif %}
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-        <div class="target-line" aria-hidden="true">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-            {% set pts = namespace(s='') %}
-            {% for i in range(n) %}
-              {% set x = ((i + 0.5) / n * 100.0) %}
-              {% set y = (100.0 - (acc.target[i] / scale * 100.0)) %}
-              {% set pts.s = pts.s + ('%.3f,%.3f ' % (x, y)) %}
-            {% endfor %}
-            <polyline points="{{ pts.s|trim }}"/>
-          </svg>
-        </div>
-      </div>
-      <div class="x-ticks">
-        {% for b in buckets %}
-          {% if loop.index0 % 2 == 0 %}<span>{{ b.label }}</span>{% else %}<span></span>{% endif %}
-        {% endfor %}
-      </div>
-    </div>
-  {%- endmacro %}
+  {% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
 
     <div class="grid-stack-item" {{ widget_attrs('dismantler-progress', 0, 6, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
