@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-05
 
+### 10:58 AM
+
+- **Settings panels are always open now** — clicking `Company Schedule` or `Work Centers & Goals` in the settings sidebar used to take you to the section, but you still had to click the panel's chevron to actually see the form. Now both panels render as plain expanded sections — the sidebar is the only thing that decides what you're looking at, no extra click. Per-row pickers inside the Work Centers table (skills, default people, reserves) are still collapsible since expanding them all would make the table unreadable.
+
 ### 10:45 AM
 
 - **Custom date-range popup auto-closes after Apply** — the popup used to stay open after submitting because the template re-rendered the `<details>` element with `open` set whenever a custom range was active. The Custom chip already shows the active range (`Custom: 2026-04-19 → 2026-04-25`), so leaving the popup open just got in the way. Now it closes after Apply and on page load with a saved custom-range URL.

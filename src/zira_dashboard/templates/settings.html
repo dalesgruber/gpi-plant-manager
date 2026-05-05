@@ -106,39 +106,14 @@
     border-radius: 6px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.85rem; cursor: pointer; margin-top: 0.25rem;
   }
 
-  /* Collapsible <details>/<summary> panel */
-  details.collapsible { padding: 0; }
-  details.collapsible > summary {
-    list-style: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.55rem 0.8rem;
-    border-radius: 10px;
-    user-select: none;
-  }
-  details.collapsible > summary::-webkit-details-marker { display: none; }
-  details.collapsible[open] > summary { border-bottom: 1px solid var(--border); border-radius: 10px 10px 0 0; }
-  details.collapsible > summary h2 {
+  .panel > h2 {
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--fg);
     text-transform: none;
     letter-spacing: 0;
-    margin: 0;
+    margin: 0 0 0.55rem;
   }
-  details.collapsible > summary .collapsible-sub {
-    color: var(--muted);
-    font-size: 0.78rem;
-    font-variant-numeric: tabular-nums;
-  }
-  details.collapsible > summary .collapsible-chevron {
-    color: var(--muted);
-    font-size: 0.95rem;
-    transition: transform 0.15s ease;
-  }
-  details.collapsible[open] > summary .collapsible-chevron { transform: rotate(180deg); }
 
   /* Page-level toolbar: Undo / Redo buttons live in the top-right of
      the page header rather than in each panel summary. */
@@ -331,10 +306,6 @@
   }
   .save-flash.show { opacity: 1; }
   .save-flash.error { color: #ef4444; }
-  details.collapsible > :not(summary) { padding: 0 0.8rem; }
-  details.collapsible > .actions { padding: 0.5rem 0.8rem 0.7rem; }
-  details.collapsible .sched-grid { padding-top: 0.55rem; padding-bottom: 0.3rem; }
-
   /* Work Centers table */
   .wc-table th.num, .wc-table td.num { width: 4.5rem; }
   .wc-table td input[type=number] { width: 100%; }
@@ -404,7 +375,7 @@
   }
   .skills-picker .skills-list input { accent-color: var(--accent); }
 
-  /* Two-column targets layout inside the single collapsible */
+  /* Two-column targets layout inside the work-centers panel */
   .targets-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -546,12 +517,8 @@
   <form method="post" action="/settings/schedule" id="schedule-form"
         data-section="schedule"
         {% if active_section != 'schedule' %}style="display:none"{% endif %}>
-    <details class="panel collapsible">
-      <summary>
-        <h2 style="display:inline;margin:0">Company Schedule</h2>
-        <span class="collapsible-sub">{{ schedule.shift_start }}–{{ schedule.shift_end }} · {{ schedule.work_weekdays | length }} days · {{ schedule.breaks | length }} breaks</span>
-        <span class="collapsible-chevron" aria-hidden="true">▾</span>
-      </summary>
+    <section class="panel">
+      <h2>Company Schedule</h2>
 
       <div class="sched-grid">
         <label for="shift_start">Shift start</label>
@@ -584,19 +551,15 @@
         <button type="button" class="add-break-btn" id="add-break">+ Add break</button>
       </div>
 
-    </details>
+    </section>
   </form>
 
   <!-- Unified Work Centers & Goals -->
   <form method="post" action="/settings/work_centers" id="wc-form"
         data-section="work_centers"
         {% if active_section != 'work_centers' %}style="display:none"{% endif %}>
-    <details class="panel collapsible">
-      <summary>
-        <h2>Work Centers &amp; Goals</h2>
-        <span class="collapsible-sub">pallets / day · {{ wc_rows | length }} work centers · {{ vs_rows | length }} value streams · {{ group_rows | length }} groups</span>
-        <span class="collapsible-chevron" aria-hidden="true">▾</span>
-      </summary>
+    <section class="panel">
+      <h2>Work Centers &amp; Goals</h2>
 
       <table class="wc-table">
         <thead>
@@ -776,7 +739,7 @@
         </section>
       </div>
 
-    </details>
+    </section>
   </form>
 
   <!-- Integrations -->
