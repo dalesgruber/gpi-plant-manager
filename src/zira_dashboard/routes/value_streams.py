@@ -98,6 +98,16 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
             total_man_minutes += staffing.effective_minutes_worked(
                 person_name, d, window_start_utc, window_end_utc,
             )
+    # Fallback for days without a published schedule: if nobody was scheduled
+    # but production still happened, estimate man-hours from the active WCs.
+    # Each WC that produced above the activity threshold counts as one person
+    # working the full shift window. Keeps pph_per_person honest in ranges
+    # that include older days Dale never published a schedule for.
+    if total_recycling_people == 0 and active_results:
+        window_minutes = max(0, int((window_end_utc - window_start_utc).total_seconds() // 60))
+        inferred_people = len(active_results)
+        total_man_minutes = window_minutes * inferred_people
+        total_recycling_people = inferred_people
     total_man_hours = total_man_minutes / 60.0
 
     dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
