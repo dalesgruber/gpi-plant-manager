@@ -253,9 +253,13 @@ def cached_leaderboard(
                 pass
         # Cache miss — call Zira.
         result = leaderboard(client, stations, day, now_utc)
-        # Persist past-day results so the next process redeploy still
-        # finds them. Today's results stay in-memory only.
-        if not is_today and result:
+        # Persist results for ANY day with data — past (so next time we
+        # don't re-pay the Zira round-trip) AND today (so a Railway
+        # redeploy or the midnight day-rollover doesn't lose the
+        # snapshot). save_day is idempotent (ON CONFLICT DO UPDATE), so
+        # the most recent today-fetch becomes the eventual past-day
+        # record without any extra orchestration.
+        if result:
             try:
                 from . import _zira_persist
                 _zira_persist.save_day(result, day)
