@@ -109,12 +109,23 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     window_start_utc = shift_start_local.astimezone(timezone.utc)
     window_end_utc = window_end_local.astimezone(timezone.utc)
 
+    # Full-day absences (StratusTime >=8h off, manual absences, derived
+    # no-punch). Scheduled-but-absent people shouldn't count toward
+    # man-hours — otherwise pph/hr/person collapses by the absent share.
+    try:
+        from .. import stratustime_client
+        _absent_today = stratustime_client.full_day_absent_names_for_day(d)
+    except Exception:
+        _absent_today = set()
+
     total_man_minutes = 0
     total_recycling_people = 0
     for loc in staffing.LOCATIONS:
         if work_centers_store.value_stream(loc) != "Recycled":
             continue
         for person_name in sched.assignments.get(loc.name, []):
+            if person_name in _absent_today:
+                continue
             total_recycling_people += 1
             total_man_minutes += staffing.effective_minutes_worked(
                 person_name, d, window_start_utc, window_end_utc,
@@ -580,12 +591,22 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
     window_start_utc = shift_start_local_for_mh.astimezone(timezone.utc)
     window_end_utc = window_end_local.astimezone(timezone.utc)
 
+    # Full-day absences excluded from man-hours — see _recycling_day_data
+    # for the full rationale.
+    try:
+        from .. import stratustime_client
+        _absent_today = stratustime_client.full_day_absent_names_for_day(d)
+    except Exception:
+        _absent_today = set()
+
     total_man_minutes_new = 0
     total_new_vs_people = 0
     for wc_name, ops in sched_for_labels.assignments.items():
         if wc_name == staffing.TIME_OFF_KEY or not ops or wc_name not in station_names:
             continue
         for person_name in ops:
+            if person_name in _absent_today:
+                continue
             total_new_vs_people += 1
             total_man_minutes_new += staffing.effective_minutes_worked(
                 person_name, d, window_start_utc, window_end_utc,

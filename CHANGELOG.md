@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-06
 
+### 2:41 PM
+
+- **pallets/hr/person no longer counts absent operators as labor** — Dale reported the headline stat reading 28.1 vs an expected ~65 mid-shift. Root cause: `effective_minutes_worked` only subtracted *partial-day* StratusTime time-off from per-person hours; full-day absences (8+ hour off requests, manual "Declare Absent" entries, and derived no-punch absences) were silently treated as full-shift labor. With ~half the recycling crew out today, total man-hours roughly doubled and the pph denominator inflated by ~2x. Now both the recycling and new-vs man-hours computations skip anyone whose name is in today's full-day-absent set before counting them. Partial-day off entries still get prorated the same way as before via `partial_off_intervals_for_day`.
+
 ### 10:34 AM
 
 - **Today's production data now persists to Postgres on every fetch** — root cause of yesterday's data being blank. The previous flow saved past-day results to `zira_daily_cache` (Postgres) but kept today's results in-process only. When today rolled over (or Railway redeployed mid-shift), the in-process cache evaporated. The next-day lookup found nothing and had to lazy-load from Zira on first view — so days that nobody happened to browse before-or-after the rollover stayed blank. Now the persist call fires for any day with results, today included; `save_day` is idempotent (ON CONFLICT DO UPDATE), so the most recent today-fetch becomes the durable past-day record automatically. No more day-rollover gaps. To recover 5/5/26 specifically (and any other historical day already gone), run `/admin/zira-backfill?start=2026-05-05&end=2026-05-05` after this deploys.

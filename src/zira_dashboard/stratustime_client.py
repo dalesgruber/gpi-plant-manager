@@ -1036,6 +1036,35 @@ def time_off_names_for_day(day) -> list[str]:
     return [e["name"] for e in time_off_entries_for_day(day)]
 
 
+def full_day_absent_names_for_day(day) -> set[str]:
+    """Set of roster names who are out for the FULL day on `day`.
+
+    Includes:
+      - StratusTime time-off requests covering >= 8 hours
+      - Manual absences declared via the late/absence report
+      - Derived no-punch absences (only meaningful for today)
+
+    Partial-day off entries are NOT included — those get subtracted via
+    `partial_off_intervals_for_day` inside `effective_minutes_worked`,
+    which would over-subtract if we also dropped the person here.
+
+    Used by the recycling and new-vs man-hours computations so that
+    pph/hr/person doesn't count scheduled-but-absent operators as full
+    shifts of labor.
+    """
+    try:
+        entries = time_off_entries_for_day(day)
+    except Exception:
+        return set()
+    out: set[str] = set()
+    for e in entries:
+        if e.get("manual_absent") or e.get("derived"):
+            out.add(e["name"])
+        elif (e.get("hours") or 0) >= 8.0:
+            out.add(e["name"])
+    return out
+
+
 def partial_off_intervals_for_day(day) -> dict[str, list]:
     """Return {name: [(start_utc, end_utc), ...]} of partial-off intervals on `day`.
 
