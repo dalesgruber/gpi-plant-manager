@@ -109,19 +109,44 @@ def test_range_sums_units_and_days():
     assert out["Adrian"]["Repair 1"]["units"] == 75.0
 
 
-def test_attribution_for_returns_empty_for_unpublished_day(monkeypatch):
-    """Drafts don't count for attribution history."""
+def test_attribution_for_today_drafts_return_empty(monkeypatch):
+    """Today's drafts (published=False) don't count — supervisor may be
+    mid-edit and partial assignments would skew live leaderboards."""
+    from datetime import datetime, timezone
     from zira_dashboard import staffing
     from zira_dashboard.production_history import attribution_for
 
+    today = datetime.now(timezone.utc).date()
     fake_sched = staffing.Schedule(
-        day=date(2026, 4, 27),
+        day=today,
         published=False,
         assignments={"Repair 1": ["Christian"]},
     )
     monkeypatch.setattr(staffing, "load_schedule", lambda d: fake_sched)
-    out = attribution_for(date(2026, 4, 27), client=object())
+    out = attribution_for(today, client=object())
     assert out == {}
+
+
+def test_attribution_for_past_unpublished_day_uses_assignments(monkeypatch):
+    """Past days use saved assignments even if never formally published —
+    by the time a day is in the past, the saved draft is the closest
+    record of what actually happened."""
+    from zira_dashboard import staffing, production_history
+    from zira_dashboard.production_history import attribution_for
+
+    fake_sched = staffing.Schedule(
+        day=date(2026, 4, 27),
+        published=False,  # never clicked Publish — but units still ran
+        assignments={"Repair 1": ["Christian"]},
+    )
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: fake_sched)
+    monkeypatch.setattr(production_history, "_fetch_wc_totals",
+                        lambda client, day: {"Repair 1": (95, 5)})
+    monkeypatch.setattr(production_history, "_elapsed_minutes_for", lambda d: 480)
+
+    out = attribution_for(date(2026, 4, 27), client=object())
+    assert out["Christian"]["Repair 1"]["units"] == 95.0
+    assert out["Christian"]["Repair 1"]["downtime"] == 5.0
 
 
 def test_attribution_for_uses_published_assignments(monkeypatch):

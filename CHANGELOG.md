@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-06
 
+### 9:13 AM
+
+- **Historical production data now shows for past days regardless of publish status** — leaderboards, player cards, and the new operator drill-down popup were all empty for any past day where the schedule had never been formally Published. The hard gate was `attribution_for(d, client)` returning `{}` when `sched.published` was False — but most past days have a saved draft (assignments + people) without anyone ever clicking Publish, and by the time a day is in the past, the saved draft is the closest available record of what actually happened. Now: **today's** drafts still gate on Publish (so a supervisor mid-edit doesn't pollute live leaderboards with partial assignments), but **past** days use whatever's saved. Days with no saved schedule at all still show no per-person attribution — there's literally nothing to attribute against — but Zira-meter unit totals on the recycling/new-vs dashboards aren't affected (those don't depend on schedules). Existing pph-per-person fallback on the recycling dashboard (1 person per active WC) still kicks in for those no-schedule days.
+
 ### 8:51 AM
 
 - **Leaderboards is now a top-level tab** — moved out of the Staffing sub-nav and into the main top nav between Dashboards and Staffing. Visible from every page in the app. When you're on the leaderboards page, that tab is highlighted (and Staffing is not), and the Plant-Scheduler/Time-Off/People-Matrix/Past-Schedules sub-nav strip is hidden — Leaderboards isn't a Staffing sub-page anymore. The previous spot at the right end of the Staffing sub-nav is gone; existing `/staffing/leaderboards` URLs still work.

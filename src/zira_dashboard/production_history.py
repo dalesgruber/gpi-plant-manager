@@ -130,10 +130,23 @@ def _elapsed_minutes_for(d: date) -> int:
 
 
 def attribution_for(d: date, client) -> dict[str, dict[str, dict[str, float]]]:
-    """Attribute production on a single published day. Returns {} for drafts."""
+    """Attribute production on a single day.
+
+    For past days, uses whatever schedule_assignments are saved — even
+    if the schedule was never formally published — because by the time
+    a day is in the past, the saved draft is the closest available
+    record of what actually happened. Today and future days still gate
+    on `published` so an in-flight draft (e.g., supervisor mid-edit)
+    doesn't pollute leaderboards / player cards / popups.
+
+    Days with no saved assignments at all naturally produce {} via
+    `attribute_for_day` (empty merged dict).
+    """
+    from datetime import datetime, timezone
     from . import staffing, wc_attributions
     sched = staffing.load_schedule(d)
-    if not sched.published:
+    today = datetime.now(timezone.utc).date()
+    if d >= today and not sched.published:
         return {}
     wc_totals = _fetch_wc_totals(client, d)
     elapsed = _elapsed_minutes_for(d)
