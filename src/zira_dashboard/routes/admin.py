@@ -91,6 +91,101 @@ def data_status(
     })
 
 
+@router.get("/admin/pph-debug")
+def pph_debug(day: str | None = Query(default=None)):
+    """Dump the per-person man-hours math for the recycling pph_per_person KPI.
+
+    Shows for the given day (default today):
+      - Each LOCATION's value_stream classification (the filter that
+        decides whether the WC is counted as "Recycled")
+      - The scheduled assignments dict
+      - Per-(WC, person) effective_minutes_worked
+      - The set of names skipped as full-day absent
+      - The final total_man_minutes / total_recycling_people
+
+    If pph reads wrong, this tells you exactly where the math diverges
+    from a hand-calc.
+    """
+    from .. import staffing, stratustime_client, work_centers_store
+
+    today = datetime.now(timezone.utc).date()
+    try:
+        d = date.fromisoformat(day) if day else today
+    except ValueError:
+        return JSONResponse({"error": "day must be YYYY-MM-DD"}, status_code=400)
+
+    is_today = d == today
+    sched = staffing.load_schedule(d)
+
+    # Same window math as _recycling_day_data.
+    shift_start_local = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
+    shift_end_local = datetime.combine(d, shift_config.shift_end_for(d), tzinfo=shift_config.SITE_TZ)
+    now_local = datetime.now(timezone.utc).astimezone(shift_config.SITE_TZ)
+    window_end_local = min(now_local, shift_end_local) if is_today else shift_end_local
+    window_start_utc = shift_start_local.astimezone(timezone.utc)
+    window_end_utc = window_end_local.astimezone(timezone.utc)
+
+    try:
+        absent_today = sorted(stratustime_client.full_day_absent_names_for_day(d))
+    except Exception as e:
+        absent_today = [f"<error: {e}>"]
+
+    locations_dump: list[dict] = []
+    total_man_minutes = 0
+    total_recycling_people = 0
+    for loc in staffing.LOCATIONS:
+        try:
+            vs = work_centers_store.value_stream(loc)
+        except Exception as e:
+            vs = f"<error: {e}>"
+        is_recycled = vs == "Recycled"
+        assigned = list(sched.assignments.get(loc.name, []))
+        per_person: list[dict] = []
+        if is_recycled:
+            for person_name in assigned:
+                if person_name in set(absent_today):
+                    per_person.append({"name": person_name, "absent": True, "minutes": 0})
+                    continue
+                try:
+                    mins = staffing.effective_minutes_worked(
+                        person_name, d, window_start_utc, window_end_utc
+                    )
+                except Exception as e:
+                    mins = -1
+                    per_person.append({"name": person_name, "error": str(e), "minutes": -1})
+                    continue
+                per_person.append({"name": person_name, "minutes": mins})
+                total_recycling_people += 1
+                total_man_minutes += mins
+        locations_dump.append({
+            "name": loc.name,
+            "loc_skill": loc.skill,
+            "loc_default_value_stream": loc.value_stream,
+            "wc_store_value_stream": vs,
+            "counted_as_recycled": is_recycled,
+            "assigned": assigned,
+            "per_person": per_person,
+        })
+
+    window_minutes = int((window_end_utc - window_start_utc).total_seconds() // 60)
+    return JSONResponse({
+        "day": d.isoformat(),
+        "is_today": is_today,
+        "window_local": {
+            "start": shift_start_local.isoformat(),
+            "end": window_end_local.isoformat(),
+            "minutes": window_minutes,
+        },
+        "absent_today": absent_today,
+        "totals": {
+            "total_recycling_people": total_recycling_people,
+            "total_man_minutes": total_man_minutes,
+            "total_man_hours": round(total_man_minutes / 60.0, 2),
+        },
+        "locations": locations_dump,
+    })
+
+
 @router.get("/admin/zira-probe")
 def zira_probe(
     day: str = Query(...),
