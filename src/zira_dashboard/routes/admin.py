@@ -91,6 +91,88 @@ def data_status(
     })
 
 
+@router.get("/admin/zira-probe")
+def zira_probe(
+    day: str = Query(...),
+    meter_id: str | None = Query(default=None),
+    sample_rows: int = Query(default=5),
+):
+    """Hit Zira directly for one (meter_id, day) and dump the raw response.
+
+    Diagnostic only. Use to figure out whether Zira itself has data for a
+    given day or whether our filtering is dropping it.
+
+    `meter_id` defaults to the first metered LOCATION (the spec sheet's
+    Bay-1 Repair 1). Pass an explicit one to probe a specific WC.
+    `sample_rows` caps how many rows from Zira's response we echo back —
+    default 5 to keep the JSON small.
+    """
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        return JSONResponse({"error": "day must be YYYY-MM-DD"}, status_code=400)
+
+    if meter_id is None:
+        for loc in staffing.LOCATIONS:
+            if loc.meter_id:
+                meter_id = loc.meter_id
+                wc_name = loc.name
+                break
+        else:
+            return JSONResponse({"error": "no metered stations configured"}, status_code=500)
+    else:
+        wc_name = next(
+            (loc.name for loc in staffing.LOCATIONS if loc.meter_id == meter_id),
+            "(unknown)",
+        )
+
+    # Same window construction as cached_leaderboard.
+    from ..leaderboard import day_window_utc
+    start_iso, end_iso = day_window_utc(d)
+
+    try:
+        payload = client.get_readings(
+            meter_id=meter_id,
+            end_time=end_iso,
+            start_time=start_iso,
+            limit=500,
+        )
+    except Exception as e:
+        return JSONResponse({
+            "error": f"Zira call failed: {e}",
+            "meter_id": meter_id,
+            "wc_name": wc_name,
+            "day": d.isoformat(),
+            "window": {"start": start_iso, "end": end_iso},
+        }, status_code=502)
+
+    # Normalize the envelope so the response is predictable regardless of
+    # whether Zira returned a list or a dict-wrapped envelope.
+    if isinstance(payload, dict):
+        rows = payload.get("data") or []
+        cursor = payload.get("lastValue")
+        envelope_type = "dict"
+    elif isinstance(payload, list):
+        rows = payload
+        cursor = None
+        envelope_type = "list"
+    else:
+        rows = []
+        cursor = None
+        envelope_type = type(payload).__name__
+
+    return JSONResponse({
+        "meter_id": meter_id,
+        "wc_name": wc_name,
+        "day": d.isoformat(),
+        "window": {"start": start_iso, "end": end_iso},
+        "envelope_type": envelope_type,
+        "row_count": len(rows) if isinstance(rows, list) else 0,
+        "cursor": cursor,
+        "sample_rows": rows[:sample_rows] if isinstance(rows, list) else None,
+    })
+
+
 @router.get("/admin/zira-backfill")
 def zira_backfill(
     start: str = Query(...),
