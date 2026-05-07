@@ -118,3 +118,46 @@ def goat(group_name: str) -> dict | None:
     top = rows_sorted[0]
     pph = round(top["units"] / top["hours"], 1) if top["hours"] > 0 else 0.0
     return {"name": top["name"], "day": top["day"], "units": top["units"], "pph": pph}
+
+
+def _rank_avg(rows: list[dict], min_days: int) -> dict | None:
+    """Group rows by name, sum units/hours, count days. Filter days >= min_days.
+    Highest avg pph wins. Tie-break: more days → more units → name asc.
+    Returns the top {name, pph, days, units, hours} or None."""
+    by_person: dict[str, dict] = defaultdict(lambda: {"units": 0.0, "hours": 0.0, "days": 0})
+    for r in rows:
+        if r["hours"] <= 0:
+            continue  # defensive — see spec edge case 4
+        d = by_person[r["name"]]
+        d["units"] += r["units"]
+        d["hours"] += r["hours"]
+        d["days"] += 1
+    qualifiers = []
+    for name, v in by_person.items():
+        if v["days"] < min_days or v["hours"] <= 0:
+            continue
+        qualifiers.append({
+            "name": name,
+            "pph": round(v["units"] / v["hours"], 1),
+            "days": v["days"],
+            "units": v["units"],
+            "hours": v["hours"],
+        })
+    if not qualifiers:
+        return None
+    qualifiers.sort(key=lambda q: (-q["pph"], -q["days"], -q["units"], q["name"]))
+    return qualifiers[0]
+
+
+def annual_best_avg_group(group_name: str, year: int) -> dict | None:
+    """Highest avg pph across the group's WCs in [year], gated days >= 30."""
+    start, end = _year_range(year)
+    rows = person_days_in_group(group_name, start, end)
+    return _rank_avg(rows, min_days=30)
+
+
+def annual_best_avg_wc(wc_name: str, year: int) -> dict | None:
+    """Highest avg pph in this WC alone in [year], gated days >= 30."""
+    start, end = _year_range(year)
+    rows = person_days_in_wc(wc_name, start, end)
+    return _rank_avg(rows, min_days=30)

@@ -201,3 +201,66 @@ def test_goat_returns_none_when_no_data(monkeypatch):
     from zira_dashboard import awards
     monkeypatch.setattr(awards, "_all_time_range", lambda: (date(2026, 1, 1), date(2026, 1, 1)))
     assert awards.goat("Repairs") is None
+
+
+def test_annual_best_avg_group_requires_30_days(monkeypatch):
+    """Person with 29 days at 20pph is excluded; person with 30 days
+    at 15pph wins."""
+    high_pph_29 = [
+        {"day": date(2026, 1, d), "person": "Sprinter", "wc": "Repair 1",
+         "units": 200.0, "hours": 10.0, "downtime": 0.0}
+        for d in range(1, 30)  # 29 days
+    ]
+    consistent_30 = [
+        {"day": date(2026, 4, d), "person": "Plodder", "wc": "Repair 1",
+         "units": 150.0, "hours": 10.0, "downtime": 0.0}
+        for d in range(1, 31)  # 30 days (April has 30)
+    ]
+    _stub_data(
+        monkeypatch,
+        records=high_pph_29 + consistent_30,
+        members_map={"Repairs": ["Repair 1"]},
+    )
+    from zira_dashboard import awards
+    winner = awards.annual_best_avg_group("Repairs", 2026)
+    assert winner["name"] == "Plodder"
+    assert winner["days"] == 30
+    assert winner["pph"] == 15.0
+
+
+def test_annual_best_avg_group_returns_none_when_no_qualifier(monkeypatch):
+    """Nobody hits 30 days → None."""
+    _stub_data(
+        monkeypatch,
+        records=[
+            {"day": date(2026, 1, d), "person": "P", "wc": "Repair 1",
+             "units": 200.0, "hours": 10.0, "downtime": 0.0}
+            for d in range(1, 20)
+        ],
+        members_map={"Repairs": ["Repair 1"]},
+    )
+    from zira_dashboard import awards
+    assert awards.annual_best_avg_group("Repairs", 2026) is None
+
+
+def test_annual_best_avg_wc_filters_to_single_wc(monkeypatch):
+    """Days in other WCs don't count toward the 30-day floor or pph."""
+    repair1_30 = [
+        {"day": date(2026, 1, d), "person": "P", "wc": "Repair 1",
+         "units": 100.0, "hours": 10.0, "downtime": 0.0}
+        for d in range(1, 31)
+    ]
+    repair2_30 = [
+        {"day": date(2026, 1, d), "person": "P", "wc": "Repair 2",
+         "units": 50.0, "hours": 10.0, "downtime": 0.0}
+        for d in range(1, 31)
+    ]
+    _stub_data(
+        monkeypatch,
+        records=repair1_30 + repair2_30,
+        members_map={"Repairs": ["Repair 1", "Repair 2"]},
+    )
+    from zira_dashboard import awards
+    w = awards.annual_best_avg_wc("Repair 1", 2026)
+    assert w["pph"] == 10.0  # 100u / 10h, only Repair 1 counts
+    assert w["days"] == 30
