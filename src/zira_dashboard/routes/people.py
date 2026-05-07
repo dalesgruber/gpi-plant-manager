@@ -62,6 +62,19 @@ def staffing_player_card(
                 "downtime": totals["downtime"],
             })
     day_rows.sort(key=lambda r: (r["date"], r["wc"]), reverse=True)
+    # Attendance history — absences + late arrivals in the range.
+    from .. import late_report
+    abs_rows = late_report.absences_history_for_name(name, start_d, end_d)
+    late_rows = late_report.late_arrivals_history_for_name(name, start_d, end_d)
+    attendance_rows = (
+        [{"date": r["day"].isoformat(), "type": "Absent", "reason": r["reason"] or ""}
+         for r in abs_rows]
+        + [{"date": r["day"].isoformat(), "type": "Late", "reason": r["reason"] or ""}
+           for r in late_rows]
+    )
+    attendance_rows.sort(key=lambda r: (r["date"], r["type"]), reverse=True)
+    total_absent_days = len(abs_rows)
+    total_late_days = len(late_rows)
     return templates.TemplateResponse(
         request,
         "player_card.html",
@@ -77,5 +90,8 @@ def staffing_player_card(
             "total_days": total_days,
             "skills": skills,
             "day_rows": day_rows,
+            "attendance_rows": attendance_rows,
+            "total_absent_days": total_absent_days,
+            "total_late_days": total_late_days,
         },
     )

@@ -25,7 +25,9 @@ def test_player_card_renders_per_day_breakdown_table():
                                                      "hours": 16.0, "days_worked": 2},
                                         "Repair-2": {"units": 70.0, "downtime": 0.0,
                                                      "hours": 8.0, "days_worked": 1}}}), \
-         patch("zira_dashboard.staffing.load_roster", return_value=[]):
+         patch("zira_dashboard.staffing.load_roster", return_value=[]), \
+         patch("zira_dashboard.late_report.absences_history_for_name", return_value=[]), \
+         patch("zira_dashboard.late_report.late_arrivals_history_for_name", return_value=[]):
         client = TestClient(app)
         html = client.get("/staffing/people/Carlos?start=2026-04-27&end=2026-04-29").text
 
@@ -43,3 +45,49 @@ def test_player_card_renders_per_day_breakdown_table():
     )
     # Carlos's entries appear, "Other" does not.
     assert "Repair-1" in html and "Repair-2" in html
+
+
+def test_player_card_renders_attendance_section_with_reasons():
+    """The player card shows an Attendance section with absent/late
+    rows and reasons when history exists in the range."""
+    from datetime import date
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from zira_dashboard.app import app
+
+    abs_rows = [{"day": date(2026, 5, 6), "reason": "sick"}]
+    late_rows = [{"day": date(2026, 5, 7), "reason": "car issues"}]
+
+    with patch("zira_dashboard.production_history.attribution_per_day", return_value=[]), \
+         patch("zira_dashboard.production_history.attribution_range", return_value={}), \
+         patch("zira_dashboard.staffing.load_roster", return_value=[]), \
+         patch("zira_dashboard.late_report.absences_history_for_name", return_value=abs_rows), \
+         patch("zira_dashboard.late_report.late_arrivals_history_for_name", return_value=late_rows):
+        client = TestClient(app)
+        html = client.get("/staffing/people/Carlos?start=2026-05-01&end=2026-05-07").text
+
+    assert "Attendance" in html
+    assert "Days Absent" in html
+    assert "Days Late" in html
+    assert "sick" in html
+    assert "car issues" in html
+    # Date hyperlinks point to the recycling day-view.
+    assert 'href="/recycling?start=2026-05-06&end=2026-05-06"' in html
+    assert 'href="/recycling?start=2026-05-07&end=2026-05-07"' in html
+
+
+def test_player_card_attendance_section_hidden_when_empty():
+    from unittest.mock import patch
+    from fastapi.testclient import TestClient
+    from zira_dashboard.app import app
+
+    with patch("zira_dashboard.production_history.attribution_per_day", return_value=[]), \
+         patch("zira_dashboard.production_history.attribution_range", return_value={}), \
+         patch("zira_dashboard.staffing.load_roster", return_value=[]), \
+         patch("zira_dashboard.late_report.absences_history_for_name", return_value=[]), \
+         patch("zira_dashboard.late_report.late_arrivals_history_for_name", return_value=[]):
+        client = TestClient(app)
+        html = client.get("/staffing/people/Carlos?start=2026-05-01&end=2026-05-07").text
+
+    # No section header.
+    assert ">Attendance<" not in html
