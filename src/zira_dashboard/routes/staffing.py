@@ -51,13 +51,21 @@ def _safe_time_off_entries(d):
 
 
 def _safe_attendance(d, sched, today):
-    """Wrap StratusTime attendance lookup. Returns {by_name, by_id, name_to_id}.
+    """Wrap StratusTime attendance lookup. Returns
+    {by_name, by_id, name_to_id, scheduled_ids, unscheduled_ids}.
 
     Returns empty dicts on any error or when attendance isn't applicable
     (not today, or before shift start). by_name keys are roster names;
     by_id keys are StratusTime EmpIdentifiers (used by late_report).
+
+    Fetches attendance for both scheduled people AND active non-reserve
+    people who weren't assigned to a WC today — so the Late/Absence
+    Report can flag both groups.
     """
-    empty = {"by_name": {}, "by_id": {}, "name_to_id": {}, "scheduled_ids": []}
+    empty = {
+        "by_name": {}, "by_id": {}, "name_to_id": {},
+        "scheduled_ids": [], "unscheduled_ids": [],
+    }
     if d != today:
         return empty
     try:
@@ -74,8 +82,19 @@ def _safe_attendance(d, sched, today):
                 if n:
                     scheduled_names.add(n)
         scheduled_ids = [name_to_id[n] for n in scheduled_names if n in name_to_id]
+
+        # Unscheduled = active non-reserve people not in scheduled_names
+        # (matches the /staffing left-rail "Unscheduled" definition).
+        roster = staffing.load_roster()
+        unscheduled_names = [
+            p.name for p in roster
+            if p.active and not p.reserve and p.name not in scheduled_names
+        ]
+        unscheduled_ids = [name_to_id[n] for n in unscheduled_names if n in name_to_id]
+
+        all_ids = list({*scheduled_ids, *unscheduled_ids})
         id_to_name = {v: k for k, v in name_to_id.items()}
-        attendance_by_id = stratustime_client.attendance_for_day(d, scheduled_ids)
+        attendance_by_id = stratustime_client.attendance_for_day(d, all_ids)
         by_name: dict[str, dict] = {}
         for emp_id, info in attendance_by_id.items():
             name = id_to_name.get(emp_id)
@@ -86,6 +105,7 @@ def _safe_attendance(d, sched, today):
             "by_id": attendance_by_id,
             "name_to_id": name_to_id,
             "scheduled_ids": scheduled_ids,
+            "unscheduled_ids": unscheduled_ids,
         }
     except Exception:
         return empty
