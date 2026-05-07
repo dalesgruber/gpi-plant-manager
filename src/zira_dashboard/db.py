@@ -312,6 +312,18 @@ CREATE TABLE IF NOT EXISTS manual_absences (
 );
 CREATE INDEX IF NOT EXISTS manual_absences_day_idx ON manual_absences(day);
 
+ALTER TABLE manual_absences ADD COLUMN IF NOT EXISTS reason TEXT;
+
+CREATE TABLE IF NOT EXISTS late_arrivals (
+  day            DATE NOT NULL,
+  emp_id         TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  reason         TEXT,
+  declared_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, emp_id)
+);
+CREATE INDEX IF NOT EXISTS late_arrivals_day_idx ON late_arrivals(day);
+
 -- late_snoozes: silences a person from the Late/Absence Report until
 -- `until_utc`. After expiry the report re-checks them automatically.
 CREATE TABLE IF NOT EXISTS late_snoozes (
