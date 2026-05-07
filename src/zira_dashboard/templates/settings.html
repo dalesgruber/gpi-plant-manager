@@ -503,6 +503,10 @@
        class="settings-nav-item {% if active_section == 'work_centers' %}active{% endif %}">
       Work Centers &amp; Goals
     </a>
+    <a href="?section=roster_filter"
+       class="settings-nav-item {% if active_section == 'roster_filter' %}active{% endif %}">
+      Roster Filter
+    </a>
     <a href="?section=schedule"
        class="settings-nav-item {% if active_section == 'schedule' %}active{% endif %}">
       Company Schedule
@@ -742,6 +746,36 @@
 
     </section>
   </form>
+
+  <!-- Roster Filter -->
+  <section class="panel" id="roster-filter-panel"
+           {% if active_section != 'roster_filter' %}style="display:none"{% endif %}>
+    <h2>Roster Filter</h2>
+    <p class="note" style="margin-bottom:0.8rem">
+      Uncheck to hide a person from active roster views (People Matrix,
+      scheduler dropdowns, late/absence report, etc.). Historical data
+      stays intact — past schedules, leaderboards, and attendance
+      records still show them.
+    </p>
+    {% if roster_filter_rows %}
+    <ul class="roster-filter-list" style="list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill, minmax(20rem, 1fr));gap:0.4rem 1rem">
+      {% for p in roster_filter_rows %}
+      <li class="roster-filter-row" data-odoo-id="{{ p.odoo_id }}"
+          style="padding:0.3rem 0.5rem;border-radius:6px">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+          <input type="checkbox"
+                 class="roster-filter-toggle"
+                 {% if not p.excluded %}checked{% endif %}>
+          <span class="roster-filter-name" style="flex:1">{{ p.name }}</span>
+          <span class="roster-filter-meta" style="color:var(--muted);font-size:0.78rem">Odoo #{{ p.odoo_id }}</span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="color:var(--muted);font-style:italic">No Odoo-synced people yet. Run an Odoo sync first.</p>
+    {% endif %}
+  </section>
 
   <!-- Integrations -->
   <section class="panel" id="integrations-panel"
@@ -1249,6 +1283,35 @@
       }
     });
   })();
+</script>
+<script>
+document.querySelectorAll('.roster-filter-toggle').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    var li = cb.closest('.roster-filter-row');
+    if (!li) return;
+    var odoo_id = parseInt(li.dataset.odooId, 10);
+    var excluded = !cb.checked;
+    var origColor = li.style.background;
+    li.style.background = 'var(--accent-dim)';
+    fetch('/api/settings/roster-filter/toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({odoo_id: odoo_id, excluded: excluded}),
+    }).then(function (r) {
+      if (!r.ok) {
+        cb.checked = !cb.checked;
+        li.style.background = 'var(--bad-dim)';
+        setTimeout(function () { li.style.background = origColor; }, 1200);
+      } else {
+        setTimeout(function () { li.style.background = origColor; }, 600);
+      }
+    }).catch(function () {
+      cb.checked = !cb.checked;
+      li.style.background = 'var(--bad-dim)';
+      setTimeout(function () { li.style.background = origColor; }, 1200);
+    });
+  });
+});
 </script>
 {% include '_footer.html' %}
 </body>
