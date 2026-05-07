@@ -1,0 +1,243 @@
+{% extends "_staffing_base.html" %}
+{% block title %}Trophy Case{% endblock %}
+
+{% block styles %}
+  .tc-section { margin-bottom: 2rem; }
+  .tc-section h2 { margin-bottom: 0.6rem; }
+  .tc-goats { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.8rem; }
+  .tc-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+  .tc-card .icon { font-size: 2rem; }
+  .tc-card .head { display: flex; align-items: center; gap: 0.5rem; }
+  .tc-card .name { font-size: 1.2rem; font-weight: 700; }
+  .tc-card .meta { color: var(--muted); font-size: 0.85rem; margin-top: 0.3rem; }
+  .tc-card .empty { color: var(--muted); font-style: italic; }
+  .tc-pickers { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.8rem; }
+  .tc-pickers select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; }
+  .tc-group-block { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 0.8rem; }
+  .tc-group-block h3 { margin: 0 0 0.6rem 0; }
+  .tc-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+  .tc-row:last-child { border-bottom: none; }
+  .tc-row .icon { font-size: 1.4rem; }
+  .tc-row .name { font-weight: 600; }
+  .tc-row .meta { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+  .tc-edit { background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.3rem; cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+  .tc-edit:hover { color: var(--fg); border-color: var(--muted); }
+  .tc-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000; }
+  .tc-modal-backdrop.active { display: flex; }
+  .tc-modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; min-width: 320px; max-width: 480px; }
+  .tc-modal h3 { margin-top: 0; }
+  .tc-modal label { display: block; margin: 0.5rem 0 0.2rem; color: var(--muted); font-size: 0.85rem; }
+  .tc-modal input, .tc-modal select, .tc-modal textarea { width: 100%; padding: 0.4rem; background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+  .tc-modal .actions { display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end; }
+  .tc-modal button { padding: 0.4rem 0.9rem; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg); font: inherit; cursor: pointer; }
+  .tc-modal button.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--accent); font-weight: 600; }
+  .tc-modal button.danger { background: var(--bad-dim, var(--panel-2)); }
+{% endblock %}
+
+{% block content %}
+<h1 style="margin-top:0">🏆 Trophy Case</h1>
+
+<!-- GOATs -->
+<section class="tc-section" id="goats">
+  <h2>🐐 GOATs (All-Time)</h2>
+  <div class="tc-goats">
+    {% for g in goats %}
+    <div class="tc-card">
+      <div class="head">
+        <span class="icon">🐐</span>
+        <span class="name">{{ g.group }}</span>
+        <button class="tc-edit" style="margin-left:auto"
+                data-scope="award_goat" data-group="{{ g.group }}"
+                data-position="1">✏️</button>
+      </div>
+      {% if g.winner %}
+      <div class="meta">
+        <strong>{{ g.winner.name }}</strong> — {{ '{:,.0f}'.format(g.winner.units) }} units
+        on {{ g.winner.day }} ({{ '{:,.1f}'.format(g.winner.pph) }} pph)
+      </div>
+      {% else %}
+      <div class="empty">No record yet.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Annual -->
+<section class="tc-section" id="annual">
+  <h2>🏆 Annual ({{ year }})</h2>
+  <div class="tc-pickers">
+    <label>Year</label>
+    <select id="year-picker">
+      {% for y in range(today[:4]|int, today[:4]|int - 4, -1) %}
+      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% for blk in annual %}
+  <div class="tc-group-block" id="annual-{{ blk.group|lower }}">
+    <h3>{{ blk.group }}</h3>
+    {% if blk.top_days %}
+    {% for s in blk.top_days %}
+    <div class="tc-row">
+      <span class="icon">{% if s.position == 1 %}🥇{% elif s.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+      <span class="name">{{ s.name }}</span>
+      <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
+      <button class="tc-edit"
+              data-scope="trophy_top_day" data-group="{{ blk.group }}"
+              data-year="{{ year }}" data-position="{{ s.position }}">✏️</button>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="tc-row"><span class="empty">No top-day winners for {{ year }}.</span></div>
+    {% endif %}
+
+    {% if blk.best_avg %}
+    <div class="tc-row" style="margin-top:0.4rem">
+      <span class="icon">🏆</span>
+      <span class="name">Best {{ blk.group }} {{ year }}</span>
+      <span class="meta">{{ blk.best_avg.name }} — {{ '{:,.1f}'.format(blk.best_avg.pph) }} pph ({{ blk.best_avg.days }} days)</span>
+      <button class="tc-edit"
+              data-scope="trophy_best_avg_group" data-group="{{ blk.group }}"
+              data-year="{{ year }}" data-position="1">✏️</button>
+    </div>
+    {% endif %}
+
+    {% if blk.wc_winners %}
+    <div style="margin-top:0.4rem;color:var(--muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.5px">Best of each WC</div>
+    {% for w in blk.wc_winners %}
+    <div class="tc-row">
+      <span class="icon">🏆</span>
+      <span class="name">{{ w.wc }}</span>
+      <span class="meta">{{ w.winner.name }} — {{ '{:,.1f}'.format(w.winner.pph) }} pph ({{ w.winner.days }} days)</span>
+      <button class="tc-edit"
+              data-scope="trophy_best_avg_wc" data-wc="{{ w.wc }}"
+              data-year="{{ year }}" data-position="1">✏️</button>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<!-- Monthly -->
+<section class="tc-section" id="monthly">
+  <h2>🥇 Monthly ({{ '%04d-%02d' % (year, month) }})</h2>
+  <div class="tc-pickers">
+    <label>Month</label>
+    <select id="month-picker">
+      {% for m in range(1, 13) %}
+      <option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ '%04d-%02d' % (year, m) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% for blk in monthly %}
+  <div class="tc-group-block">
+    <h3>{{ blk.group }}</h3>
+    {% if blk.badges %}
+    {% for s in blk.badges %}
+    <div class="tc-row">
+      <span class="icon">{% if s.position == 1 %}🥇{% elif s.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+      <span class="name">{{ s.name }}</span>
+      <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
+      <button class="tc-edit"
+              data-scope="badge" data-group="{{ blk.group }}"
+              data-year="{{ year }}" data-month="{{ month }}"
+              data-position="{{ s.position }}">✏️</button>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="tc-row"><span class="empty">No badges for this month.</span></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<!-- Override modal -->
+<div class="tc-modal-backdrop" id="tc-modal-bd">
+  <div class="tc-modal">
+    <h3 id="tc-modal-title">Edit award</h3>
+    <label>Action</label>
+    <select id="tc-action">
+      <option value="replace">Reassign to…</option>
+      <option value="delete">Delete this slot</option>
+      <option value="reset">Reset to computed</option>
+    </select>
+    <div id="tc-name-row">
+      <label>Name</label>
+      <input type="text" id="tc-name" placeholder="Enter person's name">
+    </div>
+    <label>Note (optional)</label>
+    <textarea id="tc-note" rows="2"></textarea>
+    <div class="actions">
+      <button id="tc-cancel">Cancel</button>
+      <button class="primary" id="tc-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var bd = document.getElementById('tc-modal-bd');
+  var current = null;
+
+  document.querySelectorAll('.tc-edit').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      current = {
+        scope: btn.dataset.scope,
+        group_name: btn.dataset.group || null,
+        wc_name: btn.dataset.wc || null,
+        year: btn.dataset.year ? parseInt(btn.dataset.year, 10) : null,
+        month: btn.dataset.month ? parseInt(btn.dataset.month, 10) : null,
+        position: parseInt(btn.dataset.position, 10),
+      };
+      document.getElementById('tc-action').value = 'replace';
+      document.getElementById('tc-name').value = '';
+      document.getElementById('tc-note').value = '';
+      bd.classList.add('active');
+    });
+  });
+
+  document.getElementById('tc-action').addEventListener('change', function (e) {
+    document.getElementById('tc-name-row').style.display =
+      (e.target.value === 'replace') ? 'block' : 'none';
+  });
+
+  document.getElementById('tc-cancel').addEventListener('click', function () {
+    bd.classList.remove('active');
+  });
+
+  document.getElementById('tc-save').addEventListener('click', function () {
+    if (!current) return;
+    var action = document.getElementById('tc-action').value;
+    var body = Object.assign({}, current, {
+      action: action,
+      name: document.getElementById('tc-name').value || null,
+      note: document.getElementById('tc-note').value || null,
+    });
+    fetch('/api/awards/override', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      if (r.ok) { window.location.reload(); }
+      else { alert('Save failed.'); }
+    }).catch(function () { alert('Network error.'); });
+  });
+
+  // Year + month pickers reload with new query string.
+  var yp = document.getElementById('year-picker');
+  if (yp) yp.addEventListener('change', function () {
+    var u = new URL(window.location.href);
+    u.searchParams.set('year', yp.value);
+    window.location.assign(u.toString());
+  });
+  var mp = document.getElementById('month-picker');
+  if (mp) mp.addEventListener('change', function () {
+    var u = new URL(window.location.href);
+    u.searchParams.set('month', mp.value);
+    window.location.assign(u.toString());
+  });
+})();
+</script>
+{% endblock %}
