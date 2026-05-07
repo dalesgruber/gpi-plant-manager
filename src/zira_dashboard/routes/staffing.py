@@ -861,49 +861,85 @@ _LATE_REPORT_CACHE: dict = {"value": None, "expires_at": 0.0}
 def late_report_json():
     """JSON snapshot for the global Late/Absence Report badge + modal.
 
-    Always for today. Returns:
-      late:     [{emp_id, name, minutes_late}]   — currently late, actionable
-      snoozed:  [{emp_id, name, until_iso, mins_remaining}] — silenced, will recheck
-      count:    len(late)                         — drives the badge visibility
+    Always for today. Returns four sections:
+      scheduled_late:   scheduled people who haven't punched in past threshold
+      unscheduled_late: active non-reserve people not assigned today + no_punch
+      needs_reason:     people who punched in past threshold + no late_arrivals
+                        record yet — manager fills in reason and saves
+      snoozed:          silenced rows (no reason field; transient)
 
-    Polled by the footer on every page every 60 s, so we cache the
-    response in-process for 30 s. That makes most polls a dict lookup
-    instead of a StratusTime + DB chain.
+    `late` is an alias for `scheduled_late` for legacy clients.
+    `count` is the badge number = sum of the three actionable sections.
+
+    Cached in-process for 30 s. Polled by every page footer every 60 s.
     """
     from .. import late_report
     now_ts = time.time()
     cached = _LATE_REPORT_CACHE.get("value")
     if cached is not None and now_ts < _LATE_REPORT_CACHE.get("expires_at", 0):
         return JSONResponse(cached)
+
     today = datetime.now(timezone.utc).date()
-    out: dict = {"count": 0, "today": today.isoformat(), "late": [], "snoozed": []}
+    out: dict = {
+        "count": 0,
+        "today": today.isoformat(),
+        "scheduled_late": [],
+        "unscheduled_late": [],
+        "needs_reason": [],
+        "late": [],  # alias for scheduled_late
+        "snoozed": [],
+    }
     try:
         sched = staffing.load_schedule(today)
         attendance_pkg = _safe_attendance(today, sched, today)
-        if attendance_pkg.get("by_id"):
+        by_id = attendance_pkg.get("by_id") or {}
+        if by_id:
             now_local = datetime.now(timezone.utc).astimezone(shift_config.SITE_TZ)
             shift_start_local = datetime.combine(
                 today, shift_config.shift_start_for(today), tzinfo=shift_config.SITE_TZ
             )
-            late = late_report.late_people_for_day(
-                today,
-                attendance_pkg.get("scheduled_ids") or [],
-                attendance_pkg.get("by_id") or {},
-                now_local,
-                shift_start_local,
+            absent_ids = late_report.absent_emp_ids_for_day(today)
+            snoozed_ids = {s["emp_id"] for s in late_report.active_snoozes(today)}
+            already_recorded_late_ids = late_report.late_arrivals_for_day(today)
+
+            sections = late_report.late_people_for_day_v2(
+                day=today,
+                scheduled_emp_ids=attendance_pkg.get("scheduled_ids") or [],
+                unscheduled_emp_ids=attendance_pkg.get("unscheduled_ids") or [],
+                attendance=by_id,
+                now_local=now_local,
+                shift_start_local=shift_start_local,
+                absent_ids=absent_ids,
+                snoozed_ids=snoozed_ids,
+                already_recorded_late_ids=already_recorded_late_ids,
             )
+
             id_to_name = {v: k for k, v in (attendance_pkg.get("name_to_id") or {}).items()}
             full_map = stratustime_client._employee_id_to_name_map()
-            for r in late:
-                eid = r["emp_id"]
-                out["late"].append({
-                    "emp_id": eid,
-                    "name": id_to_name.get(eid) or full_map.get(eid) or f"Unknown ({eid})",
+
+            def _resolve(emp_id):
+                return id_to_name.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
+
+            for r in sections["scheduled_late"]:
+                out["scheduled_late"].append({
+                    "emp_id": r["emp_id"],
+                    "name": _resolve(r["emp_id"]),
                     "minutes_late": r["minutes_late"],
                 })
-        # Snoozed list (independent of attendance — even after they punch in,
-        # we want to clear the snooze; that happens on the next page load
-        # because they'll no longer be no_punch).
+            for r in sections["unscheduled_late"]:
+                out["unscheduled_late"].append({
+                    "emp_id": r["emp_id"],
+                    "name": _resolve(r["emp_id"]),
+                })
+            for r in sections["needs_reason"]:
+                out["needs_reason"].append({
+                    "emp_id": r["emp_id"],
+                    "name": _resolve(r["emp_id"]),
+                    "minutes_late": r["minutes_late"],
+                })
+            out["late"] = list(out["scheduled_late"])  # legacy alias
+
+        # Snoozed list (independent of attendance).
         now_utc = datetime.now(timezone.utc)
         for s in late_report.active_snoozes(today):
             until = s["until_utc"]
@@ -914,7 +950,11 @@ def late_report_json():
                 "until_iso": until.isoformat(),
                 "mins_remaining": mins_remaining,
             })
-        out["count"] = len(out["late"])
+        out["count"] = (
+            len(out["scheduled_late"])
+            + len(out["unscheduled_late"])
+            + len(out["needs_reason"])
+        )
     except Exception:
         pass
     _LATE_REPORT_CACHE["value"] = out
