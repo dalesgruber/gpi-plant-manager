@@ -47,8 +47,17 @@ def settings_page(
     saved: int = Query(default=0),
     section: str = Query(default="work_centers"),
 ):
-    if section not in ("work_centers", "schedule", "integrations"):
+    if section not in ("work_centers", "schedule", "integrations", "roster_filter"):
         section = "work_centers"
+    roster_filter_rows: list[dict] = []
+    if section == "roster_filter":
+        from .. import db
+        roster_filter_rows = db.query(
+            "SELECT odoo_id, name, excluded "
+            "FROM people "
+            "WHERE odoo_id IS NOT NULL "
+            "ORDER BY lower(name)"
+        )
     integration_status = None
     if section == "integrations":
         from .. import stratustime_client
@@ -156,6 +165,7 @@ def settings_page(
             "active_people": active_people,
             "saved": bool(saved),
             "active_section": section,
+            "roster_filter_rows": roster_filter_rows,
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
             "integration_status": integration_status,
@@ -303,3 +313,30 @@ async def settings_save(request: Request):
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({"ok": True})
     return RedirectResponse(url="/settings?saved=1", status_code=303)
+
+
+@router.post("/api/settings/roster-filter/toggle")
+async def roster_filter_toggle(request: Request):
+    """Flip the `excluded` flag on a single person.
+
+    Body (JSON): {odoo_id: int, excluded: bool}
+    Side effects: UPDATE people SET excluded = $excluded WHERE odoo_id = $odoo_id;
+    invalidate the roster cache so the next /staffing render picks up
+    the change.
+    """
+    from .. import db, staffing
+    body = await request.json()
+    odoo_id_raw = body.get("odoo_id")
+    excluded_raw = body.get("excluded")
+    try:
+        odoo_id = int(odoo_id_raw)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "odoo_id required (int)"}, status_code=400)
+    if not isinstance(excluded_raw, bool):
+        return JSONResponse({"ok": False, "error": "excluded must be true or false"}, status_code=400)
+    db.execute(
+        "UPDATE people SET excluded = %s WHERE odoo_id = %s",
+        (excluded_raw, odoo_id),
+    )
+    staffing._invalidate_roster_cache()
+    return JSONResponse({"ok": True})
