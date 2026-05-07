@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-07
 
+### 12:20 PM
+
+- **Player card stats redesign** — at the top of `/staffing/people/{name}`, the **Total units** bubble is gone, replaced by a row of **group-average pph** tiles (Repairs, Dismantlers, Juniors, etc.). One tile per registered group; tiles auto-hide when the operator has no hours in any of that group's WCs. The per-WC table below now has an **Avg (pph)** column alongside Units, and the table headers right-align with their numbers (the old `th.num` was left-aligned, putting headers offset from their numeric cells).
+
 ### 10:08 AM
 
 - **Roster Filter — exclude specific Odoo employees from current views** — new sub-tab in Settings (between Work Centers & Goals and Company Schedule). Renders one row per Odoo-synced person with a checkbox; uncheck to hide that person from the People Matrix, scheduler pickers, player-card picklist, and late/absence report. The exclusion flag is local-only — Odoo's hourly sync preserves it across runs the same way it preserves the `reserve` flag. Historical data (past schedules, leaderboards, attendance records) is unaffected — old assignment data still references excluded people, by design.
