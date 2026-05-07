@@ -93,6 +93,36 @@
 </div>
 {% endif %}
 
+{% if awards_earned %}
+<section style="margin:1rem 0">
+  <h3 style="margin:0 0 0.4rem 0">Trophy case</h3>
+  <ul style="list-style:none;padding:0;margin:0;font-size:0.92rem;line-height:1.5">
+    {% for a in awards_earned %}
+    <li>
+      {% if a.type == 'goat' %}
+        <a href="/trophies#goats">🐐 GOAT — {{ a.group }}
+          ({{ '{:,.0f}'.format(a.units) }} units, {{ a.day }})</a>
+      {% elif a.type == 'trophy_best_avg_group' %}
+        <a href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}">🏆 Best {{ a.group }} {{ a.year }} —
+          {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)</a>
+      {% elif a.type == 'trophy_best_avg_wc' %}
+        <a href="/trophies?year={{ a.year }}#annual">🏆 Best {{ a.wc }} of {{ a.year }} —
+          {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)</a>
+      {% elif a.type == 'trophy_top_day' %}
+        <a href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}
+          {{ a.group }} top day {{ a.year }} —
+          {{ '{:,.0f}'.format(a.units) }} units ({{ a.day }})</a>
+      {% elif a.type == 'badge' %}
+        <a href="/trophies?year={{ a.year }}&month={{ a.month }}#monthly">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}
+          {{ a.group }} — {{ '%04d-%02d' % (a.year, a.month) }}
+          ({{ '{:,.0f}'.format(a.units) }} units)</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 {% if rows %}
 <table class="pc">
   <thead>

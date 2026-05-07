@@ -24,7 +24,7 @@ def _stub_route_dependencies(monkeypatch, *, person_data, registered, members_ma
     """
     from zira_dashboard import staffing
     from zira_dashboard.routes import people as people_route
-    from zira_dashboard import production_history, work_centers_store, late_report
+    from zira_dashboard import production_history, work_centers_store, late_report, awards
 
     class _FakeLoc:
         def __init__(self, name): self.name = name
@@ -62,6 +62,7 @@ def _stub_route_dependencies(monkeypatch, *, person_data, registered, members_ma
     )
     monkeypatch.setattr(late_report, "absences_history_for_name", lambda *a, **k: [])
     monkeypatch.setattr(late_report, "late_arrivals_history_for_name", lambda *a, **k: [])
+    monkeypatch.setattr(awards, "awards_earned_by", lambda *a, **k: [])
 
 
 def test_avg_pph_per_wc_added_to_rows(monkeypatch):

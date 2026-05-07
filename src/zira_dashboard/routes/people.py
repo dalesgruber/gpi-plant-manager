@@ -120,6 +120,8 @@ def staffing_player_card(
         (p.name for p in roster.values() if p.active),
         key=str.lower,
     )
+    from .. import awards
+    awards_earned = awards.awards_earned_by(name, today)
     return templates.TemplateResponse(
         request,
         "player_card.html",
@@ -140,6 +142,7 @@ def staffing_player_card(
             "total_absent_days": total_absent_days,
             "total_late_days": total_late_days,
             "roster_names": roster_names,
+            "awards_earned": awards_earned,
         },
     )
 
