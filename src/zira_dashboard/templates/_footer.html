@@ -699,15 +699,23 @@
       input.addEventListener('input', function () { refreshSaveDisabled(input); });
     });
 
-    // Quick-pick buttons populate the adjacent text input + re-check the
-    // Save button's enabled state.
+    // Quick-pick buttons populate the adjacent text input. Sick / Car
+    // issues / Overslept have a non-empty data-pick — those auto-save
+    // (one click, done). "Other" has an empty data-pick — that clears
+    // the input and waits for the user to type, then Save fires the
+    // record manually.
     body.querySelectorAll('.late-quickpick').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var input = btn.parentElement.querySelector('.late-reason-input');
-        if (input) {
-          input.value = btn.dataset.pick || '';
+        if (!input) return;
+        var pick = btn.dataset.pick || '';
+        input.value = pick;
+        refreshSaveDisabled(input);
+        if (pick) {
+          var save = btn.parentElement.querySelector('.late-save-late, .late-save-absent');
+          if (save) save.click();
+        } else {
           input.focus();
-          refreshSaveDisabled(input);
         }
       });
     });

@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-07
 
+### 8:55 AM
+
+- **Quick-pick reasons now save instantly — one click, done** — clicking **Sick / Car issues / Overslept** in the late/absence popup no longer requires a follow-up Save click. The button fills the reason input and immediately fires the save. **Other** still clears the input and waits for you to type a custom reason, then Save records it.
+
 ### 8:44 AM
 
 - **Late/absence report: reason required before any record posts** — Snooze still files instantly with no reason (it's transient by design). But Declare Absent and the auto-detected Late Arrival entries now refuse to post until a non-empty reason is captured. Backend: both endpoints return 400 if the reason is empty/missing. UI: the Save button on each reason editor stays disabled until the input has content; clicking a quick-pick (Sick / Car issues / Overslept) enables Save instantly because it fills the input. The "Other" quick-pick clears the input and waits for you to type, so Save stays disabled until you do. Net effect: nothing lands in `manual_absences` or `late_arrivals` without a reason attached.
