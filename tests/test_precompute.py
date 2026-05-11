@@ -103,3 +103,36 @@ def test_upsert_overwrites_on_pk_conflict():
     assert float(got[0]["units"]) == 99.0
 
     db.execute("DELETE FROM production_daily WHERE day = %s", (date(2099, 1, 2),))
+
+
+def test_precompute_day_flattens_and_upserts(monkeypatch):
+    from zira_dashboard import precompute
+    calls = {"attribution": 0, "upsert": []}
+
+    def fake_attribution(d, client):
+        calls["attribution"] += 1
+        return {
+            "Alice": {"WC1": {"units": 50.0, "downtime": 2.0, "hours": 4.0, "days_worked": 1}},
+            "Bob":   {"WC1": {"units": 50.0, "downtime": 2.0, "hours": 4.0, "days_worked": 1}},
+        }
+
+    def fake_name_map():
+        return {"Alice": "E1", "Bob": "E2"}
+
+    def fake_upsert(rows):
+        calls["upsert"].extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr(
+        "zira_dashboard.production_history.attribution_for", fake_attribution
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.stratustime_client.name_to_emp_id_map", fake_name_map
+    )
+    monkeypatch.setattr(precompute, "upsert_production_daily", fake_upsert)
+
+    result = precompute.precompute_day(date(2026, 5, 1), client=None)
+
+    assert result == {"day": "2026-05-01", "rows_written": 2}
+    assert calls["attribution"] == 1
+    assert {r["name"] for r in calls["upsert"]} == {"Alice", "Bob"}

@@ -89,3 +89,16 @@ def upsert_production_daily(rows: Iterable[dict]) -> int:
         for r in rows
     ])
     return len(rows)
+
+
+def precompute_day(day: date, client) -> dict:
+    """Compute attribution for one day and UPSERT into production_daily.
+
+    Returns {"day": iso, "rows_written": int}. Idempotent; safe to re-run.
+    """
+    from . import production_history, stratustime_client
+    attribution = production_history.attribution_for(day, client)
+    name_to_emp_id = stratustime_client.name_to_emp_id_map()
+    rows = flatten_attribution(day, attribution, name_to_emp_id)
+    written = upsert_production_daily(rows)
+    return {"day": day.isoformat(), "rows_written": written}
