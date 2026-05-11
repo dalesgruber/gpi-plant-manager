@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-11
 
+### 2:06 PM
+
+- **Trophy Case → Player Card jumps + Player Card trophy-icon redesign** — every operator name on the Trophy Case page (GOAT cards, Annual top-days, Annual best-avg, per-WC best-avg, Monthly ribbons) is now a hyperlink to that person's player card. Subtle hover-only dotted underline keeps the page readable. On the player card itself, the "Trophy case" section is now a row of icon-only trophies at ~3x the previous size; hovering any icon pops a dark pill tooltip with the full detail (group, year, units, pph, day, etc.), and clicking jumps straight to the matching anchor on `/trophies` (e.g. `#annual-repairs`) so you land in context.
+
 ### 2:03 PM
 
 - **GOAT badges on the Recycling + New value-stream dashboards + better hover** — the 🐐 icons now also appear next to operator names on the dashboard widgets (both today's per-WC bars where a person is assigned, and the per-person bars in range views). The hover tooltip was rebuilt: no more question-mark cursor, no more half-second browser delay, no more tiny black-on-black text — hovering any 🐐 instantly pops a bigger pill-shaped tooltip with the group name. Same visual treatment everywhere the badge appears (scheduler, leaderboards, skills matrix, past schedules, player cards, and now dashboards).

@@ -38,6 +38,10 @@
   .tc-trophy-gold   { filter: none; }
   .tc-trophy-silver { filter: grayscale(100%) brightness(115%); }
   .tc-trophy-bronze { filter: hue-rotate(-30deg) saturate(150%) brightness(85%); }
+  /* Operator-name links — subtle dotted underline only on hover so the
+     trophy/badge rows still read as data, not as a wall of blue links. */
+  .tc-name-link { color: inherit; text-decoration: none; border-bottom: 1px dotted transparent; }
+  .tc-name-link:hover { border-bottom-color: currentColor; }
 {% endblock %}
 
 {% block content %}
@@ -58,7 +62,7 @@
       </div>
       {% if g.winner %}
       <div class="meta">
-        <strong>{{ g.winner.name }}</strong> — {{ '{:,.0f}'.format(g.winner.units) }} units
+        <a class="tc-name-link" href="/staffing/people/{{ g.winner.name|urlencode }}"><strong>{{ g.winner.name }}</strong></a> — {{ '{:,.0f}'.format(g.winner.units) }} units
         on {{ g.winner.day }} ({{ '{:,.1f}'.format(g.winner.pph) }} pph)
       </div>
       {% else %}
@@ -88,7 +92,7 @@
     {% for s in blk.top_days %}
     <div class="tc-row">
       <span class="icon tc-trophy-{% if s.position == 1 %}gold{% elif s.position == 2 %}silver{% else %}bronze{% endif %}">🏆</span>
-      <span class="name">{{ s.name }}</span>
+      <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
       <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
       <button class="tc-edit"
               data-scope="trophy_top_day" data-group="{{ blk.group }}"
@@ -103,7 +107,7 @@
     <div class="tc-row" style="margin-top:0.4rem">
       <span class="icon">🏆</span>
       <span class="name">Best {{ blk.group }} {{ year }}</span>
-      <span class="meta">{{ blk.best_avg.name }} — {{ '{:,.1f}'.format(blk.best_avg.pph) }} pph ({{ blk.best_avg.days }} days)</span>
+      <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ blk.best_avg.name|urlencode }}">{{ blk.best_avg.name }}</a> — {{ '{:,.1f}'.format(blk.best_avg.pph) }} pph ({{ blk.best_avg.days }} days)</span>
       <button class="tc-edit"
               data-scope="trophy_best_avg_group" data-group="{{ blk.group }}"
               data-year="{{ year }}" data-position="1">✏️</button>
@@ -116,7 +120,7 @@
     <div class="tc-row">
       <span class="icon">🏆</span>
       <span class="name">{{ w.wc }}</span>
-      <span class="meta">{{ w.winner.name }} — {{ '{:,.1f}'.format(w.winner.pph) }} pph ({{ w.winner.days }} days)</span>
+      <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ w.winner.name|urlencode }}">{{ w.winner.name }}</a> — {{ '{:,.1f}'.format(w.winner.pph) }} pph ({{ w.winner.days }} days)</span>
       <button class="tc-edit"
               data-scope="trophy_best_avg_wc" data-wc="{{ w.wc }}"
               data-year="{{ year }}" data-position="1">✏️</button>
@@ -147,7 +151,7 @@
     {% for s in blk.badges %}
     <div class="tc-row">
       <span class="icon">{% if s.position == 1 %}🥇{% elif s.position == 2 %}🥈{% else %}🥉{% endif %}</span>
-      <span class="name">{{ s.name }}</span>
+      <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
       <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
       <button class="tc-edit"
               data-scope="badge" data-group="{{ blk.group }}"

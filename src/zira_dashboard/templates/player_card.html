@@ -33,6 +33,44 @@
   .pc-group-avgs .stat .lab { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
   .pc-group-avgs .stat .v { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 0.2rem; color: var(--accent); }
   {{ goat_badges_css() }}
+  /* Trophy case — large, icon-only row. Hover pops a detail tooltip,
+     click jumps to the relevant section of /trophies. */
+  .pc-trophy-case { margin: 1rem 0; }
+  .pc-trophy-case h3 { margin: 0 0 0.6rem 0; }
+  .pc-trophy-icons { display: flex; flex-wrap: wrap; gap: 0.7rem; align-items: center; }
+  .pc-trophy-icon {
+    position: relative;
+    font-size: 2.8rem;       /* ~3x the body text */
+    text-decoration: none;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-block;
+  }
+  .pc-trophy-icon::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 0.5rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  .pc-trophy-icon:hover::after { opacity: 1; visibility: visible; }
+  /* Trophy-tier filters mirror the trophy_case page so a top-day
+     trophy reads consistently across the system. */
+  .pc-trophy-gold   { filter: none; }
+  .pc-trophy-silver { filter: grayscale(100%) brightness(115%); }
+  .pc-trophy-bronze { filter: hue-rotate(-30deg) saturate(150%) brightness(85%); }
 {% endblock %}
 
 {% block content %}
@@ -97,32 +135,33 @@
 {% endif %}
 
 {% if awards_earned %}
-<section style="margin:1rem 0">
-  <h3 style="margin:0 0 0.4rem 0">Trophy case</h3>
-  <ul style="list-style:none;padding:0;margin:0;font-size:0.92rem;line-height:1.5">
+<section class="pc-trophy-case">
+  <h3>Trophy case</h3>
+  <div class="pc-trophy-icons">
     {% for a in awards_earned %}
-    <li>
       {% if a.type == 'goat' %}
-        <a href="/trophies#goats">🐐 GOAT — {{ a.group }}
-          ({{ '{:,.0f}'.format(a.units) }} units, {{ a.day }})</a>
-      {% elif a.type == 'trophy_best_avg_group' %}
-        <a href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}">🏆 Best {{ a.group }} {{ a.year }} —
-          {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)</a>
-      {% elif a.type == 'trophy_best_avg_wc' %}
-        <a href="/trophies?year={{ a.year }}#annual">🏆 Best {{ a.wc }} of {{ a.year }} —
-          {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)</a>
+        <a class="pc-trophy-icon"
+           href="/trophies#goats"
+           data-tip="🐐 GOAT — {{ a.group }} ({{ '{:,.0f}'.format(a.units) }} units, {{ a.day }})">🐐</a>
       {% elif a.type == 'trophy_top_day' %}
-        <a href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}
-          {{ a.group }} top day {{ a.year }} —
-          {{ '{:,.0f}'.format(a.units) }} units ({{ a.day }})</a>
+        <a class="pc-trophy-icon pc-trophy-{% if a.position == 1 %}gold{% elif a.position == 2 %}silver{% else %}bronze{% endif %}"
+           href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}"
+           data-tip="🏆 {{ a.group }} top day {{ a.year }} — {{ '{:,.0f}'.format(a.units) }} units ({{ a.day }})">🏆</a>
+      {% elif a.type == 'trophy_best_avg_group' %}
+        <a class="pc-trophy-icon pc-trophy-gold"
+           href="/trophies?year={{ a.year }}#annual-{{ a.group|lower }}"
+           data-tip="🏆 Best {{ a.group }} {{ a.year }} — {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)">🏆</a>
+      {% elif a.type == 'trophy_best_avg_wc' %}
+        <a class="pc-trophy-icon pc-trophy-gold"
+           href="/trophies?year={{ a.year }}#annual"
+           data-tip="🏆 Best {{ a.wc }} of {{ a.year }} — {{ '{:,.1f}'.format(a.pph) }} pph ({{ a.days }} days)">🏆</a>
       {% elif a.type == 'badge' %}
-        <a href="/trophies?year={{ a.year }}&month={{ a.month }}#monthly">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}
-          {{ a.group }} — {{ '%04d-%02d' % (a.year, a.month) }}
-          ({{ '{:,.0f}'.format(a.units) }} units)</a>
+        <a class="pc-trophy-icon"
+           href="/trophies?year={{ a.year }}&month={{ a.month }}#monthly"
+           data-tip="{{ '%04d-%02d' % (a.year, a.month) }} {{ a.group }} ribbon — {{ '{:,.0f}'.format(a.units) }} units">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}</a>
       {% endif %}
-    </li>
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
 
