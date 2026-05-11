@@ -41,10 +41,35 @@ def _server_timing_header(phases: dict) -> str:
     return ", ".join(f"{name};dur={dur:.1f}" for name, dur in phases.items())
 
 
+def _timeoff_entries_with_fallback(day):
+    """Return today's full time-off entries list via the live cache.
+
+    Same cold-start safety valve as _attendance_with_fallback. Only used
+    for today — historical days bypass this and hit StratusTime directly
+    via _safe_time_off_entries below.
+    """
+    from .. import live_cache, stratustime_client
+    payload, refreshed_at = live_cache.read_timeoff(day)
+    if payload is None or live_cache.is_stale(refreshed_at):
+        try:
+            live_cache.refresh_timeoff(day)
+            payload, _ = live_cache.read_timeoff(day)
+        except Exception:
+            payload = None
+        if payload is None:
+            return stratustime_client.time_off_entries_for_day(day)
+    return list(payload)
+
+
 def _safe_time_off_entries(d):
     """Wrap stratustime_client.time_off_entries_for_day so a StratusTime
-    outage never breaks /staffing rendering."""
+    outage never breaks /staffing rendering. For today, reads from the
+    live cache (45 s warmer tick) instead of blocking on StratusTime.
+    """
     try:
+        today_utc = datetime.now(timezone.utc).date()
+        if d == today_utc:
+            return _timeoff_entries_with_fallback(d)
         return stratustime_client.time_off_entries_for_day(d)
     except Exception:
         return []
