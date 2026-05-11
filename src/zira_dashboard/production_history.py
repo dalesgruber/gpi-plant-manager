@@ -232,48 +232,12 @@ def daily_records(
 ) -> list[dict]:
     """Return one record per (day, person, wc) where attributed units > 0.
 
-    Used by the leaderboards top-5 single-day computation.
-    Each record:
-        {"day": date, "person": str, "wc": str,
-         "units": float, "downtime": float, "hours": float}
-
-    Days fetched concurrently via thread pool.
+    Now reads from production_daily. The `client` argument is kept for
+    signature compatibility with existing callers, but is unused —
+    production_daily is the canonical source.
     """
-    from datetime import timedelta
-    from concurrent.futures import ThreadPoolExecutor
-
-    days: list[date] = []
-    cursor = start_d
-    while cursor <= end_d:
-        days.append(cursor)
-        cursor += timedelta(days=1)
-
-    if not days:
-        return []
-
-    def _records_for(d):
-        out: list[dict] = []
-        day_attr = attribution_for(d, client)
-        for person, wc_map in day_attr.items():
-            for wc_name, totals in wc_map.items():
-                if totals["units"] > 0:
-                    out.append({
-                        "day": d,
-                        "person": person,
-                        "wc": wc_name,
-                        "units": totals["units"],
-                        "downtime": totals["downtime"],
-                        "hours": totals["hours"],
-                    })
-        return out
-
-    with ThreadPoolExecutor(max_workers=min(6, len(days))) as pool:
-        per_day = list(pool.map(_records_for, days))
-
-    records: list[dict] = []
-    for day_records in per_day:
-        records.extend(day_records)
-    return records
+    from . import precompute
+    return precompute.daily_records_in_range(start_d, end_d)
 
 
 def rank_by_category(

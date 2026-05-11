@@ -233,3 +233,50 @@ def test_attribution_per_day_keeps_empty_days_in_list():
     assert out[0][1] != {}
     assert out[1][1] == {}
     assert out[2][1] != {}
+
+
+import os
+from datetime import date as _date
+
+import pytest
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_daily_records_reads_from_production_daily():
+    """daily_records must return rows from production_daily without
+    calling production_history.attribution_for at all."""
+    from zira_dashboard import db, precompute, production_history
+
+    db.init_pool(); db.bootstrap_schema()
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 7, 1), _date(2099, 7, 31)))
+    precompute.upsert_production_daily([
+        {"day": _date(2099, 7, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 10.0, "downtime": 1.0, "hours": 4.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 7, 2), "emp_id": "E2", "name": "Bob",
+         "wc_name": "WC2", "units": 20.0, "downtime": 2.0, "hours": 8.0,
+         "days_worked": 1.0},
+    ])
+
+    def poison(*a, **k):
+        raise AssertionError("attribution_for should not be called")
+
+    saved = production_history.attribution_for
+    production_history.attribution_for = poison
+    try:
+        out = production_history.daily_records(
+            _date(2099, 7, 1), _date(2099, 7, 31), client=None
+        )
+    finally:
+        production_history.attribution_for = saved
+
+    by_day = {(r["day"], r["person"]): r for r in out}
+    assert by_day[(_date(2099, 7, 1), "Alice")]["units"] == 10.0
+    assert by_day[(_date(2099, 7, 2), "Bob")]["units"] == 20.0
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 7, 1), _date(2099, 7, 31)))
