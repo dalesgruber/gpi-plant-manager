@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-11
 
+### 10:39 AM
+
+- **Backend speedup — daily-OK pages now read from a precomputed fact table** — leaderboards, player cards, trophies/awards, and value-stream production views previously recomputed per-person attribution from raw Zira on every page hit. They now read from a new `production_daily` table populated by `POST /admin/precompute-run` (default = yesterday; with `from`/`to` query params = backfill). Three core history functions (`daily_records`, `attribution_range`, `attribution_per_day`) keep their existing signatures but now run a single SUM/GROUP BY against `production_daily` instead of parallel-fetching per-day attribution. The user-visible speedup lands once the table is backfilled and the live warmer (next deploy) keeps today's row fresh. Award overrides flow unchanged.
+
 ### 9:12 AM
 
 - **Late/absence report: modal now auto-clears after a save** — declaring someone absent and picking a reason no longer leaves the row stuck showing "Saving…". The report re-pulls fresh data on save; the saved row drops out, and if nothing actionable is left the popup closes itself automatically. Multiple late/absent people still keep the popup open until you've worked through them.
