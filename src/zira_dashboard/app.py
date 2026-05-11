@@ -61,6 +61,29 @@ async def _warm_stratustime_loop():
         await asyncio.sleep(180)  # 3 min — well under the 5 min cache TTL
 
 
+async def _warm_live_cache_loop():
+    """Refresh today's attendance, time-off, and production into the
+    live_cache tables every 45 s. Each source is wrapped independently so
+    one outage doesn't block the others. The loop itself never raises —
+    a hard failure logs and the next tick tries again.
+
+    The production refresh also UPSERTs today's `production_daily` rows
+    so MTD / today leaderboards see today's partial-day data without a
+    separate query path."""
+    from . import live_cache
+    while True:
+        try:
+            today = datetime.now(timezone.utc).date()
+            await asyncio.to_thread(live_cache.refresh_attendance, today)
+            await asyncio.to_thread(live_cache.refresh_timeoff, today)
+            await asyncio.to_thread(
+                live_cache.refresh_production, today, _zira_client()
+            )
+        except Exception as e:  # noqa: BLE001 — warmer must never die
+            _log.warning("live_cache warmer tick failed: %s", e)
+        await asyncio.sleep(45)
+
+
 async def _warm_zira_cache_loop():
     """Periodically warm today's Zira leaderboard cache so user
     requests on /recycling never pay the cold-cache penalty.
@@ -143,10 +166,11 @@ async def lifespan(app: FastAPI):
     _prewarm_stratustime()
     warmer_task = asyncio.create_task(_warm_zira_cache_loop())
     st_warmer_task = asyncio.create_task(_warm_stratustime_loop())
+    live_cache_task = asyncio.create_task(_warm_live_cache_loop())
     try:
         yield
     finally:
-        for t in (warmer_task, st_warmer_task):
+        for t in (warmer_task, st_warmer_task, live_cache_task):
             t.cancel()
             try:
                 await t
