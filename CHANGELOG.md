@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-11
 
+### 1:55 PM
+
+- **Trophy Case section relabel + Annual icons re-skinned as trophies** — the "Annual" section is now **Annual Trophies** and its top-3 person-days render as 🏆 trophies tinted gold (1st), silver (2nd), bronze (3rd) via CSS filter. The "Monthly" section is now **Monthly Ribbons**; its 🥇🥈🥉 ribbon icons are unchanged. The Annual section's best-avg and per-WC rows already used 🏆 — no change there.
+
 ### 1:48 PM
 
 - **🐐 GOAT badges next to every employee name** — anywhere an operator's name appears (Plant Scheduler, Leaderboards, People Matrix, Past Schedules, player-card headline), a 🐐 emoji now sits next to it for each group they currently hold the all-time GOAT record in. Hover over the icon to see which group ("GOAT — Repairs", etc.). People who hold GOAT in multiple groups get one icon per group, stacked. Updates within ~5 min of any change (in-process cache TTL) and recomputes from `production_daily` each render — so if anyone takes the GOAT record away on a given day, the badge moves overnight after the nightly precompute. Trophies page itself unchanged — names there are already grouped under their GOAT scope.

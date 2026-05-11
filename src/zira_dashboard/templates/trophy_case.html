@@ -32,6 +32,11 @@
   .tc-modal button { padding: 0.4rem 0.9rem; border-radius: 6px; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg); font: inherit; cursor: pointer; }
   .tc-modal button.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--accent); font-weight: 600; }
   .tc-modal button.danger { background: var(--bad-dim, var(--panel-2)); }
+  /* Trophy tier tints for the Annual top-days rows. 🏆 emoji is naturally
+     gold; the filters re-tint for silver (2nd) and bronze (3rd). */
+  .tc-trophy-gold   { filter: none; }
+  .tc-trophy-silver { filter: grayscale(100%) brightness(115%); }
+  .tc-trophy-bronze { filter: hue-rotate(-30deg) saturate(150%) brightness(85%); }
 {% endblock %}
 
 {% block content %}
@@ -65,7 +70,7 @@
 
 <!-- Annual -->
 <section class="tc-section" id="annual">
-  <h2>🏆 Annual ({{ year }})</h2>
+  <h2>🏆 Annual Trophies ({{ year }})</h2>
   <div class="tc-pickers">
     <label>Year</label>
     <select id="year-picker">
@@ -80,7 +85,7 @@
     {% if blk.top_days %}
     {% for s in blk.top_days %}
     <div class="tc-row">
-      <span class="icon">{% if s.position == 1 %}🥇{% elif s.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+      <span class="icon tc-trophy-{% if s.position == 1 %}gold{% elif s.position == 2 %}silver{% else %}bronze{% endif %}">🏆</span>
       <span class="name">{{ s.name }}</span>
       <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
       <button class="tc-edit"
@@ -122,7 +127,7 @@
 
 <!-- Monthly -->
 <section class="tc-section" id="monthly">
-  <h2>🥇 Monthly ({{ '%04d-%02d' % (year, month) }})</h2>
+  <h2>🥇 Monthly Ribbons ({{ '%04d-%02d' % (year, month) }})</h2>
   <div class="tc-pickers">
     <label>Month</label>
     <select id="month-picker">
