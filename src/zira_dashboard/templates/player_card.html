@@ -162,7 +162,7 @@
       {% elif a.type == 'badge' %}
         <a class="pc-trophy-icon"
            href="/trophies?year={{ a.year }}&month={{ a.month }}#monthly"
-           data-tip="{{ '%04d-%02d' % (a.year, a.month) }} {{ a.group }} ribbon — {{ '{:,.0f}'.format(a.units) }} units">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}</a>
+           data-tip="{{ month_name(a.month) }} {{ a.year }} {{ a.group }} ribbon — {{ '{:,.0f}'.format(a.units) }} units">{% if a.position == 1 %}🥇{% elif a.position == 2 %}🥈{% else %}🥉{% endif %}</a>
       {% endif %}
     {% endfor %}
   </div>

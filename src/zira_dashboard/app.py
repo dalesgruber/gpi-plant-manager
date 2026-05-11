@@ -195,6 +195,9 @@ templates.env.globals["cert_icon_data"] = cert_icons.all_data
 from . import awards
 templates.env.globals["goat_holders"] = awards.goat_holders_map
 
+import calendar as _calendar
+templates.env.globals["month_name"] = lambda m: _calendar.month_name[m]
+
 
 def _static_v(filename: str) -> str:
     """Return a stable cache-busting token (the file's mtime as int)
