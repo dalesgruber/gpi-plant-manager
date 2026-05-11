@@ -1,5 +1,4 @@
 from datetime import date
-from unittest.mock import patch
 
 from zira_dashboard import production_history
 from zira_dashboard.production_history import attribute_for_day
@@ -196,43 +195,11 @@ def test_rank_by_category_filters_to_category_wcs_and_threshold():
     assert rows[0]["pct_of_target"] == 96.0
 
 
-def test_attribution_per_day_returns_one_entry_per_day_in_order():
-    """attribution_per_day returns a list of (day, attribution_dict) tuples
-    in date-ascending order, one entry per day in the [start, end] range
-    inclusive. Each attribution_dict matches what attribution_for() would
-    return for that day individually."""
-    start = date(2026, 4, 27)  # Monday
-    end = date(2026, 4, 29)    # Wednesday
-
-    def _fake_attribution_for(d, client):
-        return {f"P{d.day}": {"WC1": {"units": float(d.day), "downtime": 0.0,
-                                      "hours": 8.0, "days_worked": 1}}}
-
-    with patch.object(production_history, "attribution_for", side_effect=_fake_attribution_for):
-        out = production_history.attribution_per_day(start, end, client=None)
-
-    assert [day for day, _ in out] == [date(2026, 4, 27), date(2026, 4, 28), date(2026, 4, 29)]
-    assert out[0][1] == {"P27": {"WC1": {"units": 27.0, "downtime": 0.0, "hours": 8.0, "days_worked": 1}}}
-    assert out[1][1]["P28"]["WC1"]["units"] == 28.0
-    assert out[2][1]["P29"]["WC1"]["units"] == 29.0
-
-
-def test_attribution_per_day_keeps_empty_days_in_list():
-    """Days where attribution_for returns {} still appear in the output
-    list (with an empty dict value) so the date axis stays predictable
-    for callers that need to know which days were checked."""
-    def _fake(d, client):
-        if d == date(2026, 4, 28):
-            return {}
-        return {"P": {"WC": {"units": 1.0, "downtime": 0.0, "hours": 8.0, "days_worked": 1}}}
-
-    with patch.object(production_history, "attribution_for", side_effect=_fake):
-        out = production_history.attribution_per_day(date(2026, 4, 27), date(2026, 4, 29), client=None)
-
-    assert len(out) == 3
-    assert out[0][1] != {}
-    assert out[1][1] == {}
-    assert out[2][1] != {}
+# Legacy attribution_per_day tests that mocked `attribution_for` were
+# removed when attribution_per_day cut over to reading production_daily
+# directly. The Postgres-gated test below
+# (test_attribution_per_day_reads_from_production_daily) covers the same
+# semantics: date-ascending order, every day present including empty days.
 
 
 import os
@@ -280,3 +247,86 @@ def test_daily_records_reads_from_production_daily():
 
     db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
                (_date(2099, 7, 1), _date(2099, 7, 31)))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_attribution_range_reads_from_production_daily():
+    from zira_dashboard import db, precompute, production_history
+
+    db.init_pool(); db.bootstrap_schema()
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 8, 1), _date(2099, 8, 31)))
+    precompute.upsert_production_daily([
+        {"day": _date(2099, 8, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 10.0, "downtime": 1.0, "hours": 4.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 8, 2), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 5.0,  "downtime": 0.5, "hours": 2.0,
+         "days_worked": 1.0},
+    ])
+
+    def poison(*a, **k):
+        raise AssertionError("attribution_for should not be called")
+    saved = production_history.attribution_for
+    production_history.attribution_for = poison
+    try:
+        out = production_history.attribution_range(
+            _date(2099, 8, 1), _date(2099, 8, 31), client=None
+        )
+    finally:
+        production_history.attribution_for = saved
+
+    assert out["Alice"]["WC1"]["units"] == 15.0
+    assert out["Alice"]["WC1"]["hours"] == 6.0
+    assert out["Alice"]["WC1"]["days_worked"] == 2.0
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 8, 1), _date(2099, 8, 31)))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_attribution_per_day_reads_from_production_daily():
+    from zira_dashboard import db, precompute, production_history
+
+    db.init_pool(); db.bootstrap_schema()
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 9, 1), _date(2099, 9, 30)))
+    precompute.upsert_production_daily([
+        {"day": _date(2099, 9, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 10.0, "downtime": 1.0, "hours": 4.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 9, 2), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 5.0,  "downtime": 0.0, "hours": 2.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 9, 1), "emp_id": "E2", "name": "Bob",
+         "wc_name": "WC2", "units": 20.0, "downtime": 0.0, "hours": 8.0,
+         "days_worked": 1.0},
+    ])
+
+    def poison(*a, **k):
+        raise AssertionError("attribution_for should not be called")
+    saved = production_history.attribution_for
+    production_history.attribution_for = poison
+    try:
+        out = production_history.attribution_per_day(
+            _date(2099, 9, 1), _date(2099, 9, 30), client=None
+        )
+    finally:
+        production_history.attribution_for = saved
+
+    by_day = dict(out)
+    assert by_day[_date(2099, 9, 1)]["Alice"]["WC1"]["units"] == 10.0
+    assert by_day[_date(2099, 9, 1)]["Bob"]["WC2"]["units"] == 20.0
+    assert by_day[_date(2099, 9, 2)]["Alice"]["WC1"]["units"] == 5.0
+    # Every day in range present (even empty days), so callers can
+    # distinguish "checked and empty" from "didn't check".
+    assert len(out) == 30
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
+               (_date(2099, 9, 1), _date(2099, 9, 30)))

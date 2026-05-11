@@ -163,32 +163,40 @@ def attribution_per_day(
 ) -> list[tuple[date, dict[str, dict[str, dict[str, float]]]]]:
     """Per-day attribution across [start, end] inclusive.
 
-    Returns a list of (day, attribution_dict) tuples in date-ascending
-    order. Each attribution_dict has the same shape as
-    `attribution_for(day, client)`. Days with no published schedule
-    yield an empty dict (kept in the list so callers can distinguish
-    "checked, found nothing" from "didn't check").
-
-    Days are fetched concurrently via a thread pool — same pool sizing
-    as `attribution_range` so multi-month ranges don't pay sequential
-    per-day latency. The shared `cached_leaderboard` cache means
-    repeated calls for the same range return instantly.
+    Returns one (day, attribution_dict) tuple per day in the range,
+    in date-ascending order. Empty days return ({}). `client` is kept
+    for signature compatibility but unused — reads from production_daily.
     """
     from datetime import timedelta
-    from concurrent.futures import ThreadPoolExecutor
+    from . import db
 
     days: list[date] = []
     cursor = start
     while cursor <= end:
         days.append(cursor)
         cursor += timedelta(days=1)
-
     if not days:
         return []
 
-    with ThreadPoolExecutor(max_workers=min(8, len(days))) as pool:
-        dailies = list(pool.map(lambda d: attribution_for(d, client), days))
-    return list(zip(days, dailies))
+    rows = db.query(
+        """
+        SELECT day, name, wc_name,
+               units, downtime, hours, days_worked
+        FROM production_daily
+        WHERE day BETWEEN %s AND %s
+        """,
+        (start, end),
+    )
+    by_day: dict[date, dict[str, dict[str, dict[str, float]]]] = {d: {} for d in days}
+    for r in rows:
+        person_map = by_day[r["day"]].setdefault(r["name"], {})
+        person_map[r["wc_name"]] = {
+            "units":       float(r["units"]),
+            "downtime":    float(r["downtime"]),
+            "hours":       float(r["hours"]),
+            "days_worked": float(r["days_worked"]),
+        }
+    return [(d, by_day[d]) for d in days]
 
 
 def attribution_range(
@@ -196,35 +204,39 @@ def attribution_range(
     end: date,
     client,
 ) -> dict[str, dict[str, dict[str, float]]]:
-    """Sum attribution_for() across [start, end] inclusive.
+    """Sum attribution across [start, end] inclusive.
 
-    Days are fetched concurrently via a thread pool so a multi-day
-    range doesn't pay sequential per-day latency. The downstream
-    `attribute_for_range` consumes the list in date order, so we
-    rely on `pool.map` preserving input order before returning.
+    Reads from production_daily and reshapes into the legacy
+    {person: {wc: {units, downtime, hours, days_worked}}} envelope so
+    that existing callers (player cards, leaderboards via rank_by_category)
+    don't have to change.
+
+    `client` is kept for signature compatibility but unused.
     """
-    from datetime import timedelta
-    from concurrent.futures import ThreadPoolExecutor
-
-    days: list[date] = []
-    cursor = start
-    while cursor <= end:
-        days.append(cursor)
-        cursor += timedelta(days=1)
-
-    if not days:
-        return attribute_for_range([])
-
-    # Bound parallelism: we don't want to slam Zira on a cold cache.
-    # Most calls are cache hits (Postgres) which are cheap; on cold
-    # cache the bottleneck is Zira's per-station ThreadPoolExecutor
-    # inside leaderboard.py (max_workers=10), so 6 concurrent days
-    # gives room without saturating.
-    with ThreadPoolExecutor(max_workers=min(6, len(days))) as pool:
-        # Map preserves order.
-        daily = list(pool.map(lambda d: attribution_for(d, client), days))
-
-    return attribute_for_range(daily)
+    from . import db
+    rows = db.query(
+        """
+        SELECT name,
+               wc_name,
+               SUM(units)       AS units,
+               SUM(downtime)    AS downtime,
+               SUM(hours)       AS hours,
+               SUM(days_worked) AS days_worked
+        FROM production_daily
+        WHERE day BETWEEN %s AND %s
+        GROUP BY name, wc_name
+        """,
+        (start, end),
+    )
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for r in rows:
+        out.setdefault(r["name"], {})[r["wc_name"]] = {
+            "units":       float(r["units"]),
+            "downtime":    float(r["downtime"]),
+            "hours":       float(r["hours"]),
+            "days_worked": float(r["days_worked"]),
+        }
+    return out
 
 
 def daily_records(
