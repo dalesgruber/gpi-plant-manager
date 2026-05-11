@@ -1,5 +1,5 @@
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,7 +41,10 @@ def test_precompute_run_default_does_yesterday(client, monkeypatch):
     body = r.json()
     assert body["days_processed"] == 1
     assert body["rows_written"] == 5
-    yesterday = date.today() - timedelta(days=1)
+    # Endpoint computes "yesterday" in UTC, so match that here — using
+    # local date.today() drifts ~7pm-midnight Central when the UTC date
+    # has already rolled over and would spuriously fail the test.
+    yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
     assert calls == [yesterday]
 
 
