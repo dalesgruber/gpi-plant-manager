@@ -195,13 +195,6 @@ def test_rank_by_category_filters_to_category_wcs_and_threshold():
     assert rows[0]["pct_of_target"] == 96.0
 
 
-# Legacy attribution_per_day tests that mocked `attribution_for` were
-# removed when attribution_per_day cut over to reading production_daily
-# directly. The Postgres-gated test below
-# (test_attribution_per_day_reads_from_production_daily) covers the same
-# semantics: date-ascending order, every day present including empty days.
-
-
 import os
 from datetime import date as _date
 
@@ -319,6 +312,10 @@ def test_attribution_per_day_reads_from_production_daily():
         )
     finally:
         production_history.attribution_for = saved
+
+    # Date-ascending order is part of the contract — callers rely on it.
+    days_emitted = [d for d, _ in out]
+    assert days_emitted == sorted(days_emitted)
 
     by_day = dict(out)
     assert by_day[_date(2099, 9, 1)]["Alice"]["WC1"]["units"] == 10.0
