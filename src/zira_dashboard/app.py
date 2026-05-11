@@ -192,6 +192,9 @@ templates.env.globals["cert_icon_svg"] = cert_icons.icon_for
 templates.env.globals["cert_icon_slug"] = cert_icons.slug_for
 templates.env.globals["cert_icon_data"] = cert_icons.all_data
 
+from . import awards
+templates.env.globals["goat_holders"] = awards.goat_holders_map
+
 
 def _static_v(filename: str) -> str:
     """Return a stable cache-busting token (the file's mtime as int)
