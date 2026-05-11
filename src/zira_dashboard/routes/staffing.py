@@ -50,6 +50,49 @@ def _safe_time_off_entries(d):
         return []
 
 
+def _attendance_with_fallback(day, emp_ids):
+    """Return today's per-emp attendance dict, filtered to `emp_ids`.
+
+    Reads from live_cache.today_attendance_cache. If the warmer hasn't
+    refreshed in >3 minutes (cold-start, or warmer crashed), do an
+    inline refresh and re-read. Final fallback: call StratusTime
+    directly so the route never returns a stale-or-empty answer.
+
+    The cache holds attendance for ALL known emp_ids; we filter here so
+    callers get exactly the subset they asked for.
+    """
+    from .. import live_cache, stratustime_client
+    payload, refreshed_at = live_cache.read_attendance(day)
+    if payload is None or live_cache.is_stale(refreshed_at):
+        try:
+            live_cache.refresh_attendance(day)
+            payload, _ = live_cache.read_attendance(day)
+        except Exception:
+            payload = None
+        if payload is None:
+            return stratustime_client.attendance_for_day(day, emp_ids)
+    wanted = set(emp_ids)
+    return {emp_id: info for emp_id, info in payload.items() if emp_id in wanted}
+
+
+def _timeoff_names_with_fallback(day):
+    """Return set of names off today (via the cached time-off entries).
+
+    Same cold-start safety valve as _attendance_with_fallback.
+    """
+    from .. import live_cache, stratustime_client
+    payload, refreshed_at = live_cache.read_timeoff(day)
+    if payload is None or live_cache.is_stale(refreshed_at):
+        try:
+            live_cache.refresh_timeoff(day)
+            payload, _ = live_cache.read_timeoff(day)
+        except Exception:
+            payload = None
+        if payload is None:
+            return set(stratustime_client.time_off_names_for_day(day))
+    return {e.get("name") for e in payload if e.get("name")}
+
+
 def _safe_attendance(d, sched, today):
     """Wrap StratusTime attendance lookup. Returns
     {by_name, by_id, name_to_id, scheduled_ids, unscheduled_ids}.
@@ -87,7 +130,7 @@ def _safe_attendance(d, sched, today):
         # belong on the late/absence report. Drop them from both
         # scheduled and unscheduled lists before fetching attendance.
         try:
-            time_off_today = set(stratustime_client.time_off_names_for_day(d))
+            time_off_today = _timeoff_names_with_fallback(d)
         except Exception:
             time_off_today = set()
         scheduled_names = {n for n in scheduled_names if n not in time_off_today}
@@ -109,7 +152,7 @@ def _safe_attendance(d, sched, today):
 
         all_ids = list({*scheduled_ids, *unscheduled_ids})
         id_to_name = {v: k for k, v in name_to_id.items()}
-        attendance_by_id = stratustime_client.attendance_for_day(d, all_ids)
+        attendance_by_id = _attendance_with_fallback(d, all_ids)
         by_name: dict[str, dict] = {}
         for emp_id, info in attendance_by_id.items():
             name = id_to_name.get(emp_id)
