@@ -1,4 +1,5 @@
 {% from "_cert_badges.html" import cert_badges, cert_badges_css %}
+{% from "_goat_badges.html" import goat_badges, goat_badges_css %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -9,6 +10,7 @@
 <link rel="stylesheet" href="/static/staffing.css?v={{ static_v('staffing.css') }}">
 <style>
   {{ cert_badges_css() }}
+  {{ goat_badges_css() }}
   /* Save toast (top-center) — shared with skills + settings. */
   {% include "_save_toast.html" %}
   .autosave {
@@ -118,7 +120,7 @@
       <h3>Unscheduled <span class="count">{{ unassigned|length }}</span></h3>
       <ul>
         {% if unassigned %}
-          {% for n in unassigned %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}</li>{% endfor %}
+          {% for n in unassigned %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}</li>{% endfor %}
         {% else %}
           <li class="empty">— all scheduled —</li>
         {% endif %}
@@ -136,7 +138,7 @@
             {% set is_absent = e.derived or e.manual_absent %}
             {% set is_clearable = is_partial %}
             <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}"{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.pay_type }} · off {{ e.time_range or (e.hours ~ 'h') }}"{% else %} title="{{ e.pay_type }}{% if is_partial %} · off {{ e.time_range or (e.hours ~ 'h') }}{% endif %}"{% endif %}>
-              <span class="name"><a href="/staffing/people/{{ e.name|urlencode }}" class="person-card-link" onclick="event.stopPropagation()">{{ e.name }}</a>{{ cert_badges(e.name, person_certs) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}</span>
+              <span class="name"><a href="/staffing/people/{{ e.name|urlencode }}" class="person-card-link" onclick="event.stopPropagation()">{{ e.name }}</a>{{ cert_badges(e.name, person_certs) }}{{ goat_badges(e.name, goat_holders()) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}</span>
               <span class="ts-meta">{{ e.pay_type }}{% if is_partial %} · {% if e.time_range %}off {{ e.time_range }}{% else %}{{ e.hours }}h{% endif %}{% endif %}</span>
             </li>
           {% endfor %}
@@ -164,7 +166,7 @@
       <h3>Reserves <span class="count">{{ reserves|length }}</span></h3>
       <ul>
         {% if reserves %}
-          {% for n in reserves %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}</li>{% endfor %}
+          {% for n in reserves %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}</li>{% endfor %}
         {% else %}
           <li class="empty">— none flagged —</li>
         {% endif %}
@@ -309,10 +311,10 @@
                 <summary>
                   <span class="dd-summary-text">
                     {% if visible_assigned %}
-                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ a.name }}" title="Click to clear this partial for {{ a.name }} — they actually worked through it">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }} ✕</button>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{{ goat_badges(a.name, goat_holders()) }}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ a.name }}" title="Click to clear this partial for {{ a.name }} — they actually worked through it">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }} ✕</button>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% endif %}
                     {% if _wc_attribs_for_row %}
-                      {% for attrib in _wc_attribs_for_row %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }} (click ✕ to remove)">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}<button type="button" class="attribution-clear" data-attribution-id="{{ attrib.id }}" data-name="{{ attrib.person_name }}" title="Remove this attribution — Jose Luis actually didn't work here" aria-label="Remove attribution for {{ attrib.person_name }}">✕</button></span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for attrib in _wc_attribs_for_row %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }} (click ✕ to remove)">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{{ goat_badges(attrib.person_name, goat_holders()) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}<button type="button" class="attribution-clear" data-attribution-id="{{ attrib.id }}" data-name="{{ attrib.person_name }}" title="Remove this attribution — Jose Luis actually didn't work here" aria-label="Remove attribution for {{ attrib.person_name }}">✕</button></span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% elif not visible_assigned %}
                       <span class="empty">—</span>
                     {% endif %}
@@ -326,7 +328,7 @@
                     <label class="dd-item lvl-{{ p.level }} {% if p.level < 1 %}untrained{% endif %} {% if p.name in row.assigned_set %}selected{% endif %}" data-level="{{ p.level }}" data-name="{{ p.name }}">
                       <input type="checkbox" name="loc__{{ row.loc.name }}" value="{{ p.name }}"
                              {% if p.name in row.assigned_set %}checked{% endif %}>
-                      <span class="dd-item-text">{{ p.name }}{{ cert_badges(p.name, person_certs) }}</span>
+                      <span class="dd-item-text">{{ p.name }}{{ cert_badges(p.name, person_certs) }}{{ goat_badges(p.name, goat_holders()) }}</span>
                     </label>
                   {% endfor %}
                   {% set reserve_pool = row.pool | selectattr('reserve') | list %}
@@ -337,7 +339,7 @@
                         <label class="dd-item lvl-{{ p.level }} {% if p.level < 1 %}untrained{% endif %} {% if p.name in row.assigned_set %}selected{% endif %}" data-level="{{ p.level }}" data-name="{{ p.name }}">
                           <input type="checkbox" name="loc__{{ row.loc.name }}" value="{{ p.name }}"
                                  {% if p.name in row.assigned_set %}checked{% endif %}>
-                          <span class="dd-item-text">{{ p.name }}{{ cert_badges(p.name, person_certs) }}</span>
+                          <span class="dd-item-text">{{ p.name }}{{ cert_badges(p.name, person_certs) }}{{ goat_badges(p.name, goat_holders()) }}</span>
                         </label>
                       {% endfor %}
                     </details>
