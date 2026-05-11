@@ -1,4 +1,5 @@
 {% extends "_staffing_base.html" %}
+{% from "_goat_badges.html" import goat_badges, goat_badges_css %}
 {% block title %}{{ name }}{% endblock %}
 
 {% block styles %}
@@ -31,6 +32,7 @@
   .pc-group-avgs .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem 0.9rem; }
   .pc-group-avgs .stat .lab { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
   .pc-group-avgs .stat .v { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 0.2rem; color: var(--accent); }
+  {{ goat_badges_css() }}
 {% endblock %}
 
 {% block content %}
@@ -60,6 +62,7 @@
     });
   })();
   </script>
+  {{ goat_badges(name, goat_holders()) }}
   <span class="pc-skills">
     {% for s, lvl in skills %}<span class="lvl-{{ lvl }}">{{ s }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
     {% if not skills %}<span style="color:var(--muted)">— no trained skills</span>{% endif %}
