@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-11
 
+### 1:57 PM
+
+- **Trophy Case Annual + Monthly sections now use a side-by-side grid** — the per-group blocks in Annual Trophies and Monthly Ribbons no longer stack as full-width rows; they flow into the same kind of responsive 4-up grid the GOATs section already uses. New shared `.tc-grid` class wraps both loops with `repeat(auto-fit, minmax(280px, 1fr))` so the layout adapts to viewport width while keeping at least 280px per card for readable per-WC rows in the Annual blocks.
+
 ### 1:55 PM
 
 - **Trophy Case section relabel + Annual icons re-skinned as trophies** — the "Annual" section is now **Annual Trophies** and its top-3 person-days render as 🏆 trophies tinted gold (1st), silver (2nd), bronze (3rd) via CSS filter. The "Monthly" section is now **Monthly Ribbons**; its 🥇🥈🥉 ribbon icons are unchanged. The Annual section's best-avg and per-WC rows already used 🏆 — no change there.

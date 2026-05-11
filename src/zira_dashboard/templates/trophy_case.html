@@ -13,7 +13,8 @@
   .tc-card .empty { color: var(--muted); font-style: italic; }
   .tc-pickers { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.8rem; }
   .tc-pickers select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; }
-  .tc-group-block { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 0.8rem; }
+  .tc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.8rem; }
+  .tc-group-block { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
   .tc-group-block h3 { margin: 0 0 0.6rem 0; }
   .tc-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
   .tc-row:last-child { border-bottom: none; }
@@ -79,6 +80,7 @@
       {% endfor %}
     </select>
   </div>
+  <div class="tc-grid">
   {% for blk in annual %}
   <div class="tc-group-block" id="annual-{{ blk.group|lower }}">
     <h3>{{ blk.group }}</h3>
@@ -123,6 +125,7 @@
     {% endif %}
   </div>
   {% endfor %}
+  </div>
 </section>
 
 <!-- Monthly -->
@@ -136,6 +139,7 @@
       {% endfor %}
     </select>
   </div>
+  <div class="tc-grid">
   {% for blk in monthly %}
   <div class="tc-group-block">
     <h3>{{ blk.group }}</h3>
@@ -156,6 +160,7 @@
     {% endif %}
   </div>
   {% endfor %}
+  </div>
 </section>
 
 <!-- Override modal -->
