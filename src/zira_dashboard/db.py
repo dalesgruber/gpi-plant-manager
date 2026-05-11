@@ -467,6 +467,48 @@ CREATE TABLE IF NOT EXISTS award_overrides (
 CREATE UNIQUE INDEX IF NOT EXISTS award_overrides_slot ON award_overrides
   (scope, COALESCE(group_name,''), COALESCE(wc_name,''),
    COALESCE(year,0), COALESCE(month,0), position);
+
+-- Precompute fact table -------------------------------------------------
+-- One row per (day, person, WC). Written nightly for past days, written
+-- by the live warmer for today. Every leaderboard / player-card /
+-- trophy / value-stream page reads from here.
+CREATE TABLE IF NOT EXISTS production_daily (
+  day         DATE   NOT NULL,
+  emp_id      TEXT   NOT NULL,
+  name        TEXT   NOT NULL,
+  wc_name     TEXT   NOT NULL,
+  units       NUMERIC NOT NULL DEFAULT 0,
+  downtime    NUMERIC NOT NULL DEFAULT 0,
+  hours       NUMERIC NOT NULL DEFAULT 0,
+  days_worked NUMERIC NOT NULL DEFAULT 0,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, emp_id, wc_name)
+);
+CREATE INDEX IF NOT EXISTS idx_production_daily_name_day
+  ON production_daily (name, day);
+CREATE INDEX IF NOT EXISTS idx_production_daily_wc_day
+  ON production_daily (wc_name, day);
+
+-- Live cache tables ----------------------------------------------------
+-- Single-row JSONB blobs keyed by today's date. The live warmer
+-- overwrites them every 45 s. Routes read from here instead of calling
+-- StratusTime / Odoo in the request path. `refreshed_at` lets routes
+-- detect staleness for a cold-start safety valve.
+CREATE TABLE IF NOT EXISTS today_attendance_cache (
+  day          DATE PRIMARY KEY,
+  payload      JSONB NOT NULL,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS today_timeoff_cache (
+  day          DATE PRIMARY KEY,
+  payload      JSONB NOT NULL,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS today_production_cache (
+  day          DATE PRIMARY KEY,
+  payload      JSONB NOT NULL,
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
