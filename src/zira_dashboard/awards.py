@@ -338,3 +338,52 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
                                 "days": None,
                             })
     return earned
+
+
+# ---- GOAT holders lookup (used by the _goat_badges macro) ----------------
+
+import time as _time
+
+_GOAT_HOLDERS_TTL_SECONDS = 300  # 5 minutes
+_GOAT_HOLDERS_CACHE: dict = {}   # {"value": (map, expires_at)}
+
+
+def goat_holders_map() -> dict[str, list[str]]:
+    """Return {operator_name: [group_name, ...]} for every current GOAT.
+
+    Iterates registered groups, calls goat(group), applies overrides
+    (so manual reassignments / deletes flow through), and inverts.
+    Groups where the GOAT slot is empty or override-deleted contribute
+    nothing.
+
+    Cached in-process for 5 minutes. The data updates structurally:
+    goat() reads production_daily, which the nightly job + 45 s live
+    warmer keep fresh; a new GOAT shows up across the system within
+    ~5 min of the cache expiring.
+
+    A broken group (goat() raises) is logged and skipped — it must not
+    poison the rest of the map.
+    """
+    from . import work_centers_store
+
+    now = _time.time()
+    cached = _GOAT_HOLDERS_CACHE.get("value")
+    if cached is not None and now < cached[1]:
+        return cached[0]
+
+    out: dict[str, list[str]] = {}
+    for g in work_centers_store.registered_groups():
+        try:
+            live = goat(g)
+        except Exception:
+            continue
+        final = apply_overrides_single(live, scope="award_goat", group_name=g)
+        if final is None:
+            continue
+        name = final.get("name")
+        if not name:
+            continue
+        out.setdefault(name, []).append(g)
+
+    _GOAT_HOLDERS_CACHE["value"] = (out, now + _GOAT_HOLDERS_TTL_SECONDS)
+    return out
