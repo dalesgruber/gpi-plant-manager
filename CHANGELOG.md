@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-12
 
+### 7:43 AM
+
+- **Leaderboards moves under Trophy Case as a sub-tab** — top nav drops "Leaderboards" as its own entry and the Trophy Case top-tab now stays active when you're on either `/trophies` or `/staffing/leaderboards`. A new `_trophies_subnav.html` shows two sub-tabs underneath: **Trophies** (the existing trophy case home) and **Leaderboards**. The staffing sub-tabs (Plant Scheduler, Time Off, Skills Matrix, People, Past Schedules) no longer appear on the Trophy Case page — that was bleed-through from the shared base template's sub-nav logic. URL for leaderboards is unchanged (`/staffing/leaderboards`) so existing bookmarks and the share-to-Slack permalinks still work.
+
 ### 7:37 AM
 
 - **Printed schedule no longer clips multi-line WC notes** — the per-WC notes column is a `<textarea rows="1">` on screen, which Chromium honored verbatim in the PDF so long notes were cut after one line. Each cell now also emits a `<div class="wc-note-print">` carrying the same text; screen CSS hides it, print CSS hides the textarea and shows the div instead. The div auto-grows with content (word-wrap + pre-wrap), so the row stretches to fit the full note. Adjacent cells in the row top-align so the long note no longer appears to float in space.
