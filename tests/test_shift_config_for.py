@@ -1,5 +1,17 @@
+import os
 from datetime import date, time
+
+import pytest
+
 from zira_dashboard import shift_config, staffing
+
+# shift_config.shift_start_for() calls into the schedule_store which
+# does a DB read for the global default. Tests need a live Postgres
+# even when they monkeypatch staffing.load_schedule.
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="DATABASE_URL not set; shift_config tests need Postgres",
+)
 
 
 def test_shift_start_for_default_falls_back_to_global(monkeypatch):

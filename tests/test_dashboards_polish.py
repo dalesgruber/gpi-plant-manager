@@ -1,10 +1,20 @@
+import os
 from datetime import date, datetime, timezone
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from zira_dashboard import staffing
 from zira_dashboard.app import app
+
+# Dashboards-polish tests render full pages via TestClient, which
+# transitively hits the work-centers store + schedule store DB lookups
+# despite the monkeypatches at the staffing layer. Need a real DB.
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="DATABASE_URL not set; dashboard render tests need Postgres",
+)
 
 
 def test_recycling_headline_uses_per_person_rate(monkeypatch):
