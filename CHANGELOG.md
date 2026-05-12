@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-12
 
+### 3:35 PM
+
+- **Internal refactor pass — no user-visible changes** — four cleanups while the trail was fresh: (1) gate `test_shift_config_for.py` + `test_dashboards_polish.py` on `DATABASE_URL` so the local pytest suite is now 199 pass / 74 skip / **0 fail** (was 11 fail); (2) drop the vestigial `client` arg from `production_history.daily_records` / `attribution_range` / `attribution_per_day` after the precompute cutover left it unused, plus the matching unused `client` imports in two route files; (3) extract `static/staffing-print.css` (212 lines of @media-print rules) from staffing.css so the next "the PDF looks wrong" lands in a dedicated file; (4) split the four late-report mutation endpoints into a new `routes/late_report.py` module, shrinking the 1280-line `routes/staffing.py` by ~115 lines. URL routes and behavior unchanged.
+
 ### 7:43 AM
 
 - **Leaderboards moves under Trophy Case as a sub-tab** — top nav drops "Leaderboards" as its own entry and the Trophy Case top-tab now stays active when you're on either `/trophies` or `/staffing/leaderboards`. A new `_trophies_subnav.html` shows two sub-tabs underneath: **Trophies** (the existing trophy case home) and **Leaderboards**. The staffing sub-tabs (Plant Scheduler, Time Off, Skills Matrix, People, Past Schedules) no longer appear on the Trophy Case page — that was bleed-through from the shared base template's sub-nav logic. URL for leaderboards is unchanged (`/staffing/leaderboards`) so existing bookmarks and the share-to-Slack permalinks still work.
