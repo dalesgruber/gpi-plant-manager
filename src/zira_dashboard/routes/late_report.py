@@ -1,0 +1,144 @@
+"""Late/Absence Report mutation endpoints.
+
+All four are POST handlers that write to Postgres state behind the
+late-report (manual_absences, late_arrivals, late_snoozes) and then
+invalidate shared caches so the next GET /api/late-report picks up
+the change.
+
+The READ path — `GET /api/late-report` — and its 30-second response
+cache stay in `routes/staffing.py` because they share `_safe_attendance`
+(and its StratusTime/Odoo live-cache fallback chain) with the
+`/staffing` day-view page handler. Splitting that would mean
+duplicating the helper. Cache invalidation runs through
+`_bust_after_mutation` over there.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+router = APIRouter()
+
+
+def _bust_caches() -> None:
+    """Drop every cache that could now be stale after a late-report write.
+    Delegates to `routes.staffing._bust_after_mutation` so all mutation
+    paths share the same invalidation set."""
+    from .staffing import _bust_after_mutation
+    _bust_after_mutation()
+
+
+@router.post("/api/late-report/declare-absent")
+async def late_report_declare_absent(request: Request):
+    """Mark a person as Absent for today.
+
+    Body (JSON): {emp_id, name, reason}
+
+    Reason is REQUIRED — no manual_absences row gets written until
+    a non-empty reason is captured. Side effects: writes to
+    manual_absences; clears any pending snooze; busts caches.
+    """
+    from .. import db, late_report
+    body = await request.json()
+    emp_id = str(body.get("emp_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    reason_raw = body.get("reason")
+    reason = str(reason_raw).strip() if reason_raw is not None else ""
+    if not emp_id or not name:
+        return JSONResponse({"ok": False, "error": "emp_id and name required"}, status_code=400)
+    if not reason:
+        return JSONResponse(
+            {"ok": False, "error": "reason required — no record posts until a reason is given"},
+            status_code=400,
+        )
+    today = datetime.now(timezone.utc).date()
+    try:
+        late_report.declare_absent(today, emp_id, name, reason=reason)
+        db.execute(
+            "DELETE FROM late_snoozes WHERE day = %s AND emp_id = %s",
+            (today, emp_id),
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    _bust_caches()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/api/late-report/save-late-arrival")
+async def late_report_save_late_arrival(request: Request):
+    """Record a late-arrival event for today.
+
+    Body (JSON): {emp_id, name, reason}
+
+    Reason is REQUIRED — no late_arrivals row gets written until a
+    non-empty reason is captured. Side effects: writes to
+    late_arrivals; busts the report cache so the row drops out of
+    needs_reason on the next poll.
+    """
+    from .. import late_report
+    body = await request.json()
+    emp_id = str(body.get("emp_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    reason_raw = body.get("reason")
+    reason = str(reason_raw).strip() if reason_raw is not None else ""
+    if not emp_id or not name:
+        return JSONResponse({"ok": False, "error": "emp_id and name required"}, status_code=400)
+    if not reason:
+        return JSONResponse(
+            {"ok": False, "error": "reason required — no record posts until a reason is given"},
+            status_code=400,
+        )
+    today = datetime.now(timezone.utc).date()
+    try:
+        late_report.save_late_arrival(today, emp_id, name, reason=reason)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    _bust_caches()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/api/late-report/snooze")
+async def late_report_snooze(request: Request):
+    """Silence a person from the Late/Absence Report for `minutes` (default 30).
+
+    Body (JSON): {emp_id, name, minutes?}
+    """
+    from .. import late_report
+    body = await request.json()
+    emp_id = str(body.get("emp_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    try:
+        minutes = int(body.get("minutes") or late_report.DEFAULT_SNOOZE_MINUTES)
+    except (TypeError, ValueError):
+        minutes = late_report.DEFAULT_SNOOZE_MINUTES
+    minutes = max(1, min(minutes, 8 * 60))
+    if not emp_id or not name:
+        return JSONResponse({"ok": False, "error": "emp_id and name required"}, status_code=400)
+    today = datetime.now(timezone.utc).date()
+    try:
+        late_report.snooze(today, emp_id, name, minutes)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return JSONResponse({"ok": True, "minutes": minutes})
+
+
+@router.post("/api/late-report/undo-absent")
+async def late_report_undo_absent(request: Request):
+    """Reverse a declared absence (e.g., manager mis-clicked).
+
+    Body (JSON): {emp_id}
+    """
+    from .. import late_report
+    body = await request.json()
+    emp_id = str(body.get("emp_id") or "").strip()
+    if not emp_id:
+        return JSONResponse({"ok": False, "error": "emp_id required"}, status_code=400)
+    today = datetime.now(timezone.utc).date()
+    try:
+        late_report.undo_absent(today, emp_id)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    _bust_caches()
+    return JSONResponse({"ok": True})
