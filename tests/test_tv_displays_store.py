@@ -124,6 +124,26 @@ def test_seed_defaults_if_empty_seeds_when_empty(monkeypatch):
     assert len(tv_displays_store.list_displays()) == 10
 
 
+def test_save_custom_kind_stores_dashboard_id():
+    from zira_dashboard import tv_displays_store, custom_dashboards_store, db
+    dash = custom_dashboards_store.save_dashboard(
+        name="st-cust-dash", scope_kind="wc", scope_value="Repair 1", theme="dark",
+    )
+    row = tv_displays_store.save(
+        name="st-cust-tv", kind="custom", wc_name=None,
+        custom_dashboard_id=dash["id"], theme="dark",
+    )
+    assert row["kind"] == "custom"
+    assert row["custom_dashboard_id"] == dash["id"]
+    fetched = tv_displays_store.by_slug("st-cust-tv")
+    assert fetched["custom_dashboard_id"] == dash["id"]
+    rows = tv_displays_store.list_displays()
+    target = next(r for r in rows if r["slug"] == "st-cust-tv")
+    assert target["custom_dashboard_id"] == dash["id"]
+    db.execute("DELETE FROM tv_displays WHERE slug = 'st-cust-tv'")
+    db.execute("DELETE FROM custom_dashboards WHERE slug = 'st-cust-dash'")
+
+
 def test_seed_defaults_skips_missing_wc(monkeypatch, caplog):
     from zira_dashboard import tv_displays_store, staffing, db
     import logging

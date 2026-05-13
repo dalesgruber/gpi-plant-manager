@@ -50,6 +50,24 @@ def tv_display(request: Request, slug: str, theme: str | None = Query(default=No
         return _render_wc_dashboard(
             request, slug=slug_for_wc(wc_name), tv_mode=True, tv_theme=tv_theme,
         )
+    if kind == "custom":
+        from .. import custom_dashboards_store
+        dash_id = row.get("custom_dashboard_id")
+        if dash_id is None:
+            return HTMLResponse(
+                _dashboard_removed_html(row["name"]),
+                status_code=404,
+            )
+        dash = custom_dashboards_store.get_dashboard(int(dash_id))
+        if dash is None:
+            return HTMLResponse(
+                _dashboard_removed_html(row["name"]),
+                status_code=404,
+            )
+        from .custom_dashboards import _render_dashboard
+        return _render_dashboard(
+            request, slug=dash["slug"], tv_mode=True, tv_theme=tv_theme,
+        )
     return JSONResponse(
         {"error": f"unknown kind: {kind}"}, status_code=500,
     )
@@ -78,6 +96,18 @@ def _wc_removed_html(display_name: str, wc_name: str | None) -> str:
     )
 
 
+def _dashboard_removed_html(display_name: str) -> str:
+    return (
+        f"<!doctype html><html><head><title>Dashboard removed</title>"
+        f"<style>body{{font-family:system-ui;padding:3rem;text-align:center}}"
+        f"a{{color:#16a34a}}</style></head><body>"
+        f"<h1>Custom dashboard removed</h1>"
+        f"<p>The display \"{display_name}\" was pointing at a custom dashboard that no longer exists.</p>"
+        f"<p><a href=\"/settings?section=tvs\">Go to TVs settings</a></p>"
+        f"</body></html>"
+    )
+
+
 @router.post("/api/tv-displays")
 async def post_display(request: Request):
     try:
@@ -92,20 +122,37 @@ async def post_display(request: Request):
     row_id = body.get("id")
     if not isinstance(name, str) or not name.strip():
         return JSONResponse({"ok": False, "error": "name required"}, status_code=400)
-    if kind not in ("vs_recycling", "vs_new", "wc"):
+    if kind not in ("vs_recycling", "vs_new", "wc", "custom"):
         return JSONResponse({"ok": False, "error": "kind invalid"}, status_code=400)
+    custom_dashboard_id = None
     if kind == "wc":
         from .. import staffing
         if not isinstance(wc_name, str) or not wc_name.strip():
             return JSONResponse({"ok": False, "error": "wc_name required when kind=wc"}, status_code=400)
         if not any(loc.name == wc_name for loc in staffing.LOCATIONS):
             return JSONResponse({"ok": False, "error": f"unknown work center: {wc_name}"}, status_code=400)
+    elif kind == "custom":
+        from .. import custom_dashboards_store
+        wc_name = None
+        raw_id = body.get("custom_dashboard_id")
+        if not isinstance(raw_id, int):
+            return JSONResponse(
+                {"ok": False, "error": "custom_dashboard_id required when kind=custom"},
+                status_code=400,
+            )
+        if custom_dashboards_store.get_dashboard(raw_id) is None:
+            return JSONResponse(
+                {"ok": False, "error": f"unknown custom dashboard id: {raw_id}"},
+                status_code=400,
+            )
+        custom_dashboard_id = raw_id
     else:
         wc_name = None
     if theme not in ("light", "dark"):
         return JSONResponse({"ok": False, "error": "theme must be light or dark"}, status_code=400)
     saved = tv_displays_store.save(
         name=name.strip(), kind=kind, wc_name=wc_name, theme=theme,
+        custom_dashboard_id=custom_dashboard_id,
         id=int(row_id) if row_id is not None else None,
     )
     return JSONResponse({
