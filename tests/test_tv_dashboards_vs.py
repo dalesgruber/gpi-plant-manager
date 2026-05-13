@@ -1,0 +1,83 @@
+"""Integration tests for the TV variants of the value-stream dashboards.
+
+Mirrors the test_dashboards_polish.py pattern: TestClient + monkeypatch
+of the data-source helpers so the test doesn't need live Zira / Odoo.
+"""
+from __future__ import annotations
+
+import os
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from zira_dashboard import staffing
+from zira_dashboard.app import app
+
+# The render path transitively hits the work_centers / schedule store DB
+# lookups despite the monkeypatches, so we gate on DATABASE_URL the same
+# way test_dashboards_polish.py does.
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="DATABASE_URL not set; TV dashboard tests need Postgres",
+)
+
+
+def _stub_data(monkeypatch):
+    """Stub the heavy external calls so the route renders quickly."""
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
+        day=d, published=True, assignments={"Repair-1": ["Alice"]},
+    ))
+
+
+def test_tv_recycling_renders_with_default_dark_theme(monkeypatch):
+    _stub_data(monkeypatch)
+    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+        c = TestClient(app)
+        r = c.get("/tv/recycling")
+    assert r.status_code == 200
+    assert 'data-tv-theme="dark"' in r.text
+    # Chrome hidden via CSS — but the TV stylesheet must be linked.
+    assert "/static/tv-mode.css" in r.text
+    # TV header rendered with the dashboard title.
+    assert 'class="tv-header"' in r.text
+    assert "Recycling VS" in r.text
+    # Auto-refresh meta in place.
+    assert 'http-equiv="refresh"' in r.text
+
+
+def test_tv_recycling_supports_light_theme_via_query(monkeypatch):
+    _stub_data(monkeypatch)
+    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+        c = TestClient(app)
+        r = c.get("/tv/recycling?theme=light")
+    assert r.status_code == 200
+    assert 'data-tv-theme="light"' in r.text
+
+
+def test_tv_new_vs_renders_with_default_dark_theme(monkeypatch):
+    _stub_data(monkeypatch)
+    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+        c = TestClient(app)
+        r = c.get("/tv/new-vs")
+    assert r.status_code == 200
+    assert 'data-tv-theme="dark"' in r.text
+    assert "/static/tv-mode.css" in r.text
+    assert "New VS" in r.text
+
+
+def test_screen_recycling_unaffected_by_tv_changes(monkeypatch):
+    """Regression guard: the screen /recycling route must NOT carry the
+    TV attributes after the plumbing changes."""
+    _stub_data(monkeypatch)
+    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+        c = TestClient(app)
+        r = c.get("/recycling")
+    assert r.status_code == 200
+    assert "data-tv-theme" not in r.text, "screen page must not set data-tv-theme"
+    assert "/static/tv-mode.css" not in r.text, "screen page must not link tv-mode.css"
+    assert 'class="tv-header"' not in r.text, "screen page must not render TV header"
