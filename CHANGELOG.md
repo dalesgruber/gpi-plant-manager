@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-13
 
+### 3:44 PM
+
+- **Pallets by Work Center widget now supports multi-WC + multi-group selection** — the workshop's data scope for the `pallets_by_wc` widget swaps its single Group dropdown for two scrollable checkbox lists: **Work Centers** (pick any combination of WCs by name) and **Groups** (pick any combination of groups; each expands to its members). The final WC set is the deduplicated union of both selections, so you can pick "Repair 1" + "Repair 2" + the entire "Dismantlers" group on the same widget. The old `{group: "Repairs"}` shape on previously saved presets still works (resolver back-compat). To create your own Pallets-by-WC preset: go to /widgets, click **+ Create / edit**, pick type "Pallets by Work Center", give it a name (e.g. "All Repairs Pallets"), check whichever WCs and/or groups you want, save. Preview pane on the right shows it live as you build.
+
 ### 3:38 PM
 
 - **Widget Workshop live preview** — `/widgets` gets a third panel on the right that renders the widget you're working on as you type. Click **Edit** on any saved widget → the form fills in AND the preview renders the current saved config. Change the color, sort, group, WC, KPI metric, etc. → the preview re-renders ~250 ms after you stop typing. New endpoint `POST /api/widgets/preview` resolves the widget's data via its registered resolver and returns the rendered partial; the workshop loads `wc_dashboard.css` + `recycling.css` so the preview matches what the widget looks like on a dashboard. Panel layout switches to a single column below 1100 px wide.

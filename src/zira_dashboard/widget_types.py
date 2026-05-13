@@ -19,8 +19,10 @@ _REGISTRY: list[dict] = [
         "type": "pallets_by_wc",
         "label": "Pallets by Work Center",
         "data_params_schema": [
-            {"key": "group", "label": "Group", "input": "select",
-             "options_from": "groups", "required": True},
+            {"key": "wcs", "label": "Work Centers", "input": "multiselect",
+             "options_from": "wcs"},
+            {"key": "groups", "label": "Groups", "input": "multiselect",
+             "options_from": "groups"},
         ],
         "visual_params_schema": [
             {"key": "color", "label": "Bar color", "input": "color", "default": "#22c55e"},

@@ -6,20 +6,23 @@ from __future__ import annotations
 from datetime import date
 
 
-def test_resolve_pallets_by_wc_returns_items_and_total(monkeypatch):
-    from zira_dashboard import widget_data, work_centers_store
+class _Loc:
+    def __init__(self, name, meter_id="m1"):
+        self.name = name
+        self.meter_id = meter_id
 
-    class _Loc:
-        def __init__(self, name, meter_id="m1"):
-            self.name = name
-            self.meter_id = meter_id
 
+def test_resolve_pallets_by_wc_legacy_group_param(monkeypatch):
+    """Old shape: {group: 'Repairs'} — kept for back-compat with seeded presets."""
+    from zira_dashboard import widget_data, work_centers_store, staffing
+
+    locs = [_Loc("Repair 1"), _Loc("Repair 2")]
+    monkeypatch.setattr(staffing, "LOCATIONS", locs)
     monkeypatch.setattr(
         work_centers_store, "members",
-        lambda kind, name: [_Loc("Repair 1"), _Loc("Repair 2")] if (kind, name) == ("group", "Repairs") else [],
+        lambda kind, name: locs if (kind, name) == ("group", "Repairs") else [],
     )
     monkeypatch.setattr(work_centers_store, "goal_per_day", lambda loc: 50)
-
     monkeypatch.setattr(
         widget_data, "_pallets_units_for_wc",
         lambda wc_name, day: {"Repair 1": 42, "Repair 2": 18}.get(wc_name, 0),
@@ -29,14 +32,78 @@ def test_resolve_pallets_by_wc_returns_items_and_total(monkeypatch):
     out = widget_data._resolve_pallets_by_wc(
         {"group": "Repairs"}, day=date(2026, 5, 13),
     )
-    assert isinstance(out, dict)
     items = out["items"]
     assert {i["name"] for i in items} == {"Repair 1", "Repair 2"}
-    total = sum(i["units"] for i in items)
-    assert out["total_u"] == total
+    assert out["total_u"] == 60
 
 
-def test_resolve_pallets_by_wc_missing_group_returns_empty():
+def test_resolve_pallets_by_wc_multi_wcs(monkeypatch):
+    """New shape: {wcs: ['Repair 1', 'Junior 2']} — explicit WC list."""
+    from zira_dashboard import widget_data, work_centers_store, staffing
+
+    locs = [_Loc("Repair 1"), _Loc("Repair 2"), _Loc("Junior 2")]
+    monkeypatch.setattr(staffing, "LOCATIONS", locs)
+    monkeypatch.setattr(work_centers_store, "members", lambda kind, name: [])
+    monkeypatch.setattr(work_centers_store, "goal_per_day", lambda loc: 50)
+    monkeypatch.setattr(
+        widget_data, "_pallets_units_for_wc",
+        lambda wc_name, day: {"Repair 1": 10, "Junior 2": 20}.get(wc_name, 0),
+    )
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.5)
+
+    out = widget_data._resolve_pallets_by_wc(
+        {"wcs": ["Repair 1", "Junior 2"]}, day=date(2026, 5, 13),
+    )
+    assert {i["name"] for i in out["items"]} == {"Repair 1", "Junior 2"}
+
+
+def test_resolve_pallets_by_wc_multi_groups_union(monkeypatch):
+    """New shape: {groups: ['Repairs', 'Dismantlers']} — union of group members."""
+    from zira_dashboard import widget_data, work_centers_store, staffing
+
+    locs = [_Loc("Repair 1"), _Loc("Repair 2"), _Loc("Dismantler 1")]
+    monkeypatch.setattr(staffing, "LOCATIONS", locs)
+    monkeypatch.setattr(
+        work_centers_store, "members",
+        lambda kind, name: {
+            ("group", "Repairs"): [_Loc("Repair 1"), _Loc("Repair 2")],
+            ("group", "Dismantlers"): [_Loc("Dismantler 1")],
+        }.get((kind, name), []),
+    )
+    monkeypatch.setattr(work_centers_store, "goal_per_day", lambda loc: 50)
+    monkeypatch.setattr(widget_data, "_pallets_units_for_wc", lambda wc, d: 0)
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.5)
+
+    out = widget_data._resolve_pallets_by_wc(
+        {"groups": ["Repairs", "Dismantlers"]}, day=date(2026, 5, 13),
+    )
+    assert {i["name"] for i in out["items"]} == {"Repair 1", "Repair 2", "Dismantler 1"}
+
+
+def test_resolve_pallets_by_wc_wcs_plus_groups_dedupes(monkeypatch):
+    """wcs + groups together: deduplicated union."""
+    from zira_dashboard import widget_data, work_centers_store, staffing
+
+    locs = [_Loc("Repair 1"), _Loc("Repair 2"), _Loc("Junior 2")]
+    monkeypatch.setattr(staffing, "LOCATIONS", locs)
+    monkeypatch.setattr(
+        work_centers_store, "members",
+        lambda kind, name: [_Loc("Repair 1"), _Loc("Repair 2")] if (kind, name) == ("group", "Repairs") else [],
+    )
+    monkeypatch.setattr(work_centers_store, "goal_per_day", lambda loc: 50)
+    monkeypatch.setattr(widget_data, "_pallets_units_for_wc", lambda wc, d: 0)
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.5)
+
+    out = widget_data._resolve_pallets_by_wc(
+        # Repair 1 appears both explicitly and via the group — should dedupe.
+        {"wcs": ["Repair 1", "Junior 2"], "groups": ["Repairs"]},
+        day=date(2026, 5, 13),
+    )
+    names = [i["name"] for i in out["items"]]
+    assert sorted(names) == ["Junior 2", "Repair 1", "Repair 2"]
+
+
+def test_resolve_pallets_by_wc_no_scope_returns_empty():
     from zira_dashboard import widget_data
     out = widget_data._resolve_pallets_by_wc({}, day=date(2026, 5, 13))
     assert out == {"items": [], "total_u": 0, "total_e": 0}

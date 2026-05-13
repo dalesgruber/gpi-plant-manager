@@ -63,6 +63,21 @@
   form .submit { background: var(--accent); color: white; border: 1px solid var(--accent);
                  border-radius: 6px; padding: 0.4rem 1rem; font-weight: 700; cursor: pointer;
                  margin-top: 0.5rem; }
+  .multiselect-host {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.4rem;
+    max-height: 10rem; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 0.15rem;
+  }
+  .multiselect-host .ms-row {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.15rem 0.25rem; margin: 0;
+    font-size: 0.85rem; color: var(--fg); cursor: pointer;
+    border-radius: 4px;
+  }
+  .multiselect-host .ms-row:hover { background: var(--panel); }
+  .multiselect-host .ms-row input { margin: 0; accent-color: var(--accent); }
+  .multiselect-host .ms-loading { color: var(--muted); font-size: 0.8rem; font-style: italic; padding: 0.2rem 0.25rem; }
   #edit-warning-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4);
     display: grid; place-items: center; z-index: 1000; }
   #edit-warning-modal[hidden] { display: none; }
@@ -201,6 +216,38 @@
       input = document.createElement('input');
       input.type = 'color';
       input.value = currentValue || field.default || '#22c55e';
+    } else if (field.input === 'multiselect') {
+      // Scrollable checkbox list. currentValue should be an array of strings.
+      const selected = new Set(Array.isArray(currentValue) ? currentValue : []);
+      input = document.createElement('div');
+      input.className = 'multiselect-host';
+      input.dataset.multi = 'true';
+      function addOption(value, lbl) {
+        const row = document.createElement('label');
+        row.className = 'ms-row';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = value;
+        if (selected.has(value)) cb.checked = true;
+        row.appendChild(cb);
+        const text = document.createElement('span');
+        text.textContent = lbl;
+        row.appendChild(text);
+        input.appendChild(row);
+      }
+      if (field.options) {
+        for (const o of field.options) addOption(o.value, o.label);
+      }
+      if (field.options_from) {
+        const loading = document.createElement('div');
+        loading.className = 'ms-loading';
+        loading.textContent = 'loading…';
+        input.appendChild(loading);
+        fetch('/api/widgets/options/' + field.options_from).then(r => r.json()).then(data => {
+          loading.remove();
+          for (const o of (data.options || [])) addOption(o.value, o.label);
+        });
+      }
     } else {
       input = document.createElement('input');
       input.type = 'text';
@@ -239,7 +286,18 @@
 
   function collectForm() {
     const visual = {}, data = {};
+    // Multiselect hosts: collect checked values as an array.
+    fieldsHost.querySelectorAll('.multiselect-host').forEach(host => {
+      const values = Array.from(host.querySelectorAll('input[type=checkbox]:checked'))
+        .map(cb => cb.value);
+      if (values.length === 0) return;
+      const target = host.dataset.section === 'visual' ? visual : data;
+      target[host.dataset.key] = values;
+    });
+    // Plain inputs / selects.
     fieldsHost.querySelectorAll('input, select').forEach(el => {
+      // Skip checkboxes inside multiselect hosts — handled above.
+      if (el.closest('.multiselect-host')) return;
       const v = el.value;
       if (v === '' || v === null || v === undefined) return;
       if (el.dataset.section === 'visual') visual[el.dataset.key] = v;

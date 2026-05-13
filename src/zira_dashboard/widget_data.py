@@ -38,13 +38,48 @@ def _units_today_for_group(group_name: str, day: date) -> int:
 def _resolve_pallets_by_wc(params: dict, day: date) -> dict:
     """Horizontal bar chart, one bar per WC in the group.
 
+    Accepts (any combination):
+      - wcs: list of WC names (explicit)
+      - groups: list of group names (each expanded to its WCs)
+      - group: single group name (legacy back-compat with the original
+        pallets_by_wc schema, before the multi-select extension)
+
+    The resulting WC set is the deduplicated UNION of all three.
+
     Returns: {items: [{name, units, expected, pct, target_pct}, ...], total_u, total_e}.
     """
-    from . import work_centers_store
-    group = (params or {}).get("group")
-    if not group:
+    from . import staffing, work_centers_store
+    params = params or {}
+    wc_set: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str):
+        if name and name not in seen:
+            seen.add(name)
+            wc_set.append(name)
+
+    # Explicit WCs
+    for n in (params.get("wcs") or []):
+        if isinstance(n, str):
+            _add(n)
+    # Multi-group expansion
+    for g in (params.get("groups") or []):
+        if not isinstance(g, str):
+            continue
+        for loc in work_centers_store.members("group", g) or []:
+            _add(loc.name)
+    # Legacy single-group back-compat
+    legacy_group = params.get("group")
+    if isinstance(legacy_group, str) and legacy_group:
+        for loc in work_centers_store.members("group", legacy_group) or []:
+            _add(loc.name)
+
+    if not wc_set:
         return {"items": [], "total_u": 0, "total_e": 0}
-    members = work_centers_store.members("group", group) or []
+
+    # Resolve each WC name to its Location for the goal lookup.
+    locs_by_name = {loc.name: loc for loc in staffing.LOCATIONS}
+    members = [locs_by_name[n] for n in wc_set if n in locs_by_name]
     if not members:
         return {"items": [], "total_u": 0, "total_e": 0}
     frac = _elapsed_fraction(day)
