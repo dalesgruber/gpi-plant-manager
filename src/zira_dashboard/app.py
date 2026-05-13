@@ -169,9 +169,10 @@ async def lifespan(app: FastAPI):
     """
     db.init_pool()
     db.bootstrap_schema()
-    from . import tv_displays_store, widget_definitions_store
+    from . import tv_displays_store, widget_definitions_store, pinned_dashboards_store
     tv_displays_store.seed_defaults_if_empty()
     widget_definitions_store.seed_defaults_if_empty()
+    pinned_dashboards_store.seed_defaults_if_empty()
     _prewarm_stratustime()
     warmer_task = asyncio.create_task(_warm_zira_cache_loop())
     st_warmer_task = asyncio.create_task(_warm_stratustime_loop())
