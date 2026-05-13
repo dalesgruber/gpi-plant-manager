@@ -767,3 +767,14 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
     set_cache_headers(response, includes_today=is_today)
     store_cached_response(cache_key, includes_today=is_today, response=response)
     return response
+
+
+@router.get("/tv/new-vs", response_class=HTMLResponse)
+def tv_new_vs(request: Request, theme: str | None = Query(default=None)):
+    """Read-only TV variant of /new-vs. See tv_recycling for theme rules."""
+    tv_theme = "light" if theme == "light" else "dark"
+    resp = new_vs(request, day=None)
+    ctx = dict(resp.context or {})
+    ctx["tv_mode"] = True
+    ctx["tv_theme"] = tv_theme
+    return templates.TemplateResponse(request, "new_vs.html", ctx)
