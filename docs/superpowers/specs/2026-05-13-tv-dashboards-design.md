@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS tv_dashboard_templates (
   id          SERIAL PRIMARY KEY,
   name        TEXT NOT NULL UNIQUE,
   layout_json JSONB NOT NULL,
+  theme       TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS tv_displays (
   kind       TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'wc')),
   wc_name    TEXT,
   slug       TEXT NOT NULL,
+  theme      TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -117,6 +119,34 @@ CREATE UNIQUE INDEX ON tv_displays (slug);
 The panel renders each row with a Copy-URL button that puts the full `https://gpiplantmanager.com/tv/...` URL on the clipboard. Add Display button opens an inline form: pick kind, pick WC if kind=wc, auto-derive slug, save.
 
 The underlying `/tv/...` routes work regardless of whether a `tv_displays` row exists — the table is a config / convenience UI, not a permission gate. Removing a row from the panel just removes it from Dale's list; the URL still resolves if anyone has it bookmarked.
+
+### Per-display theme (light / dark)
+
+Each TV can run in light or dark mode independently — a TV on the production floor by big windows wants light mode in the morning; a TV near the dock door wants dark all the time. Dark is the default since most plant TVs run dim.
+
+**Where it's set:**
+
+- Per-display: `tv_displays.theme TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark'))`. Settings panel renders a light/dark toggle per row.
+- Per-template: `tv_dashboard_templates.theme TEXT NOT NULL DEFAULT 'dark'`. Applying a template to a WC overwrites the target's stored theme along with the layout.
+- Per-URL override: `?theme=light` query string overrides whatever's stored, useful for quick previews without saving.
+
+**How it renders:** the TV route handler resolves the theme (URL → config → default) and sets a `data-theme` attribute on `<html>`. The TV-mode CSS file uses `[data-theme="light"]` / `[data-theme="dark"]` selectors to swap the CSS variable palette:
+
+```css
+html[data-theme="dark"] {
+  --bg: #0b1220;
+  --panel: #111827;
+  --panel-2: #1e293b;
+  --border: #334155;
+  --fg: #e2e8f0;
+  --muted: #94a3b8;
+}
+html[data-theme="light"] {
+  /* inherits the existing screen-mode defaults from staffing.css */
+}
+```
+
+The screen-mode pages (`/staffing`, `/recycling`, `/settings`, etc.) are unchanged — they stay light. The dark variables only kick in when `data-theme="dark"` is on the root, which only happens on TV routes.
 
 ### TV-mode CSS
 
@@ -179,7 +209,6 @@ POST to existing `/api/widget-layout/{dashboard_key}` (extension of the existing
 
 - **Per-display widget overrides** — every TV showing the same WC sees the same arrangement. If a future TV needs a different layout for the same WC, we'll add a per-display override layer.
 - **WebSocket streaming** — page refresh is good enough. The warmer keeps the underlying data fresh every 45s.
-- **TV-specific themes / colors** — single dark theme everywhere on the TV variants. Light-mode TVs would need a separate sheet.
 - **Multi-WC TVs** (one screen showing 2 WCs side-by-side) — not in v1. If demanded later, the same widget pattern composes cleanly.
 - **Audio / alerts** when behind pace — TVs are silent.
 
