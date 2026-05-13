@@ -25,7 +25,7 @@
            border-radius: 10px; padding: 0.8rem 1rem; }
   h2 { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600;
        text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
-  .def-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem;
+  .def-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem;
              align-items: center; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
   .def-row:last-child { border-bottom: none; }
   .def-row .name { font-weight: 600; }
@@ -44,6 +44,25 @@
   form .submit { background: var(--accent); color: white; border: 1px solid var(--accent);
                  border-radius: 6px; padding: 0.4rem 1rem; font-weight: 700; cursor: pointer;
                  margin-top: 0.5rem; }
+  #edit-warning-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: grid; place-items: center; z-index: 1000; }
+  #edit-warning-modal[hidden] { display: none; }
+  #edit-warning-modal .warn-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1rem 1.2rem;
+    min-width: 360px; max-width: 480px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  }
+  #edit-warning-modal h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+  #edit-warning-modal p { margin: 0 0 0.75rem; font-size: 0.88rem; color: var(--muted); }
+  #edit-warning-modal .warn-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+  #edit-warning-modal button {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.4rem 1rem; font-weight: 600; cursor: pointer;
+  }
+  #edit-warning-modal button.primary {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
 </style>
 </head>
 <body>
@@ -63,7 +82,9 @@
     <h2>Saved widgets</h2>
     <div id="defs-list">
       {% for d in definitions %}
-        <div class="def-row" data-id="{{ d.id }}">
+        <div class="def-row" data-id="{{ d.id }}"
+             data-name="{{ d.name }}"
+             data-usage-count="{{ d.usage_count or 0 }}">
           <div>
             <span class="name">{{ d.name }}</span>
             <span class="type">{{ d.type }}</span>
@@ -74,6 +95,7 @@
             {% endif %}
           </div>
           <button type="button" class="edit-btn">Edit</button>
+          <button type="button" class="dup-btn">Duplicate</button>
           <button type="button" class="danger delete-btn"
                   {% if d.usage_count and d.usage_count > 0 %}disabled title="Remove from {{ d.usage_count }} dashboard(s) first"{% endif %}>
             Delete
@@ -104,6 +126,18 @@
     </form>
   </section>
 </main>
+
+<div id="edit-warning-modal" hidden>
+  <div class="warn-card">
+    <h3 id="warn-title"></h3>
+    <p id="warn-body">Editing changes the widget everywhere it's placed. If you want to keep the original and customize a copy, choose "Duplicate and edit".</p>
+    <div class="warn-actions">
+      <button type="button" id="warn-cancel">Cancel</button>
+      <button type="button" id="warn-edit">Edit anyway</button>
+      <button type="button" id="warn-duplicate" class="primary">Duplicate and edit</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function() {
@@ -219,20 +253,83 @@
     });
   });
 
+  function loadDefIntoForm(defId) {
+    return fetch('/api/widget-defs').then(r => r.json()).then(data => {
+      const def = (data.definitions || []).find(d => d.id == defId);
+      if (!def) return null;
+      document.getElementById('def-id').value = def.id;
+      document.getElementById('def-name').value = def.name;
+      typeSel.value = def.type;
+      rebuildFields(def.type, def.visual, def.default_data);
+      return def;
+    });
+  }
+
+  function startEdit(row) {
+    loadDefIntoForm(row.dataset.id);
+  }
+
+  function openWarning(row) {
+    const name = row.dataset.name;
+    const count = parseInt(row.dataset.usageCount, 10) || 0;
+    document.getElementById('warn-title').textContent =
+      `"${name}" is used on ${count} dashboard${count === 1 ? '' : 's'}`;
+    const modal = document.getElementById('edit-warning-modal');
+    modal.dataset.targetId = row.dataset.id;
+    modal.hidden = false;
+  }
+
   document.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const row = btn.closest('.def-row');
-      const id = row.dataset.id;
-      fetch('/api/widget-defs').then(r => r.json()).then(data => {
-        const def = (data.definitions || []).find(d => d.id == id);
-        if (!def) return;
-        document.getElementById('def-id').value = def.id;
-        document.getElementById('def-name').value = def.name;
-        typeSel.value = def.type;
-        rebuildFields(def.type, def.visual, def.default_data);
-      });
+      const count = parseInt(row.dataset.usageCount, 10) || 0;
+      if (count > 0) {
+        openWarning(row);
+      } else {
+        startEdit(row);
+      }
     });
   });
+
+  document.querySelectorAll('.dup-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('.def-row');
+      fetch('/api/widget-defs/' + row.dataset.id + '/duplicate', {method: 'POST'})
+        .then(r => r.json()).then(data => {
+          if (data.ok) location.reload();
+          else alert('Duplicate failed: ' + (data.error || 'unknown'));
+        });
+    });
+  });
+
+  // Warning modal buttons.
+  document.getElementById('warn-cancel').addEventListener('click', () => {
+    document.getElementById('edit-warning-modal').hidden = true;
+  });
+  document.getElementById('warn-edit').addEventListener('click', () => {
+    const modal = document.getElementById('edit-warning-modal');
+    const id = modal.dataset.targetId;
+    modal.hidden = true;
+    loadDefIntoForm(id);
+  });
+  document.getElementById('warn-duplicate').addEventListener('click', () => {
+    const modal = document.getElementById('edit-warning-modal');
+    const id = modal.dataset.targetId;
+    modal.hidden = true;
+    fetch('/api/widget-defs/' + id + '/duplicate', {method: 'POST'})
+      .then(r => r.json()).then(data => {
+        if (data.ok) {
+          location.hash = '#edit=' + data.definition.id;
+          location.reload();
+        }
+      });
+  });
+  // After a reload following Duplicate-and-edit, auto-open the editor on the new def.
+  if (location.hash.startsWith('#edit=')) {
+    const editId = location.hash.split('=')[1];
+    loadDefIntoForm(editId);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 })();
 </script>
 </body>
