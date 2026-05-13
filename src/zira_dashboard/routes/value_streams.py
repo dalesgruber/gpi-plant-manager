@@ -543,6 +543,25 @@ def recycling(
     return response
 
 
+@router.get("/tv/recycling", response_class=HTMLResponse)
+def tv_recycling(request: Request, theme: str | None = Query(default=None)):
+    """Read-only TV variant of /recycling. No top nav, no range chips,
+    no widget edit buttons, larger fonts. Always shows today.
+
+    Theme: 'dark' (default) or 'light' via ?theme=light. Persisted-config
+    theme arrives in sub-project 4 via tv_displays; for now URL-only.
+    """
+    tv_theme = "light" if theme == "light" else "dark"
+    resp = recycling(request, window="today", start=None, end=None)
+    # The screen handler returns a TemplateResponse with the full context.
+    # Patch its context to add tv_mode + tv_theme, then re-render with
+    # the same template.
+    ctx = dict(resp.context or {})
+    ctx["tv_mode"] = True
+    ctx["tv_theme"] = tv_theme
+    return templates.TemplateResponse(request, "recycling.html", ctx)
+
+
 @router.get("/new-vs", response_class=HTMLResponse)
 def new_vs(request: Request, day: str | None = Query(default=None)):
     """Value Streams → New subtab. Shows only work centers whose Settings

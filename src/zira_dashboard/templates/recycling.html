@@ -1,16 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en"{% if tv_mode %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
-<title>Value Streams — Recycling — GPI Plant Manager</title>
+<title>{% if tv_mode %}TV · {% endif %}Value Streams — Recycling — GPI Plant Manager</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <link rel="stylesheet" href="/static/recycling.css?v={{ static_v('recycling.css') }}">
+{% if tv_mode %}
+<link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
+<meta http-equiv="refresh" content="60">
+{% endif %}
 {% from "_goat_badges.html" import goat_badges, goat_badges_css, hover_tip_clamp_script %}
 <style>{{ goat_badges_css() }}</style>
 </head>
 <body>
+{% if tv_mode %}
+{% from "_tv_header.html" import tv_header %}
+{{ tv_header("Recycling VS", crumb="VALUE STREAMS · TODAY") }}
+{% endif %}
 <header>
   <div style="display:flex;gap:1.25rem;align-items:center">
     <a href="/recycling" style="display:flex;align-items:center;gap:0.55rem;text-decoration:none;color:inherit">
@@ -423,6 +431,9 @@
     float: false,
     handle: '.grid-stack-item-content > h3, .grid-stack-item-content > .label',
   });
+{% if tv_mode %}
+  grid.disable();  // TV mode — no drag, no resize, layout is locked.
+{% endif %}
 
   const indicator = document.getElementById('save-indicator');
   let saveTimer = null;
