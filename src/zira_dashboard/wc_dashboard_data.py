@@ -195,3 +195,209 @@ def goat_race(wc_name: str, day: date) -> dict:
         "goat_pace_today": goat_pace_today,
         "status": status,
     }
+
+
+def _station_total_for_wc(wc_name: str, day: date):
+    """Return the StationTotal for one WC + day, or None.
+
+    Reads via `cached_leaderboard` (in-process TODAY cache + Postgres
+    past-day cache via `_zira_persist`). Both paths return the same
+    StationTotal dataclass shape with `.samples`, `.active_intervals`,
+    `.units`, `.downtime_minutes`, etc.
+    """
+    from .deps import client
+    from .leaderboard import cached_leaderboard
+    from .stations import Station
+    loc = _load_wc(wc_name)
+    if loc is None or not loc.meter_id:
+        return None
+    stations = [Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)]
+    try:
+        results = cached_leaderboard(client, stations, day)
+    except Exception:
+        return None
+    for r in results:
+        if r.station.name == wc_name:
+            return r
+    return None
+
+
+def _readings_for_wc_today(wc_name: str, day: date) -> list[dict]:
+    """Per-event readings for one WC + day, normalized to a list of
+    `{ts_utc, units}` dicts. Extracted from StationTotal.samples which
+    is a tuple of (datetime, int) pairs.
+
+    Empty list if no meter / no data. Tests can monkeypatch this
+    directly instead of stubbing the entire cached_leaderboard chain.
+    """
+    total = _station_total_for_wc(wc_name, day)
+    if total is None:
+        return []
+    return [
+        {"ts_utc": ts, "units": int(units)}
+        for (ts, units) in (total.samples or [])
+        if ts is not None
+    ]
+
+
+def _wc_target_per_bucket(wc_name: str, day: date) -> int:
+    """Target units per 15-min bucket. daily_target / (shift_minutes/15)."""
+    from . import work_centers_store, shift_config
+    loc = _load_wc(wc_name)
+    if loc is None:
+        return 0
+    full = int(work_centers_store.goal_per_day(loc) or 0)
+    shift_minutes = shift_config.productive_minutes_for(day) or 1
+    buckets = max(1, shift_minutes // 15)
+    return max(0, int(round(full / buckets)))
+
+
+def _bucket_index(reading_ts, shift_start_utc) -> int:
+    """Map an event timestamp to its 15-min bucket from shift-start."""
+    if not reading_ts or not shift_start_utc:
+        return 0
+    delta = (reading_ts - shift_start_utc).total_seconds() / 60.0
+    if delta < 0:
+        return 0
+    return int(delta // 15)
+
+
+def _bucket_count_for_day(day: date) -> int:
+    """Number of 15-min buckets in the shift on `day`."""
+    from . import shift_config
+    return max(1, (shift_config.productive_minutes_for(day) or 0) // 15)
+
+
+def daily_progress(wc_name: str, day: date) -> list[dict]:
+    """Cumulative units per 15-min bucket from shift-start to shift-end.
+
+    Returns a list of {bucket_index, minute_offset, cumulative_units}
+    one entry per bucket. Used by the daily-progress SVG chart.
+    """
+    from . import shift_config
+
+    readings = _readings_for_wc_today(wc_name, day)
+    n_buckets = _bucket_count_for_day(day)
+    shift_start_local = datetime.combine(
+        day, shift_config.shift_start_for(day), tzinfo=shift_config.SITE_TZ,
+    )
+    shift_start_utc = shift_start_local.astimezone(timezone.utc)
+
+    per_bucket = [0] * n_buckets
+    for r in readings:
+        ts = r.get("ts_utc")
+        if ts is None:
+            continue
+        idx = _bucket_index(ts, shift_start_utc)
+        if 0 <= idx < n_buckets:
+            per_bucket[idx] += int(r.get("units") or 0)
+
+    cumulative = 0
+    out = []
+    for i, val in enumerate(per_bucket):
+        cumulative += val
+        out.append({
+            "bucket_index": i,
+            "minute_offset": i * 15,
+            "cumulative_units": cumulative,
+        })
+    return out
+
+
+def fifteen_min_increments(wc_name: str, day: date) -> list[dict]:
+    """Per-bucket units + color flag (green ≥ target, amber ≥ 75%, red < 75%).
+
+    Mirrors `daily_progress` but emits per-bucket (not cumulative) units
+    and a color-coded status against the per-bucket target.
+    """
+    from . import shift_config
+
+    readings = _readings_for_wc_today(wc_name, day)
+    n_buckets = _bucket_count_for_day(day)
+    target = _wc_target_per_bucket(wc_name, day)
+    shift_start_local = datetime.combine(
+        day, shift_config.shift_start_for(day), tzinfo=shift_config.SITE_TZ,
+    )
+    shift_start_utc = shift_start_local.astimezone(timezone.utc)
+
+    per_bucket = [0] * n_buckets
+    for r in readings:
+        ts = r.get("ts_utc")
+        if ts is None:
+            continue
+        idx = _bucket_index(ts, shift_start_utc)
+        if 0 <= idx < n_buckets:
+            per_bucket[idx] += int(r.get("units") or 0)
+
+    def _color(units):
+        if target <= 0:
+            return "neutral"
+        if units >= target:
+            return "green"
+        if units >= 0.75 * target:
+            return "amber"
+        return "red"
+
+    return [
+        {
+            "bucket_index": i,
+            "minute_offset": i * 15,
+            "units": v,
+            "color": _color(v),
+            "target": target,
+        }
+        for i, v in enumerate(per_bucket)
+    ]
+
+
+def _downtime_events_for_wc(wc_name: str, day: date) -> list[dict]:
+    """Downtime events derived from gaps in StationTotal.active_intervals.
+
+    Each entry: `{time, duration_minutes}` where `time` is the local
+    HH:MMa display of when the down period started. Reason data isn't
+    captured by Zira so we don't include it. Intervals are sorted
+    chronologically before gap detection.
+
+    Indirection so tests can monkeypatch a fixed list.
+    """
+    from . import shift_config
+    total = _station_total_for_wc(wc_name, day)
+    if total is None:
+        return []
+    intervals = sorted(
+        [(a, b) for (a, b) in (total.active_intervals or []) if a and b],
+        key=lambda ab: ab[0],
+    )
+    if not intervals:
+        return []
+    events: list[dict] = []
+    prev_end = intervals[0][1]
+    for start, end in intervals[1:]:
+        if start > prev_end:
+            gap_minutes = int((start - prev_end).total_seconds() // 60)
+            if gap_minutes >= 1:
+                local = prev_end.astimezone(shift_config.SITE_TZ)
+                # Format: "9:42a", "11:15a", "1:38p"
+                hour = local.hour
+                minute = local.minute
+                am_pm = "a" if hour < 12 else "p"
+                hour_12 = hour % 12 or 12
+                events.append({
+                    "time": f"{hour_12}:{minute:02d}{am_pm}",
+                    "duration_minutes": gap_minutes,
+                })
+        prev_end = max(prev_end, end)
+    return events
+
+
+def downtime_report(wc_name: str, day: date) -> dict:
+    """Downtime widget data: {events: [...], total_minutes: int}.
+
+    total_minutes pulls from StationTotal.downtime_minutes (Zira's
+    own count); events are derived from active_intervals gaps. The
+    two may differ slightly — the total is the authoritative number.
+    """
+    events = _downtime_events_for_wc(wc_name, day)
+    total = _station_total_for_wc(wc_name, day)
+    total_minutes = int(total.downtime_minutes) if total else 0
+    return {"events": events, "total_minutes": total_minutes}

@@ -191,3 +191,103 @@ def test_goat_race_no_goat_yet(monkeypatch):
     out = wc_dashboard_data.goat_race("Repair 1", _date(2026, 5, 13))
     assert out["goat"] is None
     assert out["status"] is None
+
+
+def _fake_readings(per_minute):
+    """Helper: build a fake list of {ts_utc, units} dicts where
+    `per_minute` is a list of (minute_offset_from_shift_start, units) tuples.
+    """
+    from datetime import datetime, timezone, timedelta
+    from zira_dashboard.shift_config import shift_start_for, SITE_TZ
+    today = datetime.now(SITE_TZ).date()
+    shift_start = datetime.combine(today, shift_start_for(today), tzinfo=SITE_TZ)
+    return [
+        {
+            "ts_utc": shift_start.astimezone(timezone.utc) + timedelta(minutes=m),
+            "units": u,
+        }
+        for m, u in per_minute
+    ]
+
+
+def test_daily_progress_cumulative(monkeypatch):
+    """Daily progress: list of (minute_offset, cumulative_units) at 15-min granularity."""
+    from zira_dashboard import wc_dashboard_data, staffing
+    from datetime import datetime, timezone
+    from zira_dashboard.shift_config import SITE_TZ
+    # Stub the schedule DB lookup that shift_start_for / productive_minutes_for need.
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=False,
+            custom_hours={"start": "07:00", "end": "15:30", "breaks": []},
+        ))
+    today = datetime.now(SITE_TZ).date()
+
+    # Three readings at minutes 5, 30, 80 with 10 / 20 / 5 units each.
+    readings = _fake_readings([(5, 10), (30, 20), (80, 5)])
+    monkeypatch.setattr(
+        wc_dashboard_data, "_readings_for_wc_today",
+        lambda nm, d: readings,
+    )
+    out = wc_dashboard_data.daily_progress("Repair 1", today)
+    # At least 6 buckets returned (shift is many hours long).
+    assert len(out) >= 6
+    # Reading at minute 5 → bucket 0 (0-14m); cumulative 10.
+    assert out[0]["cumulative_units"] == 10
+    # Reading at minute 30 → bucket 2 (30-44m); cumulative 30.
+    assert out[2]["cumulative_units"] == 30
+    # Reading at minute 80 → bucket 5 (75-89m); cumulative 35.
+    assert out[5]["cumulative_units"] == 35
+
+
+def test_fifteen_min_increments_color_coded(monkeypatch):
+    """Each 15-min bucket: units in that interval + green/amber/red flag."""
+    from zira_dashboard import wc_dashboard_data, staffing
+    from datetime import datetime
+    from zira_dashboard.shift_config import SITE_TZ
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=False,
+            custom_hours={"start": "07:00", "end": "15:30", "breaks": []},
+        ))
+    today = datetime.now(SITE_TZ).date()
+
+    # Target = 8 units / bucket — control via _wc_target_per_bucket.
+    monkeypatch.setattr(wc_dashboard_data, "_wc_target_per_bucket", lambda nm, d: 8)
+    # bucket 0 → 10 units (green), bucket 1 → 6 (amber, ≥ 75% of 8 = 6),
+    # bucket 2 → 4 (red, < 75% = 6).
+    readings = _fake_readings([(5, 10), (20, 6), (35, 4)])
+    monkeypatch.setattr(
+        wc_dashboard_data, "_readings_for_wc_today",
+        lambda nm, d: readings,
+    )
+    out = wc_dashboard_data.fifteen_min_increments("Repair 1", today)
+    assert out[0]["units"] == 10 and out[0]["color"] == "green"
+    assert out[1]["units"] == 6  and out[1]["color"] == "amber"
+    assert out[2]["units"] == 4  and out[2]["color"] == "red"
+
+
+def test_downtime_report(monkeypatch):
+    """Downtime: list of {time, duration_minutes} events derived from
+    gaps in active_intervals, plus an authoritative total from
+    StationTotal.downtime_minutes."""
+    from zira_dashboard import wc_dashboard_data
+    from datetime import datetime
+    from zira_dashboard.shift_config import SITE_TZ
+    today = datetime.now(SITE_TZ).date()
+
+    class _Total:
+        downtime_minutes = 11
+    monkeypatch.setattr(wc_dashboard_data, "_station_total_for_wc",
+                        lambda nm, d: _Total())
+    monkeypatch.setattr(
+        wc_dashboard_data, "_downtime_events_for_wc",
+        lambda nm, d: [
+            {"time": "9:42a",  "duration_minutes": 3},
+            {"time": "11:15a", "duration_minutes": 8},
+        ],
+    )
+    out = wc_dashboard_data.downtime_report("Repair 1", today)
+    assert out["total_minutes"] == 11
+    assert len(out["events"]) == 2
+    assert "reason" not in out["events"][0]
