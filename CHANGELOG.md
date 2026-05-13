@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-13
 
+### 3:55 PM
+
+- **Workshop and My Dashboards now show the standard Plant Manager header** — both pages used to render their own bare header (`<h1>Widget Workshop</h1>` and a plain `<h1>Plant Manager</h1>` without the logo), which made it harder to jump back to the main dashboards. Both pages now show the same clickable logo + "Plant Manager" title + Dashboards / Trophy Case / Staffing / Settings top nav as every other page, so clicking the logo or "Dashboards" gets you back to `/recycling` in one click. Sub-nav strip is unchanged.
+
 ### 3:52 PM
 
 - **Pallets, Downtime, and 15-min Progress widgets now render identically to /recycling** — the workshop's `pallets_by_wc`, `downtime`, and `daily_progress` widget partials were rewritten to use the same markup as /recycling's inline widgets (same CSS classes, same DOM structure), so a custom dashboard or workshop preview now shows them with the same look and feel as the Recycling VS dashboard. Pallets-by-WC: dropped the extra `.pallets-by-wc` wrapper that was breaking the flex layout, added the target line and the `Total / total_e (pct%)` footer. Downtime: switched from a single-WC event list to per-WC stacked working/down bars (green/red) — the standard /recycling rendering. New resolver shape `{rows: [...], total_elapsed}`. 15-min Progress: replaced the loose color-bar grid with the proper `progress` chart (one column per 15-min bucket, target tick on each column, in-progress highlighting, time-of-day x-ticks) — new resolver shape `{buckets: [{label, actual, target, in_progress}, ...], bucket_target}`. **All three widgets now accept multi-WC + multi-group selection** (just like Pallets-by-WC's earlier ship): pick any combination of WCs or groups; the data is summed across the deduplicated WC set. Old single-`{wc_name: ...}` presets still work via resolver back-compat.
