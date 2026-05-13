@@ -862,6 +862,20 @@ def time_off_entries_for_day(day) -> list[dict]:
             )
         ]
 
+    # Final filter: drop entries for people who are NOT in our active
+    # non-excluded local roster. StratusTime can still have time-off
+    # requests, non-work shifts, or scheduled-but-no-punch derived
+    # absences for an employee Dale archived in Odoo or excluded via the
+    # Roster Filter — without this, those people kept reappearing as
+    # "Absent" on the scheduler regardless of the late_report.* filters.
+    try:
+        from . import staffing as _staffing
+        roster_names_active = {p.name for p in _staffing.load_roster() if p.active}
+    except Exception:
+        roster_names_active = None
+    if roster_names_active is not None:
+        out = [e for e in out if e.get("name") in roster_names_active]
+
     return out
 
 
@@ -894,6 +908,15 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
             return default
 
     from . import late_report as _lr
+    # Compute once and reuse across days — same active-roster gate as
+    # time_off_entries_for_day, drops people archived in Odoo or
+    # roster-filter-excluded so the calendar view stays consistent with
+    # the scheduler.
+    try:
+        from . import staffing as _staffing
+        roster_names_active = {p.name for p in _staffing.load_roster() if p.active}
+    except Exception:
+        roster_names_active = None
     f_requests = _SHARED_POOL.submit(_safe, get_time_off_requests, sx_start, sx_end, default=[])
     f_non_work = _SHARED_POOL.submit(_safe, get_non_work_shifts, sx_start, sx_end, default=[])
     f_cleared_req = _SHARED_POOL.submit(_safe, _lr.cleared_request_ids_for_range, start_d, end_d, default={})
@@ -1025,6 +1048,8 @@ def time_off_entries_for_range(start_d, end_d) -> dict:
                     and e.get("name") in cleared_names_today
                 )
             ]
+        if roster_names_active is not None:
+            day_out = [e for e in day_out if e.get("name") in roster_names_active]
         out[cursor] = day_out
         cursor += timedelta(days=1)
 

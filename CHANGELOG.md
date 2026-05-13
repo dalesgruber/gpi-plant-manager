@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-13
 
+### 8:11 AM
+
+- **Time Off section now hides Roster-Filter-excluded people for real** — Isaac Miller kept showing as "Absent" on the scheduler even after the prior fix because `stratustime_client.derived_absences_for_day` independently flagged him as a scheduled-but-no-punch derived absence, using the StratusTime full-name map as a fallback when our roster map didn't carry his emp_id (which is exactly what happens for an excluded person). That bypassed the late_report-level filter entirely. Added a final pass at the end of `time_off_entries_for_day` (and its bulk-range sibling) that drops every entry whose name isn't in the active non-excluded roster — so derived absences, StratusTime time-off requests, non-work shifts, and manual absences all flow through the same gate now. New `/admin/person-state?name=...` admin endpoint kept around since it was the only way to spot the underlying issue.
+
 ### 8:01 AM
 
 - **Top nav fixes: drop "Leaderboards" from `/settings` and home** — earlier nav restructure removed the "Leaderboards" top-tab from the staffing-family templates, `/staffing`, `/recycling`, and `/new-vs`, but missed `settings.html` (the Settings page kept showing 5 tabs) and `index.html` (the very first page if anyone hits `/`). Now the top nav reads **Dashboards · Trophy Case · Staffing · Settings** consistently across every page in the system, with **Trophies** and **Leaderboards** as sub-tabs only under Trophy Case.
