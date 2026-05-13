@@ -35,6 +35,38 @@ def _metered_stations() -> list[Station]:
     ]
 
 
+@router.get("/admin/person-state")
+def person_state(name: str = Query(...)):
+    """Diagnostic: dump the people-row(s) matching `name` + every
+    manual_absences / late_arrivals row referencing that name. Used to
+    debug why an archived person still shows in the Time Off section.
+    """
+    from .. import db
+    people_rows = db.query(
+        "SELECT id, odoo_id, name, active, excluded, reserve, last_pulled_at "
+        "FROM people WHERE lower(name) LIKE lower(%s)",
+        (f"%{name}%",),
+    )
+    absent_rows = db.query(
+        "SELECT day, emp_id, name, declared_at, reason "
+        "FROM manual_absences WHERE lower(name) LIKE lower(%s) "
+        "ORDER BY day DESC LIMIT 50",
+        (f"%{name}%",),
+    )
+    late_rows = db.query(
+        "SELECT day, emp_id, name, declared_at, reason "
+        "FROM late_arrivals WHERE lower(name) LIKE lower(%s) "
+        "ORDER BY day DESC LIMIT 50",
+        (f"%{name}%",),
+    )
+    return JSONResponse({
+        "query": name,
+        "people": [dict(r, last_pulled_at=str(r.get("last_pulled_at"))) for r in people_rows],
+        "manual_absences": [dict(r, day=str(r["day"]), declared_at=str(r["declared_at"])) for r in absent_rows],
+        "late_arrivals": [dict(r, day=str(r["day"]), declared_at=str(r["declared_at"])) for r in late_rows],
+    })
+
+
 @router.get("/admin/data-status")
 def data_status(
     start: str = Query(default="2024-01-01"),
