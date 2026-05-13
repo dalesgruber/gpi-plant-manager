@@ -1,0 +1,16 @@
+{# Downtime report — event list + header total.
+   data = {events: [{time, duration_minutes}, ...], total_minutes}
+#}
+<div class="grid-stack-item-content">
+  <h3>{{ placement_title or 'Downtime' }} · {{ data.total_minutes or 0 }}m total</h3>
+  <ul class="downtime-list">
+    {% for e in data.events %}
+      <li>
+        <span class="time">{{ e.time }}</span>
+        <span class="duration">{{ e.duration_minutes }}m</span>
+      </li>
+    {% else %}
+      <li class="empty">no downtime</li>
+    {% endfor %}
+  </ul>
+</div>

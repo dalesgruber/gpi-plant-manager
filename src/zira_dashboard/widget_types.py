@@ -131,6 +131,17 @@ _REGISTRY: list[dict] = [
         "resolver": "_resolve_kpi",
         "partial": "widgets/_widget_kpi.html",
     },
+    {
+        "type": "downtime",
+        "label": "Downtime Report",
+        "data_params_schema": [
+            {"key": "wc_name", "label": "Work Center", "input": "select",
+             "options_from": "wcs", "required": True},
+        ],
+        "visual_params_schema": [],
+        "resolver": "_resolve_downtime",
+        "partial": "widgets/_widget_downtime.html",
+    },
 ]
 
 

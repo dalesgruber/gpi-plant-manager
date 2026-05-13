@@ -21,6 +21,8 @@
   {% include "widgets/_widget_goat_race.html" %}
 {% elif placement.type == 'ribbons' %}
   {% include "widgets/_widget_ribbons.html" %}
+{% elif placement.type == 'downtime' %}
+  {% include "widgets/_widget_downtime.html" %}
 {% else %}
   <div class="grid-stack-item-content">
     <h3>Unknown widget type: {{ placement.type }}</h3>

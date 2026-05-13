@@ -224,3 +224,24 @@ def test_resolve_kpi_unknown_metric_returns_placeholder():
     out = widget_data._resolve_kpi({"metric": "garbage"}, day=date(2026, 5, 13))
     assert out["value"] == 0
     assert "garbage" in out["label"]
+
+
+def test_resolve_downtime_delegates(monkeypatch):
+    from zira_dashboard import widget_data, wc_dashboard_data
+    monkeypatch.setattr(
+        wc_dashboard_data, "downtime_report",
+        lambda wc, d: {
+            "events": [{"time": "9:42a", "duration_minutes": 7}],
+            "total_minutes": 17,
+        } if wc == "Repair 1" else None,
+    )
+    out = widget_data._resolve_downtime({"wc_name": "Repair 1"}, day=date(2026, 5, 13))
+    assert out["total_minutes"] == 17
+    assert len(out["events"]) == 1
+    assert out["events"][0]["duration_minutes"] == 7
+
+
+def test_resolve_downtime_missing_wc_returns_empty():
+    from zira_dashboard import widget_data
+    out = widget_data._resolve_downtime({}, day=date(2026, 5, 13))
+    assert out == {"events": [], "total_minutes": 0}

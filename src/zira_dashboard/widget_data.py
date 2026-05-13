@@ -193,3 +193,16 @@ def _resolve_kpi(params: dict, day: date) -> dict:
         report = wc_dashboard_data.downtime_report(wc, day) or {}
         return {"label": f"Downtime · {wc}", "value": int(report.get("total_minutes", 0)), "suffix": "m"}
     return {"label": f"Unknown metric: {metric}", "value": 0, "suffix": ""}
+
+
+def _resolve_downtime(params: dict, day: date) -> dict:
+    """Downtime report — list of gap events + total minutes.
+
+    Wraps `wc_dashboard_data.downtime_report`. Returns the same shape:
+    {events: [{time, duration_minutes}, ...], total_minutes}.
+    """
+    from . import wc_dashboard_data
+    wc_name = (params or {}).get("wc_name")
+    if not wc_name:
+        return {"events": [], "total_minutes": 0}
+    return wc_dashboard_data.downtime_report(wc_name, day) or {"events": [], "total_minutes": 0}
