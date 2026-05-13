@@ -55,17 +55,17 @@ A context boolean `tv_mode` threaded through the templates. Driven by the route 
 
 ### Per-WC dashboard widgets
 
-Six widgets, all built fresh in `templates/wc_dashboard.html`:
+Six widgets, all built fresh in `templates/wc_dashboard.html`. Scope is per-WC for production / downtime widgets, per-group for the social/comparison widgets — so operators see THEIR numbers but measure themselves against the group's records.
 
-| Widget | Backed by | Notes |
-|---|---|---|
-| **Header** (always-on, not a gridstack widget) | static | WC name (top-left, breadcrumb above), operators (top-right, big), both rendered through existing `goat_badges` + `cert_badges` macros |
-| **Pallets banner** | Today's Zira meter data for this WC, prorated against `leaderboard_wc_settings.expected_units_per_day` | Single-bar horizontal progress, same visual language as the existing VS "Pallets by Work Center" widget but scoped to one WC |
-| **Daily progress chart** | Cumulative per-15-min meter readings | SVG area chart, "120 goal" dashed line, time on x-axis from shift-start to shift-end |
-| **GOAT race widget** | `awards.goat(group_of_this_wc)` + today's elapsed-minutes-prorated GOAT pace | Status pill (ON PACE / BEHIND / AHEAD), progress bar with avg + GOAT markers |
-| **Monthly ribbons** | `awards.monthly_badges(group, year, month)` | Top-3 person-days for the WC's group this month, 🥇🥈🥉 |
-| **15-min increments** | Bucketed meter readings per 15-min interval | 28 bars across the shift, color-coded (green ≥ target, amber ≥ 75%, red < 75%) |
-| **Downtime report** | Zira-derived downtime events for this WC today | List of `{time, reason, duration}` rows, total minutes in the header |
+| Widget | Scope | Backed by | Notes |
+|---|---|---|---|
+| **Header** (always-on, not a gridstack widget) | this WC | static + `staffing.load_schedule(today).assignments[wc_name]` | WC name top-left (with category breadcrumb above), operator names top-right in big letters — only the people assigned to **this** WC, not the group. Rendered through the existing `goat_badges` + `cert_badges` macros. If zero operators, "(unassigned)" but the data widgets still render. |
+| **Pallets banner** | this WC | Today's Zira meter data for this WC, prorated against `leaderboard_wc_settings.expected_units_per_day` for this WC | Single-bar horizontal progress, same visual language as the existing VS "Pallets by Work Center" widget but scoped to one WC |
+| **Daily progress chart** | this WC | Cumulative per-15-min meter readings from this WC's Zira meter | SVG area chart, "120 goal" dashed line, time on x-axis from shift-start to shift-end |
+| **GOAT race widget** | **this WC's group** | `awards.goat(group_of_this_wc)` + today's elapsed-minutes-prorated GOAT pace | Status pill (ON PACE / BEHIND / AHEAD), progress bar with avg + GOAT markers — the GOAT here is the group's all-time record holder, not this specific WC's. Dale: "the goat should be by group" |
+| **Monthly ribbons** | **this WC's group** | `awards.monthly_badges(group_of_this_wc, year, month)` | Top-3 person-days for the WC's **group** this month, 🥇🥈🥉. Dale: "the ribbons should be by group" |
+| **15-min increments** | this WC | Bucketed Zira readings per 15-min interval from this WC's meter | 28 bars across the shift, color-coded (green ≥ target, amber ≥ 75%, red < 75%) |
+| **Downtime report** | this WC | Zira-derived downtime events for this WC today | List of `{time, reason, duration}` rows, total minutes in the header |
 
 Each widget is a `<div class="grid-stack-item">` wrapped with the existing `widget_attrs` macro. The TV view sets `gridstack.disable()` in JS so the layout is locked but still rendered.
 
