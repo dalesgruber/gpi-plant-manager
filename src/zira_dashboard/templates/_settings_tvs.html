@@ -1,0 +1,267 @@
+{# TVs settings section. Included from settings.html when active_section == 'tvs'. #}
+<section class="panel" data-section="tvs"
+         {% if active_section != 'tvs' %}style="display:none"{% endif %}>
+  <h2>TVs</h2>
+  <p class="note">
+    Each TV in the plant. The URL is bookmarkable on the TV browser — toggle theme
+    here and the TV picks up the change on its next refresh. Renaming a row regenerates
+    the slug, so the old URL stops working.
+  </p>
+
+  <table class="tv-displays-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Target</th>
+        <th>Theme</th>
+        <th>URL</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tv-displays-body">
+      {% for d in tv_displays_rows %}
+        <tr data-id="{{ d.id }}" data-slug="{{ d.slug }}">
+          <td><input type="text" class="tv-name-input" value="{{ d.name }}"></td>
+          <td>
+            <select class="tv-kind-select">
+              <option value="vs_recycling" {% if d.kind == 'vs_recycling' %}selected{% endif %}>Recycling VS</option>
+              <option value="vs_new" {% if d.kind == 'vs_new' %}selected{% endif %}>New VS</option>
+              <option value="wc" {% if d.kind == 'wc' %}selected{% endif %}>Work Center</option>
+            </select>
+            <select class="tv-wc-select" {% if d.kind != 'wc' %}style="display:none"{% endif %}>
+              {% for loc in wc_locations_for_picker %}
+                <option value="{{ loc.name }}" {% if d.wc_name == loc.name %}selected{% endif %}>{{ loc.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="tv-theme-cell">
+            <button type="button" class="tv-theme-btn {% if d.theme == 'dark' %}active{% endif %}"
+                    data-theme="dark">Dark</button>
+            <button type="button" class="tv-theme-btn {% if d.theme == 'light' %}active{% endif %}"
+                    data-theme="light">Light</button>
+          </td>
+          <td class="tv-url-cell">
+            <span class="tv-url">/tv/d/{{ d.slug }}</span>
+            <button type="button" class="tv-copy-btn">Copy</button>
+          </td>
+          <td>
+            <button type="button" class="tv-delete-btn" title="Delete">×</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr class="empty"><td colspan="5">No TVs yet — add one below.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="tv-add-form">
+    <input type="text" id="tv-add-name" placeholder="Display name (e.g. Repair 1 — Wall TV)">
+    <select id="tv-add-kind">
+      <option value="vs_recycling">Recycling VS</option>
+      <option value="vs_new">New VS</option>
+      <option value="wc" selected>Work Center</option>
+    </select>
+    <select id="tv-add-wc">
+      {% for loc in wc_locations_for_picker %}
+        <option value="{{ loc.name }}">{{ loc.name }}</option>
+      {% endfor %}
+    </select>
+    <select id="tv-add-theme">
+      <option value="dark" selected>Dark</option>
+      <option value="light">Light</option>
+    </select>
+    <button type="button" id="tv-add-btn">Add display</button>
+    <span class="tv-add-status" id="tv-add-status"></span>
+  </div>
+
+  <h2 style="margin-top: 1.5rem">Layout Templates</h2>
+  <p class="note">
+    Templates saved from any <code>/wc/{slug}</code> editor view. Delete to clean up;
+    templates can be re-saved any time from the editor.
+  </p>
+
+  <table class="tv-templates-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Theme</th>
+        <th>Updated</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tv-templates-body">
+      {% for t in tv_templates_rows %}
+        <tr data-id="{{ t.id }}">
+          <td>{{ t.name }}</td>
+          <td>{{ t.theme }}</td>
+          <td title="{{ t.updated_at.isoformat() if t.updated_at else '' }}">
+            {{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '' }}
+          </td>
+          <td><button type="button" class="tv-template-delete" title="Delete">×</button></td>
+        </tr>
+      {% else %}
+        <tr class="empty"><td colspan="4">No templates saved yet — visit any /wc/{slug} editor to save a layout.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<style>
+  .tv-displays-table, .tv-templates-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  .tv-displays-table th, .tv-displays-table td,
+  .tv-templates-table th, .tv-templates-table td {
+    padding: 0.4rem 0.55rem; border-bottom: 1px solid var(--border);
+    text-align: left; font-size: 0.88rem; vertical-align: middle;
+  }
+  .tv-displays-table th, .tv-templates-table th {
+    font-size: 0.68rem; color: var(--muted); font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .tv-displays-table .tv-name-input {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.5rem; font: inherit; font-size: 0.85rem;
+    width: 14rem;
+  }
+  .tv-displays-table select {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.25rem 0.45rem; font: inherit; font-size: 0.85rem;
+  }
+  .tv-theme-btn {
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.2rem 0.65rem; cursor: pointer; font-size: 0.8rem;
+  }
+  .tv-theme-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .tv-url { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--muted); }
+  .tv-copy-btn, .tv-delete-btn, .tv-template-delete {
+    background: transparent; border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.15rem 0.55rem; cursor: pointer; color: var(--muted); font-size: 0.8rem;
+  }
+  .tv-delete-btn, .tv-template-delete { color: #ef4444; }
+  .tv-add-form {
+    display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem;
+    padding: 0.6rem; background: var(--panel-2); border-radius: 8px;
+  }
+  .tv-add-form input, .tv-add-form select {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem;
+  }
+  .tv-add-form input { flex: 1; }
+  #tv-add-btn {
+    background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 6px; padding: 0.3rem 0.9rem; font-weight: 700; font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .tv-add-status { color: var(--muted); font-size: 0.78rem; min-width: 10rem; }
+</style>
+
+<script>
+(function() {
+  function showStatus(elId, text) {
+    const el = document.getElementById(elId);
+    if (el) el.textContent = text;
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+  }
+
+  function saveRow(tr) {
+    const id = tr.dataset.id;
+    const name = tr.querySelector('.tv-name-input').value.trim();
+    const kind = tr.querySelector('.tv-kind-select').value;
+    const wcSel = tr.querySelector('.tv-wc-select');
+    const wc_name = kind === 'wc' ? wcSel.value : null;
+    const themeBtn = tr.querySelector('.tv-theme-btn.active');
+    const theme = themeBtn ? themeBtn.dataset.theme : 'dark';
+    return postJson('/api/tv-displays', {
+      id: parseInt(id, 10), name, kind, wc_name, theme,
+    }).then(data => {
+      if (data.ok) {
+        tr.dataset.slug = data.slug;
+        const urlEl = tr.querySelector('.tv-url');
+        if (urlEl) urlEl.textContent = '/tv/d/' + data.slug;
+      }
+      return data;
+    });
+  }
+
+  document.querySelectorAll('#tv-displays-body tr[data-id]').forEach(tr => {
+    tr.querySelector('.tv-name-input').addEventListener('blur', () => saveRow(tr));
+    tr.querySelector('.tv-kind-select').addEventListener('change', (e) => {
+      const wcSel = tr.querySelector('.tv-wc-select');
+      wcSel.style.display = e.target.value === 'wc' ? '' : 'none';
+      saveRow(tr);
+    });
+    tr.querySelector('.tv-wc-select').addEventListener('change', () => saveRow(tr));
+
+    tr.querySelectorAll('.tv-theme-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        tr.querySelectorAll('.tv-theme-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        postJson('/api/tv-displays/' + tr.dataset.id + '/theme', {theme: btn.dataset.theme});
+      });
+    });
+
+    tr.querySelector('.tv-copy-btn').addEventListener('click', () => {
+      const slug = tr.dataset.slug;
+      const url = window.location.origin + '/tv/d/' + slug;
+      navigator.clipboard.writeText(url).then(() => {
+        const btn = tr.querySelector('.tv-copy-btn');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 1200);
+      });
+    });
+
+    tr.querySelector('.tv-delete-btn').addEventListener('click', () => {
+      if (!confirm('Delete "' + tr.querySelector('.tv-name-input').value + '"?')) return;
+      fetch('/api/tv-displays/' + tr.dataset.id, {method: 'DELETE'})
+        .then(r => r.json()).then(data => {
+          if (data.ok) tr.remove();
+        });
+    });
+  });
+
+  const addKindSel = document.getElementById('tv-add-kind');
+  const addWcSel = document.getElementById('tv-add-wc');
+  if (addKindSel) {
+    addKindSel.addEventListener('change', (e) => {
+      addWcSel.style.display = e.target.value === 'wc' ? '' : 'none';
+    });
+  }
+  const addBtn = document.getElementById('tv-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const name = document.getElementById('tv-add-name').value.trim();
+      const kind = addKindSel.value;
+      const wc_name = kind === 'wc' ? addWcSel.value : null;
+      const theme = document.getElementById('tv-add-theme').value;
+      if (!name) { showStatus('tv-add-status', 'name required'); return; }
+      showStatus('tv-add-status', 'Adding…');
+      postJson('/api/tv-displays', {name, kind, wc_name, theme}).then(data => {
+        if (data.ok) {
+          showStatus('tv-add-status', 'Added — reloading…');
+          setTimeout(() => location.reload(), 500);
+        } else {
+          showStatus('tv-add-status', 'Error: ' + (data.error || 'unknown'));
+        }
+      });
+    });
+  }
+
+  document.querySelectorAll('.tv-template-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tr = btn.closest('tr');
+      if (!confirm('Delete this template?')) return;
+      fetch('/api/tv-templates/' + tr.dataset.id, {method: 'DELETE'})
+        .then(r => r.json()).then(data => {
+          if (data.ok) tr.remove();
+        });
+    });
+  });
+})();
+</script>

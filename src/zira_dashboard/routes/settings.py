@@ -47,7 +47,7 @@ def settings_page(
     saved: int = Query(default=0),
     section: str = Query(default="work_centers"),
 ):
-    if section not in ("work_centers", "schedule", "integrations", "roster_filter"):
+    if section not in ("work_centers", "schedule", "integrations", "roster_filter", "tvs"):
         section = "work_centers"
     roster_filter_rows: list[dict] = []
     if section == "roster_filter":
@@ -62,6 +62,12 @@ def settings_page(
     if section == "integrations":
         from .. import stratustime_client
         integration_status = stratustime_client.health_check()
+    tv_displays_rows: list[dict] = []
+    tv_templates_rows: list[dict] = []
+    if section == "tvs":
+        from .. import tv_displays_store, tv_templates_store
+        tv_displays_rows = tv_displays_store.list_displays()
+        tv_templates_rows = tv_templates_store.list_templates()
     from .. import odoo_sync
     # TTL-checked sync so /settings self-heals after a Railway redeploy
     # where the ephemeral roster.json got reset to the legacy seed.
@@ -169,6 +175,9 @@ def settings_page(
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
             "integration_status": integration_status,
+            "tv_displays_rows": tv_displays_rows,
+            "tv_templates_rows": tv_templates_rows,
+            "wc_locations_for_picker": [{"name": loc.name} for loc in staffing.LOCATIONS],
         },
     )
 

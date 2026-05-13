@@ -515,6 +515,10 @@
        class="settings-nav-item {% if active_section == 'integrations' %}active{% endif %}">
       Integrations
     </a>
+    <a href="?section=tvs"
+       class="settings-nav-item {% if active_section == 'tvs' %}active{% endif %}">
+      TVs
+    </a>
   </aside>
 
   <div class="settings-content">
@@ -801,6 +805,8 @@
       </ul>
     {% endif %}
   </section>
+
+  {% include "_settings_tvs.html" %}
   </div>
 </div>
 </main>
