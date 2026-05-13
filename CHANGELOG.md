@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-13
 
+### 2:07 PM
+
+- **Widget Workshop Phase 3 — closeout** — three polish items finish off the workshop spec. (1) **Custom dashboards can be added as TVs**: the Settings → TVs panel gains a "Custom Dashboard" kind with a cascading picker; the resulting `/tv/d/{slug}` URL renders the chosen custom dashboard with the row's saved theme. Deleting a custom dashboard nulls out any TV displays that referenced it (FK ON DELETE SET NULL) and shows a "dashboard removed" page when visited. (2) **Per-placement edit popover** on the dashboard editor — a small ⋮ button on each widget opens a schema-driven form to override that placement's data scope; ✕ deletes the widget from the dashboard. (3) **"In use by N" badge** in the Widget Workshop list, with the Delete button disabled for widgets referenced by any dashboard so it's obvious why a delete would fail. The widget-workshop master spec (sub-project 5) is now fully shipped: Workshop + custom dashboards + 8 widget types + TVs integration + per-placement overrides.
+
 ### 1:49 PM
 
 - **Widget Workshop Phase 2 — 5 more widget types** — Pallets Banner (single-WC), Daily Progress (15-min color-coded bars), Cumulative Progress (cumulative SVG line chart with optional goal line), KPI Tile (units-today by WC or group, or downtime minutes), and Downtime Report (event list + total). All five join the Workshop alongside the Phase 1 trio (Pallets by WC, Vs Goat Pace, Monthly Ribbons), so any custom dashboard at `/dashboards/{slug}` can now drop in 8 different widget types. KPI metrics in Phase 2 are limited to today's units (per WC or group sum) and today's downtime minutes; more metrics can be added later by appending to the resolver's metric list. Phase 3 (TV Displays integration so a custom dashboard can be saved as a TV, plus per-placement data-override UI) still to ship.

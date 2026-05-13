@@ -30,6 +30,8 @@
   .def-row:last-child { border-bottom: none; }
   .def-row .name { font-weight: 600; }
   .def-row .type { font-size: 0.75rem; color: var(--muted); font-variant: small-caps; }
+  .def-row .usage { font-size: 0.75rem; color: var(--muted); margin-left: 0.4rem; }
+  .def-row button[disabled] { opacity: 0.4; cursor: not-allowed; }
   .def-row button { background: transparent; border: 1px solid var(--border);
                     border-radius: 5px; padding: 0.2rem 0.6rem; cursor: pointer;
                     font: inherit; font-size: 0.8rem; color: var(--muted); }
@@ -62,9 +64,20 @@
     <div id="defs-list">
       {% for d in definitions %}
         <div class="def-row" data-id="{{ d.id }}">
-          <div><span class="name">{{ d.name }}</span> <span class="type">{{ d.type }}</span></div>
+          <div>
+            <span class="name">{{ d.name }}</span>
+            <span class="type">{{ d.type }}</span>
+            {% if d.usage_count and d.usage_count > 0 %}
+              <span class="usage" title="Used on {{ d.usage_count }} dashboard{{ 's' if d.usage_count != 1 else '' }}">
+                · in use by {{ d.usage_count }}
+              </span>
+            {% endif %}
+          </div>
           <button type="button" class="edit-btn">Edit</button>
-          <button type="button" class="danger delete-btn">Delete</button>
+          <button type="button" class="danger delete-btn"
+                  {% if d.usage_count and d.usage_count > 0 %}disabled title="Remove from {{ d.usage_count }} dashboard(s) first"{% endif %}>
+            Delete
+          </button>
         </div>
       {% else %}
         <div class="def-row"><em>No widgets yet — create one →</em></div>

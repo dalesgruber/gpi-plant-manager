@@ -59,12 +59,24 @@ def get(id: int) -> Optional[dict]:
 
 
 def list_definitions() -> list[dict]:
+    """All definitions with `usage_count` precomputed via subquery."""
     from . import db
     rows = db.query(
-        "SELECT id, name, type, visual_json, default_data_json "
-        "FROM widget_definitions ORDER BY type, lower(name)"
+        "SELECT wd.id, wd.name, wd.type, wd.visual_json, wd.default_data_json, "
+        "  COALESCE(c.n, 0) AS usage_count "
+        "FROM widget_definitions wd "
+        "LEFT JOIN ("
+        "  SELECT widget_def_id, COUNT(*) AS n "
+        "  FROM dashboard_widgets GROUP BY widget_def_id"
+        ") c ON c.widget_def_id = wd.id "
+        "ORDER BY wd.type, lower(wd.name)"
     )
-    return [_hydrate(r) for r in rows]
+    out = []
+    for r in rows:
+        d = _hydrate(r)
+        d["usage_count"] = int(r["usage_count"])
+        out.append(d)
+    return out
 
 
 def delete(id: int) -> None:

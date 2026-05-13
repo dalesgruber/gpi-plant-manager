@@ -119,3 +119,21 @@ def test_usage_count():
     )
     assert widget_definitions_store.usage_count(wd["id"]) == 2
     db.execute("DELETE FROM custom_dashboards WHERE slug LIKE 'wt-%'")
+
+
+def test_list_definitions_includes_usage_count():
+    from zira_dashboard import widget_definitions_store, custom_dashboards_store, db
+    wd = widget_definitions_store.save(
+        name="wt-usagelist", type="ribbons", visual={}, default_data={"group": "Repairs"},
+    )
+    rows = [r for r in widget_definitions_store.list_definitions() if r["name"] == "wt-usagelist"]
+    assert rows[0]["usage_count"] == 0
+    dash = custom_dashboards_store.save_dashboard(
+        name="wt-usagelist-dash", scope_kind="group", scope_value="Repairs", theme="dark",
+    )
+    custom_dashboards_store.add_placement(
+        dashboard_id=dash["id"], widget_def_id=wd["id"], x=0, y=0, w=4, h=4, data_overrides={},
+    )
+    rows = [r for r in widget_definitions_store.list_definitions() if r["name"] == "wt-usagelist"]
+    assert rows[0]["usage_count"] == 1
+    db.execute("DELETE FROM custom_dashboards WHERE slug LIKE 'wt-%'")
