@@ -143,3 +143,73 @@ def test_sync_upsert_does_not_clear_excluded_flag():
 
     # Cleanup.
     db.execute("DELETE FROM people WHERE odoo_id = %s", (999995,))
+
+
+def test_sync_deactivates_employees_missing_from_odoo_response(monkeypatch):
+    """When Odoo archives an employee, fetch_employees() (which filters
+    on active=True) stops returning them. The sync must then flip the
+    local people.active to FALSE so they drop out of the scheduler."""
+    from zira_dashboard import db
+
+    # Seed two people: one will be in the next sync, one won't (archived).
+    cols = [
+        {"name": "TestRepair", "type": "skill"},
+        {"name": "TestDismantler", "type": "skill"},
+    ]
+    _stub_client(
+        monkeypatch,
+        employees=[
+            {"id": 99100, "name": "Still Active", "active": True},
+            {"id": 99101, "name": "About To Be Archived", "active": True},
+        ],
+        skills_for={},
+        columns_meta=cols,
+        buckets={},
+    )
+    odoo_sync.sync(force=True)
+    rows = db.query("SELECT active FROM people WHERE odoo_id IN (99100, 99101) ORDER BY odoo_id")
+    assert [r["active"] for r in rows] == [True, True]
+
+    # Second sync: only 99100 comes back. 99101 should flip to inactive.
+    _stub_client(
+        monkeypatch,
+        employees=[{"id": 99100, "name": "Still Active", "active": True}],
+        skills_for={},
+        columns_meta=cols,
+        buckets={},
+    )
+    odoo_sync.sync(force=True)
+    rows = db.query("SELECT odoo_id, active FROM people WHERE odoo_id IN (99100, 99101) ORDER BY odoo_id")
+    by_id = {r["odoo_id"]: r["active"] for r in rows}
+    assert by_id[99100] is True
+    assert by_id[99101] is False, "archived-in-Odoo person must be deactivated locally"
+
+
+def test_sync_deactivation_skips_when_no_employees_returned(monkeypatch):
+    """Defensive: if Odoo returns an empty employee list (likely an
+    upstream bug, not a real mass-archive), we must NOT wipe out every
+    local active flag. The deactivation step is gated on at least one
+    employee in the response."""
+    from datetime import datetime, timezone
+    from zira_dashboard import db
+
+    db.execute(
+        "INSERT INTO people (odoo_id, name, active, last_pulled_at) "
+        "VALUES (%s, %s, TRUE, %s) "
+        "ON CONFLICT (odoo_id) DO UPDATE SET active = EXCLUDED.active",
+        (99200, "Should Stay Active", datetime.now(timezone.utc)),
+    )
+    cols = [{"name": "TestRepair", "type": "skill"}]
+    _stub_client(
+        monkeypatch,
+        employees=[],
+        skills_for={},
+        columns_meta=cols,
+        buckets={},
+    )
+    odoo_sync.sync(force=True)
+    rows = db.query("SELECT active FROM people WHERE odoo_id = %s", (99200,))
+    assert rows[0]["active"] is True, "empty Odoo response must not deactivate existing people"
+
+    # Cleanup.
+    db.execute("DELETE FROM people WHERE odoo_id = %s", (99200,))

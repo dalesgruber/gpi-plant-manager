@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-13
+
+### 7:39 AM
+
+- **Archived-in-Odoo people now auto-drop from the scheduler** — Isaac Miller (and any other employee you archive in Odoo) used to keep `people.active = TRUE` locally forever because the sync only upserted what Odoo returned and never marked the disappeared rows inactive. Two fixes: (1) the Odoo sync now flips `active = FALSE` for any local person whose `odoo_id` is missing from the response (guarded so an empty response doesn't wipe everyone out); (2) `late_report.absences_for_day` / `absences_for_range` / `late_arrivals_for_day` now LEFT JOIN `people` and skip rows whose person is archived or roster-filter-excluded, so even a stale `manual_absences` record from before the archive stops surfacing as "Absent". The historical row is preserved in Postgres for audit.
+
 ## 2026-05-12
 
 ### 3:35 PM

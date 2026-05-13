@@ -116,6 +116,19 @@ def sync(force: bool = False) -> SyncResult:
                 "active = EXCLUDED.active, last_pulled_at = EXCLUDED.last_pulled_at",
                 (emp["id"], _short_name(emp["name"]), bool(emp.get("active", True)), pulled_at),
             )
+        # Deactivate Odoo-mapped people who disappeared from the response —
+        # i.e., archived (or deleted) in Odoo. fetch_employees() searches
+        # with active=True so this set covers both cases. Guard against
+        # an unexpectedly empty response (we'd never want to deactivate
+        # everyone) by skipping when no employees came back at all.
+        if seen_employee_ids:
+            cur.execute(
+                "UPDATE people SET active = FALSE, last_pulled_at = %s "
+                "WHERE odoo_id IS NOT NULL "
+                "AND odoo_id != ALL(%s) "
+                "AND active = TRUE",
+                (pulled_at, list(seen_employee_ids)),
+            )
         # Refresh person_skills: for each employee, replace their skill levels
         # with the Odoo set. We use DELETE + INSERT inside one transaction so
         # a person who lost a skill in Odoo also drops it locally.

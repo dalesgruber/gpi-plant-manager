@@ -40,9 +40,18 @@ def undo_absent(day, emp_id: str) -> None:
 
 
 def absences_for_day(day) -> list[dict]:
-    """Return list of {emp_id, name, declared_at} for declared absences."""
+    """Return list of {emp_id, name, declared_at} for declared absences.
+
+    Drops absences whose person is now archived in Odoo (people.active =
+    FALSE) or roster-filter-excluded — they shouldn't appear on the
+    scheduler even though the manual_absences row persists for history.
+    """
     return db.query(
-        "SELECT emp_id, name, declared_at FROM manual_absences WHERE day = %s",
+        "SELECT m.emp_id, m.name, m.declared_at FROM manual_absences m "
+        "LEFT JOIN people p ON p.name = m.name "
+        "WHERE m.day = %s "
+        "  AND (p.active IS NULL OR p.active = TRUE) "
+        "  AND (p.excluded IS NULL OR p.excluded = FALSE)",
         (day,),
     )
 
@@ -229,10 +238,14 @@ def cleared_non_work_emp_ids_for_range(start_d, end_d) -> dict:
 
 
 def absences_for_range(start_d, end_d) -> dict:
-    """Bulk version of absences_for_day. {date: [{emp_id, name, declared_at}, ...]}."""
+    """Bulk version of absences_for_day. {date: [{emp_id, name, declared_at}, ...]}.
+    Same active/excluded filter as absences_for_day."""
     rows = db.query(
-        "SELECT day, emp_id, name, declared_at FROM manual_absences "
-        "WHERE day BETWEEN %s AND %s",
+        "SELECT m.day, m.emp_id, m.name, m.declared_at FROM manual_absences m "
+        "LEFT JOIN people p ON p.name = m.name "
+        "WHERE m.day BETWEEN %s AND %s "
+        "  AND (p.active IS NULL OR p.active = TRUE) "
+        "  AND (p.excluded IS NULL OR p.excluded = FALSE)",
         (start_d, end_d),
     )
     out: dict = {}
@@ -400,9 +413,14 @@ def save_late_arrival(day, emp_id: str, name: str, reason: str | None = None) ->
 def late_arrivals_for_day(day) -> set[str]:
     """Set of emp_ids that already have a late-arrival record for `day`.
     Used by /api/late-report to suppress 'needs reason' rows once
-    they've been handled."""
+    they've been handled. Drops archived/excluded people the same way
+    absences_for_day does."""
     rows = db.query(
-        "SELECT emp_id FROM late_arrivals WHERE day = %s",
+        "SELECT la.emp_id FROM late_arrivals la "
+        "LEFT JOIN people p ON p.name = la.name "
+        "WHERE la.day = %s "
+        "  AND (p.active IS NULL OR p.active = TRUE) "
+        "  AND (p.excluded IS NULL OR p.excluded = FALSE)",
         (day,),
     )
     return {r["emp_id"] for r in rows}
