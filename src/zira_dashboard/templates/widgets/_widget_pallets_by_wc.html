@@ -1,0 +1,43 @@
+{# Pallets-by-WC bar chart. Expects:
+   data = {items: [{name, units, expected, pct, target_pct, full_day_target}, ...], total_u, total_e}
+   visual = {color, sort, number_position}
+#}
+<div class="grid-stack-item-content">
+  <h3>{{ placement_title or 'Pallets by Work Center' }}</h3>
+  <div class="pallets-by-wc">
+    {% if data.items %}
+      {% set numpos = visual.number_position or 'widget' %}
+      {% set sort = visual.sort or 'preset' %}
+      {% set fill_color = visual.color or 'var(--accent)' %}
+      {% set sorted_items = data.items %}
+      {% if sort == 'desc' %}
+        {% set sorted_items = data.items | sort(attribute='units', reverse=True) %}
+      {% elif sort == 'asc' %}
+        {% set sorted_items = data.items | sort(attribute='units') %}
+      {% elif sort == 'alpha' %}
+        {% set sorted_items = data.items | sort(attribute='name') %}
+      {% endif %}
+      {% for b in sorted_items %}
+        <div class="bar-row numpos-{{ numpos }}"
+             title="{{ b.name }} — {{ b.units }} / {{ b.expected }} expected">
+          <div class="name"><span class="name-primary">{{ b.name }}</span></div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: {{ b.pct }}%; background: {{ fill_color }}">
+              {% if numpos == 'inside' %}<span class="in">{{ b.units }}</span>{% endif %}
+              {% if numpos == 'bar' %}<span class="edge">{{ b.units }}</span>{% endif %}
+            </div>
+            {% if b.target_pct is not none %}
+              <div class="bar-target-line" style="left: {{ b.target_pct }}%"></div>
+            {% endif %}
+          </div>
+          {% if numpos == 'widget' %}
+            <div class="val">{{ b.units }}<span class="pct">/{{ b.expected }}</span></div>
+          {% endif %}
+        </div>
+      {% endfor %}
+      <div class="widget-total">Total <b>{{ data.total_u }}</b> / {{ data.total_e }}</div>
+    {% else %}
+      <div class="empty-state">No data yet — pick a group with active WCs.</div>
+    {% endif %}
+  </div>
+</div>

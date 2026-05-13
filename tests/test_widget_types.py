@@ -29,7 +29,6 @@ def test_resolver_names_resolve_to_real_functions():
         assert callable(fn), f"resolver {entry['resolver']} not found in widget_data"
 
 
-@pytest.mark.xfail(reason="partials are created in Task 5; this becomes a real assertion then")
 def test_partial_paths_point_to_existing_files():
     import os
     template_dir = os.path.join(
