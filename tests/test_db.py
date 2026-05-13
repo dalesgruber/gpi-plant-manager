@@ -129,3 +129,27 @@ def test_bootstrap_creates_tv_dashboard_templates_table():
     names = {r["column_name"] for r in cols}
     expected = {"id", "name", "layout_json", "theme", "created_at", "updated_at"}
     assert expected.issubset(names), f"missing columns: {expected - names}"
+
+
+def test_bootstrap_creates_tv_displays_table():
+    db.init_pool()
+    db.bootstrap_schema()
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = 'tv_displays'"
+    )
+    assert len(rows) == 1, "tv_displays table missing"
+    cols = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'tv_displays'"
+    )
+    names = {r["column_name"] for r in cols}
+    expected = {"id", "name", "slug", "kind", "wc_name", "theme", "sort_order", "created_at", "updated_at"}
+    assert expected.issubset(names), f"missing columns: {expected - names}"
+    # Slug must be UNIQUE
+    idx_rows = db.query(
+        "SELECT indexname, indexdef FROM pg_indexes "
+        "WHERE schemaname = 'public' AND tablename = 'tv_displays'"
+    )
+    assert any("slug" in r["indexdef"] and "UNIQUE" in r["indexdef"].upper() for r in idx_rows), \
+        "tv_displays.slug must be UNIQUE"

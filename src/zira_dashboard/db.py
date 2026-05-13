@@ -524,6 +524,24 @@ CREATE TABLE IF NOT EXISTS tv_dashboard_templates (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- TV display registry ---------------------------------------------------
+-- Each row is a TV mounted somewhere in the plant. Carries a friendly
+-- name, the dashboard it shows (kind + optional wc_name), and the theme
+-- (light/dark) for that physical display. The /tv/d/{slug} route looks
+-- up the row and dispatches to the underlying dashboard with the row's
+-- theme. Seed list of 10 rows inserts on first boot only.
+CREATE TABLE IF NOT EXISTS tv_displays (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  slug        TEXT NOT NULL UNIQUE,
+  kind        TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'wc')),
+  wc_name     TEXT,
+  theme       TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
