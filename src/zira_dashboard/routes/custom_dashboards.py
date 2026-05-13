@@ -224,3 +224,40 @@ async def post_layout(dashboard_id: int, request: Request):
             x=it.get("x"), y=it.get("y"), w=it.get("w"), h=it.get("h"),
         )
     return JSONResponse({"ok": True, "count": len(items)})
+
+
+@router.post("/api/pinned-dashboards")
+async def post_pinned_dashboard(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+    body = body or {}
+    kind = body.get("kind")
+    ref = body.get("ref")
+    pinned = body.get("pinned")
+    if kind not in ("vs_recycling", "vs_new", "wc", "custom"):
+        return JSONResponse({"ok": False, "error": "invalid kind"}, status_code=400)
+    if not isinstance(ref, str):
+        return JSONResponse({"ok": False, "error": "ref must be string"}, status_code=400)
+    if not isinstance(pinned, bool):
+        return JSONResponse({"ok": False, "error": "pinned must be bool"}, status_code=400)
+    if kind == "wc":
+        from .. import staffing
+        if not any(loc.name == ref for loc in staffing.LOCATIONS):
+            return JSONResponse(
+                {"ok": False, "error": f"unknown work center: {ref}"},
+                status_code=400,
+            )
+    if kind == "custom":
+        if custom_dashboards_store.get_dashboard(ref) is None:
+            return JSONResponse(
+                {"ok": False, "error": f"unknown custom dashboard slug: {ref}"},
+                status_code=400,
+            )
+    from .. import pinned_dashboards_store
+    if pinned:
+        pinned_dashboards_store.pin(kind, ref)
+    else:
+        pinned_dashboards_store.unpin(kind, ref)
+    return JSONResponse({"ok": True, "pinned": pinned})

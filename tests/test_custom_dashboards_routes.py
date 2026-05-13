@@ -183,3 +183,52 @@ def test_tv_view_404_for_unknown_slug():
     c = TestClient(app)
     r = c.get("/tv/dashboards/cdr-not-real")
     assert r.status_code == 404
+
+
+def test_post_pin_vs_recycling():
+    from zira_dashboard import pinned_dashboards_store, db
+    c = TestClient(app)
+    db.execute("DELETE FROM pinned_dashboards WHERE kind = 'vs_recycling' AND ref = ''")
+    r = c.post("/api/pinned-dashboards", json={
+        "kind": "vs_recycling", "ref": "", "pinned": True,
+    })
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert pinned_dashboards_store.is_pinned("vs_recycling", "") is True
+
+
+def test_post_unpin():
+    from zira_dashboard import pinned_dashboards_store
+    c = TestClient(app)
+    pinned_dashboards_store.pin("vs_new", "")
+    r = c.post("/api/pinned-dashboards", json={
+        "kind": "vs_new", "ref": "", "pinned": False,
+    })
+    assert r.status_code == 200
+    assert pinned_dashboards_store.is_pinned("vs_new", "") is False
+
+
+def test_post_pin_invalid_kind():
+    c = TestClient(app)
+    r = c.post("/api/pinned-dashboards", json={
+        "kind": "garbage", "ref": "x", "pinned": True,
+    })
+    assert r.status_code == 400
+
+
+def test_post_pin_wc_invalid_ref():
+    """Pinning a WC that isn't in staffing.LOCATIONS returns 400."""
+    c = TestClient(app)
+    r = c.post("/api/pinned-dashboards", json={
+        "kind": "wc", "ref": "NOT-A-REAL-WC-XYZ", "pinned": True,
+    })
+    assert r.status_code == 400
+
+
+def test_post_pin_custom_invalid_ref():
+    """Pinning a custom dashboard whose slug doesn't exist returns 400."""
+    c = TestClient(app)
+    r = c.post("/api/pinned-dashboards", json={
+        "kind": "custom", "ref": "nonexistent-slug-xyz", "pinned": True,
+    })
+    assert r.status_code == 400
