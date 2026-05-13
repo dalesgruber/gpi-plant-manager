@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-13
 
+### 10:39 AM
+
+- **Per-WC dashboard layout templates** — arrange Repair 1's six widgets once, then fan that arrangement out to every other WC with a click. New `tv_dashboard_templates` table stores named layout snapshots. The `/wc/{slug}` editor now has **Save as template…** and **Apply template…** popovers above the widget grid: pick a template, choose "this WC only" / "every WC in this group" / "every WC", click Apply. Underlying API: `POST /api/tv-templates` (save), `GET /api/tv-templates` (list), `DELETE /api/tv-templates/{id}`, `POST /api/tv-templates/{id}/apply` with `targets` accepting an explicit page list, `group:<name>`, or `"all"`. Theme is stored per template per the spec but theme propagation to target WCs waits for sub-project 4 (Settings panel + tv_displays table).
+
 ### 10:07 AM
 
 - **Per-work-center TV dashboards** — every WC can now have its own URL on a TV mounted at the workstation. Editor at `/wc/{slug}` (drag/resize the six widgets, layout auto-saves); TV view at `/tv/wc/{slug}` (read-only, no chrome, `?theme=light` for a bright-area TV, 60 s auto-refresh). Widgets: pallets banner (today's count vs prorated goal for THIS WC), daily progress chart (cumulative 15-min buckets), GOAT race (status pill + WC group's all-time GOAT pace), monthly ribbons (group's top-3 person-days), 15-min increments (color-coded green/amber/red), downtime report (events derived from active-interval gaps + total minutes). Header shows WC name top-left + assigned operator names top-right (only the people scheduled for THIS WC, not the whole group). Sub-project 2 of 4 in the TV-dashboards spec; layout templates + the Settings panel still to follow.
