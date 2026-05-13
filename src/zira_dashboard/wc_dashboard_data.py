@@ -82,12 +82,17 @@ def _shift_elapsed_fraction(day: date) -> float:
 
     For days other than today, returns 1.0 (full shift counted). For
     today before shift-start, returns 0.0.
+
+    "Today" is evaluated in SITE_TZ (America/Chicago), matching the
+    rest of the codebase. Using UTC would silently misreport the
+    banner + GOAT race during evening hours when UTC has already
+    rolled over to tomorrow.
     """
     from . import shift_config
-    today_utc = datetime.now(timezone.utc).date()
-    if day < today_utc:
+    today_local = datetime.now(shift_config.SITE_TZ).date()
+    if day < today_local:
         return 1.0
-    if day > today_utc:
+    if day > today_local:
         return 0.0
     elapsed = shift_config.shift_elapsed_minutes(day, datetime.now(timezone.utc))
     total = shift_config.productive_minutes_for(day) or 1
