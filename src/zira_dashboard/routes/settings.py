@@ -65,11 +65,13 @@ def settings_page(
     tv_displays_rows: list[dict] = []
     tv_templates_rows: list[dict] = []
     custom_dashboards_rows: list[dict] = []
+    all_dashboards_for_picker: list[dict] = []
     if section == "tvs":
-        from .. import tv_displays_store, tv_templates_store, custom_dashboards_store
+        from .. import tv_displays_store, tv_templates_store, custom_dashboards_store, dashboard_catalog
         tv_displays_rows = tv_displays_store.list_displays()
         tv_templates_rows = tv_templates_store.list_templates()
         custom_dashboards_rows = custom_dashboards_store.list_dashboards()
+        all_dashboards_for_picker = dashboard_catalog.all_dashboards()
     from .. import odoo_sync
     # TTL-checked sync so /settings self-heals after a Railway redeploy
     # where the ephemeral roster.json got reset to the legacy seed.
@@ -180,6 +182,7 @@ def settings_page(
             "tv_displays_rows": tv_displays_rows,
             "tv_templates_rows": tv_templates_rows,
             "custom_dashboards_rows": custom_dashboards_rows,
+            "all_dashboards_for_picker": all_dashboards_for_picker,
             "wc_locations_for_picker": [{"name": loc.name} for loc in staffing.LOCATIONS],
         },
     )
