@@ -170,18 +170,92 @@ def _resolve_pallets_banner(params: dict, day: date) -> dict:
 
 
 def _resolve_daily_progress(params: dict, day: date) -> dict:
-    """Per-15-min bar chart with target-based color (green/amber/red).
+    """15-min progress chart aggregated across a set of WCs. Same data
+    shape as /recycling's `progress_chart` macro consumes:
+      {buckets: [{label, actual, target, in_progress}, ...], bucket_target}
 
-    Wraps `wc_dashboard_data.fifteen_min_increments`. Returns
-    {buckets: [...], target}.
+    Accepts wcs + groups + legacy single wc_name (back-compat).
     """
-    from . import wc_dashboard_data
-    wc_name = (params or {}).get("wc_name")
-    if not wc_name:
-        return {"buckets": [], "target": 0}
-    buckets = wc_dashboard_data.fifteen_min_increments(wc_name, day) or []
-    target = buckets[0]["target"] if buckets else 0
-    return {"buckets": buckets, "target": target}
+    from datetime import datetime, timedelta
+    from . import shift_config, wc_dashboard_data, work_centers_store
+
+    params = params or {}
+    wc_set: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str):
+        if name and name not in seen:
+            seen.add(name)
+            wc_set.append(name)
+
+    for n in (params.get("wcs") or []):
+        if isinstance(n, str):
+            _add(n)
+    for g in (params.get("groups") or []):
+        if not isinstance(g, str):
+            continue
+        for loc in work_centers_store.members("group", g) or []:
+            _add(loc.name)
+    legacy = params.get("wc_name")
+    if isinstance(legacy, str) and legacy:
+        _add(legacy)
+
+    if not wc_set:
+        return {"buckets": [], "bucket_target": 0}
+
+    # Current elapsed shift minutes — used to flag the in-progress bucket.
+    try:
+        full_minutes = shift_config.productive_minutes_per_day()
+    except Exception:
+        full_minutes = 480
+    elapsed = int(full_minutes * _elapsed_fraction(day))
+
+    # Sum per-bucket {units, target} across all WCs in scope.
+    agg: dict[int, dict] = {}
+    for name in wc_set:
+        per_bucket = wc_dashboard_data.fifteen_min_increments(name, day) or []
+        for b in per_bucket:
+            idx = b["bucket_index"]
+            entry = agg.setdefault(idx, {
+                "bucket_index": idx,
+                "minute_offset": b["minute_offset"],
+                "actual": 0,
+                "target": 0,
+            })
+            entry["actual"] += int(b.get("units") or 0)
+            entry["target"] += int(b.get("target") or 0)
+
+    if not agg:
+        return {"buckets": [], "bucket_target": 0}
+
+    try:
+        shift_start = shift_config.shift_start_for(day)
+    except Exception:
+        shift_start = None
+
+    buckets = []
+    for idx in sorted(agg):
+        b = agg[idx]
+        if shift_start is not None:
+            bucket_dt = datetime.combine(day, shift_start) + timedelta(minutes=b["minute_offset"])
+            hour = bucket_dt.hour
+            am_pm = "a" if hour < 12 else "p"
+            hour_12 = hour % 12 or 12
+            label = f"{hour_12}:{bucket_dt.minute:02d}{am_pm}"
+        else:
+            label = f"+{b['minute_offset']}m"
+        in_progress = b["minute_offset"] <= elapsed < b["minute_offset"] + 15
+        buckets.append({
+            "label": label,
+            "actual": b["actual"],
+            "target": b["target"],
+            "in_progress": in_progress,
+        })
+
+    # bucket_target = first non-zero target (they're all equal across the
+    # day for a fixed WC count; the legend just needs a single number).
+    bucket_target = next((b["target"] for b in buckets if b["target"]), 0)
+    return {"buckets": buckets, "bucket_target": bucket_target}
 
 
 def _resolve_cumulative(params: dict, day: date) -> dict:
@@ -231,13 +305,60 @@ def _resolve_kpi(params: dict, day: date) -> dict:
 
 
 def _resolve_downtime(params: dict, day: date) -> dict:
-    """Downtime report — list of gap events + total minutes.
+    """Per-WC downtime — working vs down minutes as stacked bars.
 
-    Wraps `wc_dashboard_data.downtime_report`. Returns the same shape:
-    {events: [{time, duration_minutes}, ...], total_minutes}.
+    Same data shape as /recycling's downtime widget:
+      {rows: [{name, working, down, working_pct, down_pct}, ...], total_elapsed}
+
+    Accepts wcs + groups + legacy single wc_name (back-compat).
     """
-    from . import wc_dashboard_data
-    wc_name = (params or {}).get("wc_name")
-    if not wc_name:
-        return {"events": [], "total_minutes": 0}
-    return wc_dashboard_data.downtime_report(wc_name, day) or {"events": [], "total_minutes": 0}
+    from . import shift_config, staffing, wc_dashboard_data, work_centers_store
+
+    params = params or {}
+    wc_set: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str):
+        if name and name not in seen:
+            seen.add(name)
+            wc_set.append(name)
+
+    for n in (params.get("wcs") or []):
+        if isinstance(n, str):
+            _add(n)
+    for g in (params.get("groups") or []):
+        if not isinstance(g, str):
+            continue
+        for loc in work_centers_store.members("group", g) or []:
+            _add(loc.name)
+    # Legacy single-WC back-compat with previously saved presets.
+    legacy = params.get("wc_name")
+    if isinstance(legacy, str) and legacy:
+        _add(legacy)
+
+    if not wc_set:
+        return {"rows": [], "total_elapsed": 0}
+
+    # Total elapsed shift minutes today — matches /recycling's per-day
+    # elapsed_minutes calculation.
+    try:
+        full_minutes = shift_config.productive_minutes_per_day()
+    except Exception:
+        full_minutes = 480  # safe fallback (8 h)
+    frac = _elapsed_fraction(day)
+    total_elapsed = int(full_minutes * frac)
+
+    rows = []
+    for name in wc_set:
+        report = wc_dashboard_data.downtime_report(name, day) or {}
+        down = int(report.get("total_minutes", 0))
+        working = max(0, total_elapsed - down)
+        denom = total_elapsed if total_elapsed else 1
+        rows.append({
+            "name": name,
+            "working": working,
+            "down": down,
+            "working_pct": working / denom * 100.0,
+            "down_pct": down / denom * 100.0,
+        })
+    return {"rows": rows, "total_elapsed": total_elapsed}

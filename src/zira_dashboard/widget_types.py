@@ -85,12 +85,16 @@ _REGISTRY: list[dict] = [
     },
     {
         "type": "daily_progress",
-        "label": "Daily Progress (15-min bars)",
+        "label": "15-min Progress",
         "data_params_schema": [
-            {"key": "wc_name", "label": "Work Center", "input": "select",
-             "options_from": "wcs", "required": True},
+            {"key": "wcs", "label": "Work Centers", "input": "multiselect",
+             "options_from": "wcs"},
+            {"key": "groups", "label": "Groups", "input": "multiselect",
+             "options_from": "groups"},
         ],
-        "visual_params_schema": [],
+        "visual_params_schema": [
+            {"key": "color", "label": "Hit color", "input": "color", "default": "#22c55e"},
+        ],
         "resolver": "_resolve_daily_progress",
         "partial": "widgets/_widget_daily_progress.html",
     },
@@ -137,10 +141,14 @@ _REGISTRY: list[dict] = [
         "type": "downtime",
         "label": "Downtime Report",
         "data_params_schema": [
-            {"key": "wc_name", "label": "Work Center", "input": "select",
-             "options_from": "wcs", "required": True},
+            {"key": "wcs", "label": "Work Centers", "input": "multiselect",
+             "options_from": "wcs"},
+            {"key": "groups", "label": "Groups", "input": "multiselect",
+             "options_from": "groups"},
         ],
-        "visual_params_schema": [],
+        "visual_params_schema": [
+            {"key": "color", "label": "Working color", "input": "color", "default": "#22c55e"},
+        ],
         "resolver": "_resolve_downtime",
         "partial": "widgets/_widget_downtime.html",
     },

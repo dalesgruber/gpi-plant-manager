@@ -201,26 +201,45 @@ def test_resolve_pallets_banner_missing_wc_returns_empty():
     assert out["pct_of_target"] is None
 
 
-def test_resolve_daily_progress_returns_buckets(monkeypatch):
-    from zira_dashboard import widget_data, wc_dashboard_data
+def test_resolve_daily_progress_aggregates_buckets(monkeypatch):
+    from zira_dashboard import widget_data, wc_dashboard_data, work_centers_store, shift_config
+    from datetime import time
 
     monkeypatch.setattr(
         wc_dashboard_data, "fifteen_min_increments",
-        lambda wc, d: [
-            {"bucket_index": 0, "minute_offset": 0, "units": 5, "color": "green", "target": 4},
-            {"bucket_index": 1, "minute_offset": 15, "units": 2, "color": "red", "target": 4},
-        ] if wc == "Repair 1" else [],
+        lambda wc, d: {
+            "Repair 1": [
+                {"bucket_index": 0, "minute_offset": 0, "units": 5, "target": 4},
+                {"bucket_index": 1, "minute_offset": 15, "units": 2, "target": 4},
+            ],
+            "Repair 2": [
+                {"bucket_index": 0, "minute_offset": 0, "units": 3, "target": 4},
+                {"bucket_index": 1, "minute_offset": 15, "units": 1, "target": 4},
+            ],
+        }.get(wc, []),
     )
-    out = widget_data._resolve_daily_progress({"wc_name": "Repair 1"}, day=date(2026, 5, 13))
+    monkeypatch.setattr(work_centers_store, "members", lambda kind, name: [])
+    monkeypatch.setattr(shift_config, "productive_minutes_per_day", lambda: 480)
+    monkeypatch.setattr(shift_config, "shift_start_for", lambda d: time(7, 0))
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.0)
+
+    out = widget_data._resolve_daily_progress(
+        {"wcs": ["Repair 1", "Repair 2"]}, day=date(2026, 5, 13),
+    )
     assert len(out["buckets"]) == 2
-    assert out["target"] == 4
-    assert out["buckets"][0]["color"] == "green"
+    # Bucket 0 actual = 5 + 3 = 8, target = 4 + 4 = 8
+    assert out["buckets"][0]["actual"] == 8
+    assert out["buckets"][0]["target"] == 8
+    # Bucket 1 actual = 2 + 1 = 3
+    assert out["buckets"][1]["actual"] == 3
+    assert out["buckets"][0]["label"] == "7:00a"
+    assert out["buckets"][1]["label"] == "7:15a"
 
 
-def test_resolve_daily_progress_missing_wc_returns_empty():
+def test_resolve_daily_progress_missing_scope_returns_empty():
     from zira_dashboard import widget_data
     out = widget_data._resolve_daily_progress({}, day=date(2026, 5, 13))
-    assert out == {"buckets": [], "target": 0}
+    assert out == {"buckets": [], "bucket_target": 0}
 
 
 def test_resolve_cumulative_combines_points_and_target(monkeypatch):
@@ -293,22 +312,50 @@ def test_resolve_kpi_unknown_metric_returns_placeholder():
     assert "garbage" in out["label"]
 
 
-def test_resolve_downtime_delegates(monkeypatch):
-    from zira_dashboard import widget_data, wc_dashboard_data
+def test_resolve_downtime_returns_per_wc_rows(monkeypatch):
+    from zira_dashboard import widget_data, wc_dashboard_data, work_centers_store, shift_config
+
     monkeypatch.setattr(
         wc_dashboard_data, "downtime_report",
         lambda wc, d: {
-            "events": [{"time": "9:42a", "duration_minutes": 7}],
-            "total_minutes": 17,
-        } if wc == "Repair 1" else None,
+            "Repair 1": {"total_minutes": 20, "events": []},
+            "Repair 2": {"total_minutes": 5, "events": []},
+        }.get(wc, {"total_minutes": 0, "events": []}),
     )
+    monkeypatch.setattr(work_centers_store, "members", lambda kind, name: [])
+    monkeypatch.setattr(shift_config, "productive_minutes_per_day", lambda: 480)
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.5)
+    # total_elapsed = 480 * 0.5 = 240
+
+    out = widget_data._resolve_downtime(
+        {"wcs": ["Repair 1", "Repair 2"]}, day=date(2026, 5, 13),
+    )
+    assert out["total_elapsed"] == 240
+    rows = {r["name"]: r for r in out["rows"]}
+    assert rows["Repair 1"]["down"] == 20
+    assert rows["Repair 1"]["working"] == 220
+    # 220 / 240 * 100 ≈ 91.67
+    assert abs(rows["Repair 1"]["working_pct"] - (220 / 240 * 100.0)) < 0.01
+
+
+def test_resolve_downtime_legacy_wc_name(monkeypatch):
+    """Old shape: {wc_name: 'Repair 1'} kept for back-compat."""
+    from zira_dashboard import widget_data, wc_dashboard_data, work_centers_store, shift_config
+
+    monkeypatch.setattr(
+        wc_dashboard_data, "downtime_report",
+        lambda wc, d: {"total_minutes": 10, "events": []},
+    )
+    monkeypatch.setattr(work_centers_store, "members", lambda kind, name: [])
+    monkeypatch.setattr(shift_config, "productive_minutes_per_day", lambda: 480)
+    monkeypatch.setattr(widget_data, "_elapsed_fraction", lambda day: 0.5)
+
     out = widget_data._resolve_downtime({"wc_name": "Repair 1"}, day=date(2026, 5, 13))
-    assert out["total_minutes"] == 17
-    assert len(out["events"]) == 1
-    assert out["events"][0]["duration_minutes"] == 7
+    assert len(out["rows"]) == 1
+    assert out["rows"][0]["name"] == "Repair 1"
 
 
-def test_resolve_downtime_missing_wc_returns_empty():
+def test_resolve_downtime_missing_scope_returns_empty():
     from zira_dashboard import widget_data
     out = widget_data._resolve_downtime({}, day=date(2026, 5, 13))
-    assert out == {"events": [], "total_minutes": 0}
+    assert out == {"rows": [], "total_elapsed": 0}
