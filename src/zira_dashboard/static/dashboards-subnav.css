@@ -1,0 +1,37 @@
+.dash-subnav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--border, #d8dee5);
+  background: var(--panel, #fff);
+  align-items: center;
+}
+.dash-subnav .pinned-tabs {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  min-width: 0;
+}
+.dash-subnav .meta-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+}
+.dash-subnav .subnav-item {
+  color: var(--muted, #6b7280);
+  text-decoration: none;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.dash-subnav .subnav-item.active {
+  color: var(--accent, #16a34a);
+  background: var(--accent-dim, #dcfce7);
+  font-weight: 600;
+}
+.dash-subnav .subnav-item:hover:not(.active) {
+  color: var(--fg, #1f2937);
+}
