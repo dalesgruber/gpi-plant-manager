@@ -1,0 +1,169 @@
+{# Per-WC dashboard. Two routes share this template:
+   - /wc/{slug}        editor view (gridstack enabled, edit buttons visible)
+   - /tv/wc/{slug}     TV view (read-only, no chrome, theme = data-tv-theme on <html>)
+#}
+{% from "_tv_header.html" import tv_header %}
+{% from "_goat_badges.html" import goat_badges, goat_badges_css, hover_tip_clamp_script %}
+<!doctype html>
+<html lang="en"{% if tv_mode %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/static/gpi-logo.png">
+<title>{% if tv_mode %}TV · {% endif %}{{ wc_name }} — GPI Plant Manager</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+<link rel="stylesheet" href="/static/wc_dashboard.css?v={{ static_v('wc_dashboard.css') }}">
+{% if tv_mode %}
+<link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
+<meta http-equiv="refresh" content="60">
+{% endif %}
+<style>{{ goat_badges_css() }}</style>
+</head>
+<body>
+{{ tv_header(
+    wc_name,
+    crumb="WORK CENTER · " + (wc_group or "")|upper,
+    right=operators_display or "(unassigned)",
+) }}
+
+<main>
+<div class="grid-stack">
+
+  {# Pallets banner — full width #}
+  <div class="grid-stack-item" gs-id="wc-pallets-banner" gs-x="0" gs-y="0" gs-w="12" gs-h="2">
+    <div class="grid-stack-item-content">
+      <h3>Today · Pallets</h3>
+      <div class="pallets-banner">
+        <div class="pallets-numbers">
+          <span class="units">{{ pallets.units_today }}</span>
+          <span class="target">/ {{ pallets.target_today }} goal so far ({{ pallets.target_full_day }} full day)</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ (pallets.pct_of_target|float)|round(0)|int if pallets.pct_of_target else 0 }}%"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Daily progress chart #}
+  <div class="grid-stack-item" gs-id="wc-daily-progress" gs-x="0" gs-y="2" gs-w="6" gs-h="4">
+    <div class="grid-stack-item-content">
+      <h3>Daily Progress</h3>
+      <svg class="daily-progress-chart" viewBox="0 0 200 80" preserveAspectRatio="none">
+        {%- set max_y = pallets.target_full_day or 1 -%}
+        {%- set n = daily_progress|length or 1 -%}
+        {%- set pts = [] -%}
+        {%- for p in daily_progress -%}
+          {%- set _ = pts.append("%.1f,%.1f"|format(loop.index0 / (n-1 if n>1 else 1) * 200, 80 - (p.cumulative_units / max_y) * 80 if max_y else 80)) -%}
+        {%- endfor -%}
+        <polyline fill="none" stroke="var(--accent)" stroke-width="1.5" points="{{ pts|join(' ') }}"/>
+        <line x1="0" y1="0" x2="200" y2="0" stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="0.5"/>
+        <text x="2" y="6" fill="var(--muted)" font-size="6">goal {{ max_y }}</text>
+      </svg>
+    </div>
+  </div>
+
+  {# GOAT race widget #}
+  <div class="grid-stack-item" gs-id="wc-goat-race" gs-x="6" gs-y="2" gs-w="3" gs-h="4">
+    <div class="grid-stack-item-content">
+      <h3>Vs. GOAT Pace</h3>
+      <div class="goat-race">
+        {% if goat_race.status %}
+          <div class="status-pill status-{{ goat_race.status|lower }}">{{ goat_race.status|replace('_', ' ') }}</div>
+        {% else %}
+          <div class="status-pill status-none">no record yet</div>
+        {% endif %}
+        <div class="race-stats">
+          <div>Today: <b>{{ goat_race.units_today }}</b></div>
+          <div>GOAT pace now: <b>{{ goat_race.goat_pace_today|round(0)|int }}</b></div>
+          {% if goat_race.goat %}
+            <div class="goat-meta">
+              🐐 {{ goat_race.goat.name }} · {{ goat_race.goat.units }} on {{ goat_race.goat.day }}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Monthly ribbons #}
+  <div class="grid-stack-item" gs-id="wc-monthly-ribbons" gs-x="9" gs-y="2" gs-w="3" gs-h="4">
+    <div class="grid-stack-item-content">
+      <h3>{{ month_name(month) }} {{ year }} · {{ ribbons.group or 'Ribbons' }}</h3>
+      <ul class="ribbons-list">
+        {% for r in ribbons.entries %}
+          <li>
+            <span class="medal">{% if r.position == 1 %}🥇{% elif r.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+            <span class="name"><a href="/staffing/people/{{ r.name|urlencode }}">{{ r.name }}</a></span>
+            <span class="units">{{ r.units|round(0)|int }}</span>
+          </li>
+        {% else %}
+          <li class="empty">no qualifying days yet</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  {# 15-min increments #}
+  <div class="grid-stack-item" gs-id="wc-15min-increments" gs-x="0" gs-y="6" gs-w="8" gs-h="3">
+    <div class="grid-stack-item-content">
+      <h3>15-min Increments</h3>
+      <div class="fifteen-min-bars">
+        {% for b in fifteen_min %}
+          <div class="bar bar-{{ b.color }}"
+               style="--units: {{ b.units }}; --target: {{ b.target }};"
+               title="{{ b.units }} units · target {{ b.target }}"></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {# Downtime report #}
+  <div class="grid-stack-item" gs-id="wc-downtime-report" gs-x="8" gs-y="6" gs-w="4" gs-h="3">
+    <div class="grid-stack-item-content">
+      <h3>Downtime · {{ downtime.total_minutes }}m total</h3>
+      <ul class="downtime-list">
+        {% for e in downtime.events %}
+          <li>
+            <span class="time">{{ e.time }}</span>
+            <span class="duration">{{ e.duration_minutes }}m</span>
+          </li>
+        {% else %}
+          <li class="empty">no downtime</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+</div>{# /.grid-stack #}
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script>
+  const grid = GridStack.init({
+    column: 12,
+    cellHeight: 80,
+    margin: 8,
+    float: false,
+  });
+{% if tv_mode %}
+  grid.disable();
+{% else %}
+  // Autosave layout on drag/resize end.
+  function persistLayout() {
+    const items = grid.save(false).map(it => ({
+      id: it.id,
+      x: it.x, y: it.y, w: it.w, h: it.h,
+    })).filter(it => it.id);
+    fetch('/api/layout/{{ layout_key }}', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(items),
+    });
+  }
+  grid.on('change', persistLayout);
+{% endif %}
+</script>
+{{ hover_tip_clamp_script() }}
+</body>
+</html>

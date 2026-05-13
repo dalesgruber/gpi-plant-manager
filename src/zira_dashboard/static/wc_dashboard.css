@@ -1,0 +1,49 @@
+/* Per-WC dashboard layout (screen + TV variants share the same file). */
+body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: var(--bg, #f1f4f7); color: var(--fg, #1f2937); }
+main { padding: 12px 16px; }
+.grid-stack-item-content {
+  background: var(--panel, #fff);
+  border: 1px solid var(--border, #d8dee5);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+.grid-stack-item-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted, #6b7280);
+}
+.pallets-banner .units { font-size: 2.4rem; font-weight: 800; color: var(--accent, #16a34a); }
+.pallets-banner .target { font-size: 0.9rem; color: var(--muted); margin-left: 6px; }
+.pallets-banner .bar-track { height: 14px; background: var(--panel-2, #e3e8ee); border-radius: 7px; overflow: hidden; margin-top: 6px; }
+.pallets-banner .bar-fill { height: 100%; background: var(--accent, #16a34a); }
+.daily-progress-chart { width: 100%; height: 100%; }
+.goat-race .status-pill { display: inline-block; padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 800; letter-spacing: 1px; }
+.goat-race .status-pill.status-ahead, .goat-race .status-pill.status-on_pace { background: var(--accent-dim, #dcfce7); color: var(--accent, #16a34a); }
+.goat-race .status-pill.status-behind { background: var(--bad-dim, #fee2e2); color: var(--bad, #ef4444); }
+.goat-race .status-pill.status-none { background: var(--panel-2, #e3e8ee); color: var(--muted); }
+.goat-race .race-stats { margin-top: 8px; font-size: 0.9rem; line-height: 1.5; }
+.goat-race .goat-meta { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+.ribbons-list { list-style: none; padding: 0; margin: 0; }
+.ribbons-list li { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.ribbons-list li.empty { color: var(--muted); font-style: italic; }
+.ribbons-list .medal { font-size: 1.1rem; }
+.ribbons-list .name { flex: 1; font-weight: 600; }
+.ribbons-list .name a { color: inherit; text-decoration: none; }
+.ribbons-list .units { font-weight: 700; }
+.fifteen-min-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(8px, 1fr)); gap: 2px; align-items: end; height: calc(100% - 30px); }
+.fifteen-min-bars .bar { height: calc(var(--units) / max(var(--target), 1) * 100%); min-height: 4px; border-radius: 2px; }
+.fifteen-min-bars .bar-green { background: var(--accent, #16a34a); }
+.fifteen-min-bars .bar-amber { background: var(--warn, #f59e0b); }
+.fifteen-min-bars .bar-red { background: var(--bad, #ef4444); }
+.fifteen-min-bars .bar-neutral { background: var(--panel-3, #cbd5e1); }
+.downtime-list { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
+.downtime-list li { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--border, #e3e8ee); }
+.downtime-list li:last-child { border-bottom: none; }
+.downtime-list li.empty { color: var(--muted); font-style: italic; }
+.downtime-list .time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.downtime-list .reason { flex: 1; }
+.downtime-list .duration { font-weight: 700; color: var(--bad, #ef4444); }
