@@ -153,3 +153,69 @@ def test_bootstrap_creates_tv_displays_table():
     )
     assert any("slug" in r["indexdef"] and "UNIQUE" in r["indexdef"].upper() for r in idx_rows), \
         "tv_displays.slug must be UNIQUE"
+
+
+def test_bootstrap_creates_widget_workshop_tables():
+    db.init_pool()
+    db.bootstrap_schema()
+    rows = db.query(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name IN "
+        "('widget_definitions', 'custom_dashboards', 'dashboard_widgets')"
+    )
+    names = {r["table_name"] for r in rows}
+    assert names == {"widget_definitions", "custom_dashboards", "dashboard_widgets"}, \
+        f"missing tables: {names}"
+
+
+def test_widget_definitions_columns():
+    db.init_pool()
+    db.bootstrap_schema()
+    cols = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'widget_definitions'"
+    )
+    names = {r["column_name"] for r in cols}
+    expected = {"id", "name", "type", "visual_json", "default_data_json", "created_at", "updated_at"}
+    assert expected.issubset(names), f"missing columns: {expected - names}"
+
+
+def test_custom_dashboards_columns_and_slug_unique():
+    db.init_pool()
+    db.bootstrap_schema()
+    cols = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'custom_dashboards'"
+    )
+    names = {r["column_name"] for r in cols}
+    expected = {"id", "name", "slug", "scope_kind", "scope_value", "theme",
+                "sort_order", "created_at", "updated_at"}
+    assert expected.issubset(names), f"missing columns: {expected - names}"
+    idx_rows = db.query(
+        "SELECT indexdef FROM pg_indexes "
+        "WHERE schemaname = 'public' AND tablename = 'custom_dashboards'"
+    )
+    assert any("slug" in r["indexdef"] and "UNIQUE" in r["indexdef"].upper() for r in idx_rows), \
+        "custom_dashboards.slug must be UNIQUE"
+
+
+def test_dashboard_widgets_columns_and_fks():
+    db.init_pool()
+    db.bootstrap_schema()
+    cols = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'dashboard_widgets'"
+    )
+    names = {r["column_name"] for r in cols}
+    expected = {"id", "dashboard_id", "widget_def_id", "x", "y", "w", "h",
+                "data_overrides_json", "sort_order", "created_at"}
+    assert expected.issubset(names), f"missing columns: {expected - names}"
+    fks = db.query(
+        "SELECT constraint_name, delete_rule "
+        "FROM information_schema.referential_constraints "
+        "WHERE constraint_schema = 'public' "
+        "  AND constraint_name LIKE 'dashboard_widgets%'"
+    )
+    rules = {f["delete_rule"] for f in fks}
+    assert "CASCADE" in rules, "dashboard_widgets.dashboard_id should ON DELETE CASCADE"
+    assert "RESTRICT" in rules, "dashboard_widgets.widget_def_id should ON DELETE RESTRICT"

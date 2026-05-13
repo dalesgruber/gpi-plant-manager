@@ -542,6 +542,52 @@ CREATE TABLE IF NOT EXISTS tv_displays (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Widget Workshop & Custom Dashboards (sub-project 5, phase 1) ---------
+-- widget_definitions: named presets — type + visual config + default data scope.
+CREATE TABLE IF NOT EXISTS widget_definitions (
+  id                SERIAL PRIMARY KEY,
+  name              TEXT NOT NULL,
+  type              TEXT NOT NULL,
+  visual_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  default_data_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_widget_definitions_type ON widget_definitions (type);
+
+-- custom_dashboards: user-built dashboards. scope drives the TV header.
+CREATE TABLE IF NOT EXISTS custom_dashboards (
+  id          SERIAL PRIMARY KEY,
+  name        TEXT NOT NULL,
+  slug        TEXT NOT NULL UNIQUE,
+  scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('wc', 'group')),
+  scope_value TEXT NOT NULL,
+  theme       TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- dashboard_widgets: placements. Each row is one widget on one dashboard.
+-- ON DELETE CASCADE so deleting a dashboard sweeps its placements.
+-- ON DELETE RESTRICT so a referenced widget definition can't be deleted.
+CREATE TABLE IF NOT EXISTS dashboard_widgets (
+  id                  SERIAL PRIMARY KEY,
+  dashboard_id        INTEGER NOT NULL
+                        REFERENCES custom_dashboards(id) ON DELETE CASCADE,
+  widget_def_id       INTEGER NOT NULL
+                        REFERENCES widget_definitions(id) ON DELETE RESTRICT,
+  x                   INTEGER NOT NULL DEFAULT 0,
+  y                   INTEGER NOT NULL DEFAULT 0,
+  w                   INTEGER NOT NULL DEFAULT 4,
+  h                   INTEGER NOT NULL DEFAULT 4,
+  data_overrides_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sort_order          INTEGER NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard
+  ON dashboard_widgets (dashboard_id);
 """
 
 
