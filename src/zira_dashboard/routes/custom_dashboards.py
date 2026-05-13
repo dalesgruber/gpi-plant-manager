@@ -33,10 +33,15 @@ router = APIRouter()
 
 @router.get("/dashboards", response_class=HTMLResponse)
 def dashboards_index(request: Request):
+    from .. import dashboard_catalog
+    all_d = dashboard_catalog.all_dashboards()
+    builtin = [d for d in all_d if d["kind"] in ("vs_recycling", "vs_new", "wc")]
+    custom = [d for d in all_d if d["kind"] == "custom"]
     return templates.TemplateResponse(
         request, "dashboards.html",
         {
-            "dashboards": custom_dashboards_store.list_dashboards(),
+            "builtin_dashboards": builtin,
+            "custom_dashboards": custom,
             "wcs": _wc_options(),
             "groups": _group_options(),
             "pinned_dashboards": _pinned_for_subnav(),

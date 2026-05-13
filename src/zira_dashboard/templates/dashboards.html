@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
 <title>My Dashboards — GPI Plant Manager</title>
+<link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
 <style>
   :root {
     --bg: #f1f4f7; --panel: #ffffff; --panel-2: #f1f4f7;
@@ -13,53 +14,78 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); }
-  header { padding: 0.9rem 1.25rem; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; }
-  h1 { margin: 0; font-size: 1.1rem; }
-  nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.6rem; border-radius: 6px; }
-  nav a.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+  header.app { padding: 0.9rem 1.25rem; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; }
+  header.app h1 { margin: 0; font-size: 1.1rem; }
+  header.app nav { display: flex; gap: 0.5rem; }
+  header.app nav a { color: var(--muted); text-decoration: none; font-size: 0.9rem; padding: 0.25rem 0.6rem; border-radius: 6px; }
   main { padding: 1rem; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1rem; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 1rem; }
+  h2.section { margin: 0 0 0.6rem; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
   table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.9rem; }
-  th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.6px; }
-  a.btn { color: var(--accent); text-decoration: none; padding: 0.2rem 0.55rem; border: 1px solid var(--accent); border-radius: 5px; font-size: 0.8rem; }
+  th, td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; font-size: 0.9rem; vertical-align: middle; }
+  th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px; }
+  tr:last-child td { border-bottom: none; }
+  .star { background: transparent; border: none; cursor: pointer; font-size: 1.1rem; color: var(--muted); padding: 0 0.3rem; }
+  .star.on { color: #f59e0b; }
+  a.btn { color: var(--accent); text-decoration: none; padding: 0.2rem 0.55rem; border: 1px solid var(--accent); border-radius: 5px; font-size: 0.8rem; margin-right: 0.3rem; }
   a.btn-tv { background: var(--accent); color: white; }
   button.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); border-radius: 5px; padding: 0.2rem 0.55rem; cursor: pointer; font-size: 0.8rem; }
-  .new-form { margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; }
+  .scope-label { color: var(--muted); font-size: 0.82rem; }
+  .new-form { margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center; }
   .new-form input, .new-form select { background: var(--panel-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.9rem; }
   .new-form .submit { background: var(--accent); color: white; border: 1px solid var(--accent); border-radius: 6px; padding: 0.35rem 0.9rem; font-weight: 700; cursor: pointer; }
 </style>
 </head>
 <body>
-<header>
-  <h1>My Dashboards</h1>
+<header class="app">
+  <h1>Plant Manager</h1>
   <nav>
     <a href="/recycling">Dashboards</a>
-    <a href="/widgets">Widgets</a>
-    <a href="/dashboards" class="active">My Dashboards</a>
     <a href="/trophies">Trophy Case</a>
     <a href="/staffing">Staffing</a>
     <a href="/settings">Settings</a>
   </nav>
 </header>
+{% include "_dashboards_subnav.html" %}
 <main>
   <section class="panel">
+    <h2 class="section">Built-in dashboards</h2>
     <table>
-      <thead><tr><th>Name</th><th>Scope</th><th>Widgets</th><th>Theme</th><th></th></tr></thead>
-      <tbody id="dash-body">
-        {% for d in dashboards %}
-          <tr data-id="{{ d.id }}">
-            <td><a href="/dashboards/{{ d.slug }}">{{ d.name }}</a></td>
-            <td>{{ d.scope_kind }}: {{ d.scope_value }}</td>
-            <td>{{ d.widget_count }}</td>
-            <td>{{ d.theme }}</td>
+      <thead><tr><th></th><th>Name</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for d in builtin_dashboards %}
+          <tr data-kind="{{ d.kind }}" data-ref="{{ d.ref }}">
+            <td><button type="button" class="star {% if d.pinned %}on{% endif %}" title="Pin to sub-nav">{% if d.pinned %}★{% else %}☆{% endif %}</button></td>
+            <td>{{ d.name }}</td>
             <td>
-              <a class="btn btn-tv" href="/tv/dashboards/{{ d.slug }}">Open as TV</a>
-              <button type="button" class="danger del-btn">Delete</button>
+              <a class="btn" href="{{ d.open_url }}">Open</a>
+              <a class="btn btn-tv" href="{{ d.tv_url }}">Open as TV</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2 class="section">My custom dashboards</h2>
+    <table>
+      <thead><tr><th></th><th>Name</th><th>Scope</th><th>Widgets</th><th>Actions</th></tr></thead>
+      <tbody id="custom-body">
+        {% for d in custom_dashboards %}
+          <tr data-kind="custom" data-ref="{{ d.ref }}" data-id="{{ d.id }}">
+            <td><button type="button" class="star {% if d.pinned %}on{% endif %}" title="Pin to sub-nav">{% if d.pinned %}★{% else %}☆{% endif %}</button></td>
+            <td>{{ d.name }}</td>
+            <td class="scope-label">{{ d.scope_kind }}: {{ d.scope_value }}</td>
+            <td>{{ d.widget_count }}</td>
+            <td>
+              <a class="btn" href="{{ d.open_url }}">Edit</a>
+              <a class="btn btn-tv" href="{{ d.tv_url }}">Open as TV</a>
+              <button type="button" class="danger del-btn">×</button>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5"><em>No dashboards yet — create one below.</em></td></tr>
+          <tr><td colspan="5"><em>No custom dashboards yet — create one below.</em></td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -80,44 +106,72 @@
         <option value="dark" selected>Dark</option>
         <option value="light">Light</option>
       </select>
-      <button type="button" class="submit" id="new-btn">Create dashboard</button>
+      <button type="button" class="submit" id="new-btn">+ Create new dashboard</button>
     </div>
   </section>
 </main>
 
 <script>
 (function() {
-  const kind = document.getElementById('new-scope-kind');
-  const wcSel = document.getElementById('new-scope-wc');
-  const grpSel = document.getElementById('new-scope-group');
-  kind.addEventListener('change', () => {
-    wcSel.style.display = kind.value === 'wc' ? '' : 'none';
-    grpSel.style.display = kind.value === 'group' ? '' : 'none';
-  });
-
-  document.getElementById('new-btn').addEventListener('click', () => {
-    const name = document.getElementById('new-name').value.trim();
-    if (!name) return;
-    const scope_value = kind.value === 'wc' ? wcSel.value : grpSel.value;
-    fetch('/api/dashboards', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name, scope_kind: kind.value, scope_value, theme: document.getElementById('new-theme').value,
-      }),
-    }).then(r => r.json()).then(d => {
-      if (d.ok) location.href = '/dashboards/' + d.dashboard.slug;
-      else alert('Error: ' + (d.error || 'unknown'));
+  // ---- Star toggle ----
+  document.querySelectorAll('.star').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row = btn.closest('tr');
+      const kind = row.dataset.kind;
+      const ref = row.dataset.ref;
+      const currentlyPinned = btn.classList.contains('on');
+      fetch('/api/pinned-dashboards', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kind, ref, pinned: !currentlyPinned}),
+      }).then(r => r.json()).then(d => {
+        if (d.ok) {
+          btn.classList.toggle('on');
+          btn.textContent = btn.classList.contains('on') ? '★' : '☆';
+        } else {
+          alert('Pin failed: ' + (d.error || 'unknown'));
+        }
+      });
     });
   });
+
+  // ---- Custom dashboard create + delete ----
+  const kindSel = document.getElementById('new-scope-kind');
+  const wcSel = document.getElementById('new-scope-wc');
+  const grpSel = document.getElementById('new-scope-group');
+  if (kindSel) {
+    kindSel.addEventListener('change', () => {
+      wcSel.style.display = kindSel.value === 'wc' ? '' : 'none';
+      grpSel.style.display = kindSel.value === 'group' ? '' : 'none';
+    });
+  }
+  const newBtn = document.getElementById('new-btn');
+  if (newBtn) {
+    newBtn.addEventListener('click', () => {
+      const name = document.getElementById('new-name').value.trim();
+      if (!name) return;
+      const scope_value = kindSel.value === 'wc' ? wcSel.value : grpSel.value;
+      fetch('/api/dashboards', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          name, scope_kind: kindSel.value, scope_value,
+          theme: document.getElementById('new-theme').value,
+        }),
+      }).then(r => r.json()).then(d => {
+        if (d.ok) location.href = '/dashboards/' + d.dashboard.slug;
+        else alert('Error: ' + (d.error || 'unknown'));
+      });
+    });
+  }
 
   document.querySelectorAll('.del-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const tr = btn.closest('tr');
       const id = tr.dataset.id;
       if (!confirm('Delete this dashboard?')) return;
-      fetch('/api/dashboards/' + id, {method: 'DELETE'}).then(r => r.json()).then(d => {
-        if (d.ok) tr.remove();
-      });
+      fetch('/api/dashboards/' + id, {method: 'DELETE'})
+        .then(r => r.json()).then(d => {
+          if (d.ok) tr.remove();
+        });
     });
   });
 })();
