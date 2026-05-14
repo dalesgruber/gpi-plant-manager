@@ -63,15 +63,19 @@ def settings_page(
         from .. import stratustime_client
         integration_status = stratustime_client.health_check()
     tv_displays_rows: list[dict] = []
-    tv_templates_rows: list[dict] = []
-    custom_dashboards_rows: list[dict] = []
     all_dashboards_for_picker: list[dict] = []
     if section == "tvs":
-        from .. import tv_displays_store, tv_templates_store, custom_dashboards_store, dashboard_catalog
+        from .. import tv_displays_store
         tv_displays_rows = tv_displays_store.list_displays()
-        tv_templates_rows = tv_templates_store.list_templates()
-        custom_dashboards_rows = custom_dashboards_store.list_dashboards()
-        all_dashboards_for_picker = dashboard_catalog.all_dashboards()
+        all_dashboards_for_picker = [
+            {"kind": "vs_recycling", "ref": "", "name": "Recycling VS"},
+            {"kind": "vs_new", "ref": "", "name": "New VS"},
+            {"kind": "vs_work_centers", "ref": "", "name": "Work Centers"},
+        ]
+        for loc in staffing.LOCATIONS:
+            all_dashboards_for_picker.append(
+                {"kind": "wc", "ref": loc.name, "name": loc.name}
+            )
     from .. import odoo_sync
     # TTL-checked sync so /settings self-heals after a Railway redeploy
     # where the ephemeral roster.json got reset to the legacy seed.
@@ -180,8 +184,6 @@ def settings_page(
             "schedule": schedule_ctx,
             "integration_status": integration_status,
             "tv_displays_rows": tv_displays_rows,
-            "tv_templates_rows": tv_templates_rows,
-            "custom_dashboards_rows": custom_dashboards_rows,
             "all_dashboards_for_picker": all_dashboards_for_picker,
             "wc_locations_for_picker": [{"name": loc.name} for loc in staffing.LOCATIONS],
         },

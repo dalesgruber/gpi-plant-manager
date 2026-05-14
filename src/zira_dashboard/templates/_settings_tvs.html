@@ -24,29 +24,15 @@
           <td><input type="text" class="tv-name-input" value="{{ d.name }}"></td>
           <td>
             <select class="tv-dashboard-select">
-              <optgroup label="Built-in">
-                {% for dash in all_dashboards_for_picker %}
-                  {% if dash.kind in ('vs_recycling', 'vs_new', 'wc') %}
-                    <option value="{{ dash.kind }}|{{ dash.ref }}"
-                            {% if d.kind == dash.kind and (
-                              (d.kind in ('vs_recycling','vs_new')) or
-                              (d.kind == 'wc' and d.wc_name == dash.ref)
-                            ) %}selected{% endif %}>
-                      {{ dash.name }}
-                    </option>
-                  {% endif %}
-                {% endfor %}
-              </optgroup>
-              <optgroup label="Custom">
-                {% for dash in all_dashboards_for_picker %}
-                  {% if dash.kind == 'custom' %}
-                    <option value="custom|{{ dash.id }}"
-                            {% if d.kind == 'custom' and d.custom_dashboard_id == dash.id %}selected{% endif %}>
-                      {{ dash.name }}
-                    </option>
-                  {% endif %}
-                {% endfor %}
-              </optgroup>
+              {% for dash in all_dashboards_for_picker %}
+                <option value="{{ dash.kind }}|{{ dash.ref }}"
+                        {% if d.kind == dash.kind and (
+                          (d.kind in ('vs_recycling','vs_new','vs_work_centers')) or
+                          (d.kind == 'wc' and d.wc_name == dash.ref)
+                        ) %}selected{% endif %}>
+                  {{ dash.name }}
+                </option>
+              {% endfor %}
             </select>
           </td>
           <td class="tv-theme-cell">
@@ -71,20 +57,9 @@
   <div class="tv-add-form">
     <input type="text" id="tv-add-name" placeholder="Display name (e.g. Repair 1 — Wall TV)">
     <select id="tv-add-dashboard">
-      <optgroup label="Built-in">
-        {% for dash in all_dashboards_for_picker %}
-          {% if dash.kind in ('vs_recycling', 'vs_new', 'wc') %}
-            <option value="{{ dash.kind }}|{{ dash.ref }}">{{ dash.name }}</option>
-          {% endif %}
-        {% endfor %}
-      </optgroup>
-      <optgroup label="Custom">
-        {% for dash in all_dashboards_for_picker %}
-          {% if dash.kind == 'custom' %}
-            <option value="custom|{{ dash.id }}">{{ dash.name }}</option>
-          {% endif %}
-        {% endfor %}
-      </optgroup>
+      {% for dash in all_dashboards_for_picker %}
+        <option value="{{ dash.kind }}|{{ dash.ref }}">{{ dash.name }}</option>
+      {% endfor %}
     </select>
     <select id="tv-add-theme">
       <option value="dark" selected>Dark</option>
@@ -94,36 +69,6 @@
     <span class="tv-add-status" id="tv-add-status"></span>
   </div>
 
-  <h2 style="margin-top: 1.5rem">Layout Templates</h2>
-  <p class="note">
-    Templates saved from any <code>/wc/{slug}</code> editor view. Delete to clean up;
-    templates can be re-saved any time from the editor.
-  </p>
-
-  <table class="tv-templates-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Theme</th>
-        <th>Updated</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="tv-templates-body">
-      {% for t in tv_templates_rows %}
-        <tr data-id="{{ t.id }}">
-          <td>{{ t.name }}</td>
-          <td>{{ t.theme }}</td>
-          <td title="{{ t.updated_at.isoformat() if t.updated_at else '' }}">
-            {{ t.updated_at.strftime('%Y-%m-%d %H:%M') if t.updated_at else '' }}
-          </td>
-          <td><button type="button" class="tv-template-delete" title="Delete">×</button></td>
-        </tr>
-      {% else %}
-        <tr class="empty"><td colspan="4">No templates saved yet — visit any /wc/{slug} editor to save a layout.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </section>
 
 <style>
@@ -265,15 +210,5 @@
     });
   }
 
-  document.querySelectorAll('.tv-template-delete').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tr = btn.closest('tr');
-      if (!confirm('Delete this template?')) return;
-      fetch('/api/tv-templates/' + tr.dataset.id, {method: 'DELETE'})
-        .then(r => r.json()).then(data => {
-          if (data.ok) tr.remove();
-        });
-    });
-  });
 })();
 </script>
