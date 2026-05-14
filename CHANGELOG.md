@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 12:59 PM
+
+- **Monthly Ribbons: name and number sit tight; gap shrinks first when narrowing** — the base `.ribbons-list .name { flex: 1 }` was pushing the units to the far-right edge of every row, leaving a huge empty gap between (e.g.) "Jose Galindo" and "1462". On the operator dashboard the name now sits at its natural width with a small flexible `clamp(0px, 1.5cqw, 0.6rem)` gap between items. The font-size also dropped its `cqw` component (now `clamp(1.1rem, 20cqh, 3rem)`) so it doesn't shrink with widget width — narrowing the widget collapses the gap first and only starts to ellipsis the name once the gap is fully consumed.
+
 ### 12:55 PM
 
 - **GOAT Race widget — goat stacks under the number, zero horizontal padding** — the delta line was `+5 AHEAD 🐐` on one row; widget didn't fill vertical space well. Now `+5 AHEAD` sits on top with the 🐐 stacked below, and both scale much bigger (`min(38cqh, 18cqw)` for the number, `min(45cqh, 22cqw)` for the goat). Widget padding zeroed on left/right (title gets a small 8px inset so it doesn't touch the edge). The goat now reads as the focal point of the widget at any height.

@@ -341,11 +341,27 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
   justify-content: space-around;
 }
 .wc-dashboard .ribbons-list li      {
-  font-size: clamp(1.1rem, min(20cqh, 5cqw),  3rem);
-  gap:       clamp(4px,    min(2cqh,  1.2cqw), 18px);
+  /* Font scales with HEIGHT only (no cqw) — narrowing the widget no
+     longer shrinks the text; instead, the empty space between name
+     and units (see .name + .units rules below) absorbs the width
+     change first. */
+  font-size: clamp(1.1rem, 20cqh, 3rem);
+  gap:       clamp(0px, 1.5cqw, 0.6rem);
 }
-.wc-dashboard .ribbons-list .medal  { font-size: clamp(1.4rem, min(25cqh, 6.5cqw), 4rem); }
-.wc-dashboard .ribbons-list .units  { font-size: clamp(1.1rem, min(22cqh, 5.5cqw), 3.2rem); }
+.wc-dashboard .ribbons-list .medal  { font-size: clamp(1.4rem, 25cqh, 4rem); }
+.wc-dashboard .ribbons-list .units  { font-size: clamp(1.1rem, 22cqh, 3.2rem); }
+/* Name sits at its natural width (override base CSS's flex: 1 which
+   pushed units to the far right of the row). Items now sit
+   left-aligned with the small flexible `gap` between them — that
+   gap shrinks to 0 as the widget narrows, eating the inter-item
+   spacing before any text starts to ellipsis. */
+.wc-dashboard .ribbons-list .name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Operator strip — one unified chrome row sitting between the dashboards
    sub-nav and the widget grid. Left: WC picker (styled like a page
