@@ -106,25 +106,8 @@ html[data-tv-theme] .grid-stack-item-content .bar-row {
   margin-block: 0;
 }
 
-/* Move widget-total to the top-right corner of its widget instead of
-   sitting at the bottom. Frees the bottom of the widget for the bar-
-   rows so the bars fill more vertical space. The h3 title gets right
-   padding so its text doesn't run under the widget-total. */
-html[data-tv-theme] .grid-stack-item-content { position: relative; }
-html[data-tv-theme] .grid-stack-item-content .widget-total {
-  position: absolute;
-  top: clamp(4px, 1.5cqh, 14px);
-  right: clamp(6px, 1.5cqw, 18px);
-  margin: 0;
-  text-align: right;
-  z-index: 1;
-}
-/* Reserve right space on the title so widget-total sits cleanly to its
-   right. Only applies to widgets that actually have a widget-total
-   (the Pallets-by-WC bar widgets via the bar_chart macro). */
-html[data-tv-theme] .grid-stack-item-content:has(.widget-total) > h3 {
-  padding-right: clamp(80px, 28%, 220px);
-}
+/* widget-total positioning + h3 right-padding moved to recycling.css
+   (applies to both screen and TV mode now — Dale's request). */
 html[data-tv-theme] .kpi .label { font-size: 0.85rem; }
 html[data-tv-theme] .kpi .val { font-size: 3.4rem; font-weight: 800; }
 /* widget-total is intentionally small in TV mode now — it sat hardcoded

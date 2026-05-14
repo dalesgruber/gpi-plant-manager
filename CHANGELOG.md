@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 3:14 PM
+
+- **Total + Goal now on the title row in both screen and TV mode; all four progress legends removed** — three related changes. (1) The `.widget-total` element (Pallets-by-WC, Downtime Report) moves to absolute top-right of its widget content area in **both** screen mode and TV mode — was previously bottom-right in screen mode, absolute top-right only in TV. Dropped the "Total" word from the rendered text so it just shows the number. CSS scoping moved from `tv-mode.css` to `recycling.css`. (2) Removed the legend (swatches + Goal text) from the `progress_chart` macro and the `cumulative_progress_chart` macro — affects all four progress widgets (Dismantlers/Repairs × 15-min/Daily). (3) Goal info ("Goal X/hr · Y/15 min") relocated to a `.widget-total` div on the two 15-min progress widgets — pinned top-right by the same CSS rule, on the same line as the title. The freed vertical space from the removed legend is automatically taken up by the chart plot via the existing `flex: 1 1 auto` on `.plot`.
+
 ### 3:11 PM
 
 - **Up Time KPI: no decimals, never wraps** — `kpi-uptime` template now formats as `uptime_pct|round(0)|int ~ ' %'` so "76.3 %" becomes "76 %". CSS adds `white-space: nowrap` to `.grid-stack-item-content .val` so the value never breaks to a second line on narrow widget widths.

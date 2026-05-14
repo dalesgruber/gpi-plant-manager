@@ -412,16 +412,28 @@
   }
   .axis-tick.axis-start { transform: translateX(0); }
   .axis-tick.axis-start::before { left: 0; margin-left: 0; }
+  /* Widget total sits in the top-right of its widget content area
+     on the same row as the <h3> title — for both screen mode AND
+     TV mode. Title gets right-padding (via :has) so its text
+     doesn't run under the total. */
+  .grid-stack-item-content { position: relative; }
   .widget-total {
-    flex: 0 0 auto;
-    margin-top: 0.45rem;
-    font-size: clamp(0.72rem, 2.6cqh, 0.9rem);
+    position: absolute;
+    top: clamp(4px, 1.5cqh, 14px);
+    right: clamp(6px, 1.5cqw, 18px);
+    margin: 0;
+    font-size: clamp(0.85rem, 3cqh, 1.4rem);
     color: var(--muted);
     font-variant-numeric: tabular-nums;
     text-align: right;
+    z-index: 1;
+    line-height: 1;
   }
   .widget-total b { color: var(--fg); font-weight: 700; }
   .widget-total-pct { color: var(--muted); }
+  .grid-stack-item-content:has(.widget-total) > h3 {
+    padding-right: clamp(80px, 28%, 220px);
+  }
 
   .vbar-track { position: relative; }
   .vbar-target-line {

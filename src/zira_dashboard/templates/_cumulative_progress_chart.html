@@ -21,11 +21,8 @@
   {% if scale <= 0 %}{% set scale = 1 %}{% endif %}
   {% set n = buckets|length %}
 
-  <div class="cum-progress" style="--n-cols: {{ n }}">
-    <div class="legend">
-      <span><span class="swatch-line"></span>Target</span>
-      <span><span class="swatch-dot"></span>Pallets</span>
-    </div>
+  <div class="cum-progress no-legend" style="--n-cols: {{ n }}">
+    {# Legend removed (Dale's request); plot fills the freed space. #}
     <div class="plot">
       <div class="bars">
         {% for b in buckets %}

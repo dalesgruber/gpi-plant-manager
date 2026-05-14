@@ -151,7 +151,7 @@
     {% endif %}
   {% endif %}
   <div class="widget-total">
-    Total <b>{{ total_u }}</b>{% if total_e %} / {{ total_e }}{% endif %}
+    <b>{{ total_u }}</b>{% if total_e %} / {{ total_e }}{% endif %}
     {%- if total_e %}<span class="widget-total-pct"> ({{ ((total_u / total_e) * 100) | round(1) }}%)</span>{% endif %}
   </div>
 {%- endmacro %}
@@ -223,12 +223,11 @@
       {% if b.target > max_val.v %}{% set max_val.v = b.target %}{% endif %}
     {% endfor %}
     {% set scale = max_val.v if max_val.v > 0 else 1 %}
-    <div class="progress {% if not show_legend %}no-legend{% endif %} {% if not show_target %}no-target{% endif %}">
-      <div class="legend">
-        <span><span class="swatch" style="background:var(--hit, var(--good))"></span>At / above goal</span>
-        <span><span class="swatch" style="background:var(--bad)"></span>Below goal</span>
-        <span style="margin-left:auto">Goal {{ group_target_per_hour|round|int }}/hr · {{ bucket_target }} per 15 min</span>
-      </div>
+    <div class="progress no-legend {% if not show_target %}no-target{% endif %}">
+      {# Legend removed; Goal info now lives in the widget-level .widget-total
+         (top-right of widget, same row as title). Rendered by the widget
+         that calls this macro — see the dismantler-progress / repair-
+         progress widgets below. #}
       <div class="plot">
         <div class="bars">
           {% for b in buckets %}
@@ -259,6 +258,9 @@
       <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('dismantler-progress', 'All Dismantlers — 15-minute progress', 'progress') }}{% endif %}
         <h3>{{ widget_title('dismantler-progress', 'All Dismantlers — 15-minute progress') }}</h3>
+        {% if dismantler_progress %}
+          <div class="widget-total">Goal <b>{{ dismantler_group_target|round|int }}</b>/hr · <b>{{ (dismantler_group_target / 4)|round|int }}</b>/15 min</div>
+        {% endif %}
         <div class="widget-body">
           {% if dismantler_progress %}
             {{ progress_chart(dismantler_progress, dismantler_group_target, (dismantler_group_target / 4)|round|int, 'dismantler-progress') }}
@@ -273,6 +275,9 @@
       <div class="grid-stack-item-content" {% set pc = customs.get('repair-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('repair-progress', 'All Repairs — 15-minute progress', 'progress') }}{% endif %}
         <h3>{{ widget_title('repair-progress', 'All Repairs — 15-minute progress') }}</h3>
+        {% if repair_progress %}
+          <div class="widget-total">Goal <b>{{ repair_group_target|round|int }}</b>/hr · <b>{{ (repair_group_target / 4)|round|int }}</b>/15 min</div>
+        {% endif %}
         <div class="widget-body">
           {% if repair_progress %}
             {{ progress_chart(repair_progress, repair_group_target, (repair_group_target / 4)|round|int, 'repair-progress') }}
@@ -319,7 +324,7 @@
         <h3>{{ widget_title('downtime-report', 'Downtime Report — green = working, red = down (shift-scoped)') }}</h3>
         {% if elapsed_minutes > 0 and downtime_rows %}
           {%- set total_down = downtime_rows | sum(attribute='down') -%}
-          <div class="widget-total">Total <b>{{ total_down }}m</b></div>
+          <div class="widget-total"><b>{{ total_down }}m</b></div>
         {% endif %}
         <div class="widget-body">
           {% if elapsed_minutes == 0 %}
