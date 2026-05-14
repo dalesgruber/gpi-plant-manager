@@ -365,20 +365,39 @@
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
 <script>
   const tvMode = {{ 'true' if tv_mode else 'false' }};
-  // In TV mode, scale cellHeight to the viewport so the full layout
-  // (~30 rows on /recycling) fits without scrolling, regardless of TV
-  // size. Screen mode keeps the fixed 60px row height.
-  const cellHeight = tvMode
-    ? Math.max(28, Math.floor((window.innerHeight - 80) / 30))
-    : 60;
+  const tvMargin = 2;
   const grid = GridStack.init({
     column: 12,
-    cellHeight,
-    margin: 8,
+    cellHeight: 60,
+    margin: tvMode ? tvMargin : 8,
     float: false,
     handle: '.grid-stack-item-content > h3, .grid-stack-item-content > .label',
     staticGrid: tvMode,
   });
+
+  if (tvMode) {
+    // After init, query the actual layout extent (handles any saved
+    // layout, not just template defaults) and resize cellHeight so the
+    // whole grid fits the viewport without scrolling. Header reserve
+    // is generous since the TV header has padding + border.
+    const items = grid.save(false);
+    let maxRows = 0;
+    for (const it of items) {
+      if (it.id) {
+        const bottom = (it.y || 0) + (it.h || 1);
+        if (bottom > maxRows) maxRows = bottom;
+      }
+    }
+    if (maxRows < 1) maxRows = 30;
+    const headerReserve = 80;
+    const targetCellH = Math.max(
+      20,
+      Math.floor(
+        (window.innerHeight - headerReserve - (maxRows - 1) * tvMargin) / maxRows
+      )
+    );
+    grid.cellHeight(targetCellH);
+  }
 
   {% if not tv_mode %}
   const indicator = document.getElementById('save-indicator');

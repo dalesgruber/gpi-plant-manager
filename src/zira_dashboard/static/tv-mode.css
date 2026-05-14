@@ -58,10 +58,22 @@ html[data-tv-theme] .empty-state a {
  * default ~16px root font-size. */
 html[data-tv-theme] {
   font-size: clamp(16px, 1.1vw, 40px);
+  /* TVs can't scroll. Hard-suppress so any small calc miss in
+     cellHeight just clips silently rather than producing a hidden
+     scrollbar that hides bottom widgets. */
+  height: 100%;
+  overflow: hidden;
 }
 html[data-tv-theme] body {
   line-height: 1.4;
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
 }
+/* Belt-and-suspenders: grid items themselves clip content so a small
+   miscalc on cellHeight doesn't let widget content bleed onto the
+   widget below (which previously read as "doubled up"). */
+html[data-tv-theme] .grid-stack-item { overflow: hidden; }
 html[data-tv-theme] .kpi .label { font-size: 0.85rem; }
 html[data-tv-theme] .kpi .val { font-size: 3.4rem; font-weight: 800; }
 html[data-tv-theme] .bar-row .name-primary,
