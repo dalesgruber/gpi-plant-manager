@@ -109,6 +109,26 @@ const grid = GridStack.init({
 
 The `handle:` constraint restricts dragging to the widget header — clicking inside the edit panel or on a chart bar will not initiate a drag.
 
+### 15-min progress + cumulative daily — truncate at "now"
+
+Today `wc_dashboard_data.fifteen_min_progress_buckets(wc_name, day)` returns every 15-min bucket for the full shift, including future ones (which render as empty columns or flat cumulative line at the right edge of the chart). `/recycling` doesn't do this — its `progress.progress_buckets()` stops at `min(now, shift_end)`.
+
+Match that behavior. After building the `buckets` list, filter to those whose `offset <= elapsed` (where `elapsed = int(full_minutes * _shift_elapsed_fraction(day))`). That keeps every past bucket plus the in-progress one, drops every future bucket.
+
+```python
+# in fifteen_min_progress_buckets, after building `buckets`:
+buckets = [b for b in buckets if b["offset"] <= elapsed]
+```
+
+To support the filter, each bucket dict needs to carry `offset` (it currently doesn't — only `label`, `actual`, `target`, `in_progress`). Add `offset` to the dict; the template can ignore it.
+
+Effect:
+- 15-min progress chart shrinks to "shift start → now" — same columns `/recycling` would render for this WC.
+- Cumulative daily chart reads the same buckets, so its line stops at "now" too.
+- On past days, `_shift_elapsed_fraction` returns 1.0, so every bucket passes the filter — full-shift view is preserved.
+
+No template changes for this — the chart macros already iterate whatever buckets the helper returns.
+
 ### Pallets banner with start/now ticks
 
 Today the banner shows `units / target_today goal so far (target_full_day full day)` plus a fill bar. This design extends it to mirror `/recycling`'s bar-row axis layout.
@@ -240,6 +260,8 @@ Safe to re-run on every boot — once empty, it's a no-op.
 | `test_operator_dashboard_edit_controls_present` | same file | Each widget has a `.widget-edit-btn` button and a `.widget-edit[hidden]` panel. |
 | `test_tv_wc_dashboard_omits_edit_chrome` | same file | `/tv/wc/repair-1` HTML does not contain `widget-edit-btn`, `edit-bar`, or `operator-band` markers. |
 | `test_pallets_banner_has_axis_ticks` | same file | Rendered HTML contains `start ·` and `now ·` substrings inside the pallets banner. |
+| `test_progress_buckets_truncated_at_now` | `tests/test_wc_dashboard_data.py` | With shift elapsed at ~half the day, `fifteen_min_progress_buckets("Repair 1", today)["buckets"]` contains only buckets whose `offset <= elapsed`; no future buckets are returned. |
+| `test_progress_buckets_full_shift_on_past_day` | same file | For `day < today`, all buckets are returned (the truncation only applies to today). |
 | `test_bootstrap_drops_legacy_wc_layouts` | `tests/test_db.py` | After `db.bootstrap_schema()`, no rows exist in `widget_layouts` or `widget_customizations` with `page LIKE 'wc:%'`. |
 
 CSS-only behaviors (container query scaling, black KPI color) are visual — verify in a browser by resizing widgets at the plant TV viewport, no automated test.
