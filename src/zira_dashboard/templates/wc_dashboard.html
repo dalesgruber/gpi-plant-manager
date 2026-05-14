@@ -7,6 +7,21 @@
 {% from "_tv_header.html" import tv_header %}
 {% from "_goat_badges.html" import goat_badges, goat_badges_css, hover_tip_clamp_script %}
 {% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
+
+{# Layout-aware grid-item attributes. customs/layout dicts come from the
+   route. Falls back to (dx, dy, dw, dh) defaults if no user-saved layout
+   row exists for this id. #}
+{%- macro widget_attrs(id, dx, dy, dw, dh) -%}
+  {%- set l = layout.get(id, {'x': dx, 'y': dy, 'w': dw, 'h': dh}) -%}
+  gs-id="{{ id }}" gs-x="{{ l.x }}" gs-y="{{ l.y }}" gs-w="{{ l.w }}" gs-h="{{ l.h }}"
+{%- endmacro %}
+
+{%- macro widget_title(id, default) -%}{{ customs.get(id, {}).get('title', default) }}{%- endmacro %}
+
+{%- macro widget_color_style(id, role) -%}
+  {%- set c = customs.get(id, {}).get('color') -%}
+  {%- if c -%}style="--wc: {{ c }}; {{ role }}: {{ c }} !important"{%- endif -%}
+{%- endmacro %}
 <!doctype html>
 <html lang="en"{% if tv_mode %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
 <head>
@@ -32,7 +47,7 @@
   }
 </style>
 </head>
-<body>
+<body class="wc-dashboard">
 {% if tv_mode %}
   {{ tv_header(
       wc_name,
@@ -65,27 +80,45 @@
       </select>
     </label>
   </div>
+  {# Operator name band — page subtitle showing WC + scheduled operator(s). #}
+  <div class="operator-band">
+    <div class="operator-band-wc">{{ wc_name }}</div>
+    <div class="operator-band-op">
+      {% if operators_display %}
+        <span class="op-icon" aria-hidden="true">👤</span> {{ operators_display }}
+      {% else %}
+        <em class="op-unassigned">(unassigned)</em>
+      {% endif %}
+    </div>
+  </div>
 {% endif %}
 
 <main>
 <div class="grid-stack">
 
-  {# KPI tiles row #}
-  <div class="grid-stack-item" gs-id="wc-kpi-row" gs-x="0" gs-y="0" gs-w="12" gs-h="2">
-    <div class="grid-stack-item-content">
-      <div class="kpi-row">
-        <div class="kpi"><div class="label">Units today</div><div class="val">{{ '{:,}'.format(kpi.units_today) }}</div></div>
-        <div class="kpi"><div class="label">Up Time</div><div class="val">{{ kpi.up_time_pct }} %</div></div>
-        <div class="kpi"><div class="label">Downtime</div><div class="val">{{ kpi.downtime_minutes }}m</div></div>
-        <div class="kpi"><div class="label">Pallets / hr</div><div class="val">{{ kpi.pallets_per_hour }}</div></div>
+  {# KPI tiles — 4 separate widgets, each resizable. #}
+  {% set kpi_defs = [
+    ('kpi-units',    'Units today', '{:,}'.format(kpi.units_today)),
+    ('kpi-uptime',   'Up Time',     kpi.up_time_pct ~ ' %'),
+    ('kpi-downtime', 'Downtime',    kpi.downtime_minutes|string ~ 'm'),
+    ('kpi-pph',      'Pallets / hr', kpi.pallets_per_hour),
+  ] %}
+  {% for k in kpi_defs %}
+    {% set kid = k[0] %}{% set ktitle = k[1] %}{% set kval = k[2] %}
+    {% set kdef_x = loop.index0 * 3 %}
+    {% set align = customs.get(kid, {}).get('align', 'center') %}
+    <div class="grid-stack-item" {{ widget_attrs(kid, kdef_x, 0, 3, 2) }}>
+      <div class="grid-stack-item-content align-{{ align }}">
+        <div class="label">{{ widget_title(kid, ktitle) }}</div>
+        <div class="val" {{ widget_color_style(kid, 'color') }}>{{ kval }}</div>
       </div>
     </div>
-  </div>
+  {% endfor %}
 
-  {# Pallets banner — big number vs goal #}
-  <div class="grid-stack-item" gs-id="wc-pallets-banner" gs-x="0" gs-y="2" gs-w="12" gs-h="2">
+  {# Pallets banner. Start/now ticks land in Task 8. #}
+  <div class="grid-stack-item" {{ widget_attrs('pallets-banner', 0, 2, 12, 2) }}>
     <div class="grid-stack-item-content">
-      <h3>Today · Pallets</h3>
+      <h3>{{ widget_title('pallets-banner', 'Today · Pallets') }}</h3>
       <div class="pallets-banner">
         <div class="pallets-numbers">
           <span class="units">{{ pallets.units_today }}</span>
@@ -98,10 +131,10 @@
     </div>
   </div>
 
-  {# 15-min progress chart — mirrors /recycling progress_chart markup #}
-  <div class="grid-stack-item" gs-id="wc-15min-progress" gs-x="0" gs-y="4" gs-w="12" gs-h="5">
+  {# 15-min progress chart. #}
+  <div class="grid-stack-item" {{ widget_attrs('progress-15min', 0, 4, 12, 5) }}>
     <div class="grid-stack-item-content">
-      <h3>{{ wc_name }} — 15-minute progress</h3>
+      <h3>{{ widget_title('progress-15min', '15-minute progress') }}</h3>
       {% if progress_buckets %}
         {%- set max_val = namespace(v=progress_bucket_target) -%}
         {%- for b in progress_buckets -%}
@@ -147,10 +180,10 @@
     </div>
   </div>
 
-  {# Cumulative daily progress — shared macro #}
-  <div class="grid-stack-item" gs-id="wc-cumulative" gs-x="0" gs-y="9" gs-w="12" gs-h="5">
+  {# Cumulative daily progress. #}
+  <div class="grid-stack-item" {{ widget_attrs('cumulative-daily', 0, 9, 12, 5) }}>
     <div class="grid-stack-item-content">
-      <h3>{{ wc_name }} — Daily Progress</h3>
+      <h3>{{ widget_title('cumulative-daily', 'Daily progress') }}</h3>
       {% if progress_buckets %}
         {{ cumulative_progress_chart(progress_buckets) }}
       {% else %}
@@ -159,10 +192,10 @@
     </div>
   </div>
 
-  {# Downtime — single-row stacked working/down #}
-  <div class="grid-stack-item" gs-id="wc-downtime" gs-x="0" gs-y="14" gs-w="12" gs-h="3">
+  {# Downtime — single-row stacked working/down. #}
+  <div class="grid-stack-item" {{ widget_attrs('downtime-row', 0, 14, 12, 3) }}>
     <div class="grid-stack-item-content">
-      <h3>{{ wc_name }} — Downtime · green = working, red = down</h3>
+      <h3>{{ widget_title('downtime-row', 'Downtime · green = working, red = down') }}</h3>
       {% if downtime_elapsed_minutes == 0 %}
         <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No elapsed shift minutes on this day.</div>
       {% else %}
@@ -178,10 +211,10 @@
     </div>
   </div>
 
-  {# Vs. GOAT Pace — group of this WC #}
-  <div class="grid-stack-item" gs-id="wc-goat-race" gs-x="0" gs-y="17" gs-w="12" gs-h="4">
+  {# Vs. GOAT Pace. #}
+  <div class="grid-stack-item" {{ widget_attrs('goat-race', 0, 17, 12, 4) }}>
     <div class="grid-stack-item-content">
-      <h3>Vs. GOAT Pace{% if wc_group %} — {{ wc_group }}{% endif %}</h3>
+      <h3>{{ widget_title('goat-race', 'Vs. GOAT Pace') }}{% if wc_group %} — {{ wc_group }}{% endif %}</h3>
       {% if goat_race %}
         <div class="goat-race">
           {% if goat_race.status %}
@@ -203,10 +236,10 @@
     </div>
   </div>
 
-  {# Monthly Ribbons — group of this WC #}
-  <div class="grid-stack-item" gs-id="wc-monthly-ribbons" gs-x="0" gs-y="21" gs-w="12" gs-h="4">
+  {# Monthly Ribbons. #}
+  <div class="grid-stack-item" {{ widget_attrs('monthly-ribbons', 0, 21, 12, 4) }}>
     <div class="grid-stack-item-content">
-      <h3>{{ month_name(month) }} {{ year }}{% if ribbons and ribbons.group %} · {{ ribbons.group }}{% endif %} — Ribbons</h3>
+      <h3>{{ widget_title('monthly-ribbons', 'Monthly Ribbons') }} — {{ month_name(month) }} {{ year }}{% if ribbons and ribbons.group %} · {{ ribbons.group }}{% endif %}</h3>
       {% if ribbons %}
         <ul class="ribbons-list">
           {% for r in ribbons.entries %}

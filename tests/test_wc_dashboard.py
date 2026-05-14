@@ -152,3 +152,63 @@ def test_operator_route_renders_without_500_after_context_changes(monkeypatch):
     c = TestClient(app)
     r = c.get("/wc/repair-1")
     assert r.status_code == 200
+
+
+def test_operator_dashboard_has_four_split_kpi_widgets(monkeypatch):
+    """KPI row is split into 4 independent grid-stack-items."""
+    _stub_wc(monkeypatch)
+    from zira_dashboard import wc_dashboard_data
+    monkeypatch.setattr(
+        wc_dashboard_data, "kpi_tiles",
+        lambda nm, d: {"units_today": 87, "downtime_minutes": 12,
+                       "hours_elapsed": 4.0, "up_time_pct": 95.0,
+                       "pallets_per_hour": 21.7},
+    )
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
+    for wid in ("kpi-units", "kpi-uptime", "kpi-downtime", "kpi-pph"):
+        assert f'gs-id="{wid}"' in r.text, f"missing widget {wid}"
+
+
+def test_operator_dashboard_renders_operator_band(monkeypatch):
+    """The band shows WC name + operator names from the Plant Scheduler."""
+    _stub_wc(monkeypatch)  # _stub_wc sets operators to ["Christian", "Jose L"]
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
+    assert "operator-band" in r.text
+    assert "Christian" in r.text and "Jose L" in r.text
+
+
+def test_operator_dashboard_unassigned_band(monkeypatch):
+    """With no operators assigned, the band shows '(unassigned)'."""
+    _stub_wc(monkeypatch)
+    from zira_dashboard import wc_dashboard_data
+    monkeypatch.setattr(wc_dashboard_data, "assigned_operators_for_wc",
+                        lambda nm, d: [])
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
+    assert "(unassigned)" in r.text
+
+
+def test_operator_dashboard_renames_remaining_widget_ids(monkeypatch):
+    """Non-KPI widgets use the new shared IDs (no 'wc-' prefix)."""
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    for wid in ("pallets-banner", "progress-15min", "cumulative-daily",
+                "downtime-row", "goat-race", "monthly-ribbons"):
+        assert f'gs-id="{wid}"' in r.text, f"missing widget {wid}"
+    for old in ("wc-kpi-row", "wc-pallets-banner", "wc-15min-progress",
+                "wc-cumulative", "wc-downtime", "wc-goat-race",
+                "wc-monthly-ribbons"):
+        assert f'gs-id="{old}"' not in r.text, f"stale widget id still present: {old}"
+
+
+def test_operator_dashboard_body_has_wc_dashboard_class(monkeypatch):
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert 'class="wc-dashboard"' in r.text
