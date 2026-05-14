@@ -309,16 +309,43 @@ def fifteen_min_increments(wc_name: str, day: date) -> list[dict]:
 
     Mirrors `daily_progress` but emits per-bucket (not cumulative) units
     and a color-coded status against the per-bucket target.
+
+    Bucket targets are zeroed during break windows so the cumulative
+    target line in the chart stays in sync with the productive-elapsed
+    target the Pallets banner uses (otherwise non-zero break-bucket
+    targets push the cumulative target ABOVE the Pallets banner target
+    by `break_minutes * per_bucket_target/15` worth of expected output,
+    making the chart say "behind goal" while Pallets banner says
+    "ahead of goal").
     """
     from . import shift_config
 
     readings = _readings_for_wc_today(wc_name, day)
     n_buckets = _bucket_count_for_day(day)
-    target = _wc_target_per_bucket(wc_name, day)
+    work_target = _wc_target_per_bucket(wc_name, day)
     shift_start_local = datetime.combine(
         day, shift_config.shift_start_for(day), tzinfo=shift_config.SITE_TZ,
     )
     shift_start_utc = shift_start_local.astimezone(timezone.utc)
+
+    # Identify which bucket indices fall inside a break window. Those get
+    # target=0 below — no work is expected during a break.
+    break_idxs: set[int] = set()
+    try:
+        for b in shift_config.breaks_for(day) or []:
+            bs_local = datetime.combine(day, b.start, tzinfo=shift_config.SITE_TZ)
+            be_local = datetime.combine(day, b.end, tzinfo=shift_config.SITE_TZ)
+            bs_min = int((bs_local - shift_start_local).total_seconds() / 60)
+            be_min = int((be_local - shift_start_local).total_seconds() / 60)
+            for i in range(n_buckets):
+                bucket_start = i * 15
+                bucket_end = bucket_start + 15
+                # bucket window [bucket_start, bucket_end) overlaps break [bs_min, be_min)
+                if bucket_start < be_min and bucket_end > bs_min:
+                    break_idxs.add(i)
+    except Exception:
+        # If break lookup fails, leave break_idxs empty (every bucket gets work_target).
+        pass
 
     per_bucket = [0] * n_buckets
     for r in readings:
@@ -329,25 +356,26 @@ def fifteen_min_increments(wc_name: str, day: date) -> list[dict]:
         if 0 <= idx < n_buckets:
             per_bucket[idx] += int(r.get("units") or 0)
 
-    def _color(units):
-        if target <= 0:
+    def _color(units, t):
+        if t <= 0:
             return "neutral"
-        if units >= target:
+        if units >= t:
             return "green"
-        if units >= 0.75 * target:
+        if units >= 0.75 * t:
             return "amber"
         return "red"
 
-    return [
-        {
+    out = []
+    for i, v in enumerate(per_bucket):
+        t = 0 if i in break_idxs else work_target
+        out.append({
             "bucket_index": i,
             "minute_offset": i * 15,
             "units": v,
-            "color": _color(v),
-            "target": target,
-        }
-        for i, v in enumerate(per_bucket)
-    ]
+            "color": _color(v, t),
+            "target": t,
+        })
+    return out
 
 
 def _downtime_events_for_wc(wc_name: str, day: date) -> list[dict]:

@@ -369,3 +369,46 @@ def test_fifteen_min_progress_buckets_uses_wall_clock_not_productive(monkeypatch
     assert offsets[-1] == 300
     # The post-lunch bucket at 285 must be present (this was the bug).
     assert 285 in offsets
+
+
+def test_fifteen_min_increments_zeros_break_bucket_targets(monkeypatch):
+    """Buckets that fall inside a break window have target=0 so the
+    cumulative target line in the chart doesn't keep climbing through
+    breaks (which would put it above the Pallets banner target —
+    "behind goal" on the chart while Pallets says "ahead of goal").
+    """
+    from datetime import date, time, datetime, timezone
+    from zira_dashboard import wc_dashboard_data, shift_config
+
+    class _FakeBreak:
+        def __init__(self, start, end):
+            self.start = start
+            self.end = end
+
+    class _Loc:
+        name = "Repair 1"
+        meter_id = "m"
+        skill = "Repair"
+        bay = "Bay 1"
+
+    # 7:00am shift start, 30-min lunch at 11:30. 8h shift.
+    monkeypatch.setattr(shift_config, "shift_start_for", lambda d: time(7, 0))
+    monkeypatch.setattr(shift_config, "breaks_for",
+                        lambda d: (_FakeBreak(time(11, 30), time(12, 0)),))
+    # productive minutes = 480 (8hr - 30min lunch); per-bucket target = 6 (goal 200, 32 buckets, 200/32 rounded)
+    monkeypatch.setattr(wc_dashboard_data, "_load_wc", lambda n: _Loc())
+    monkeypatch.setattr(wc_dashboard_data, "_readings_for_wc_today", lambda nm, d: [])
+
+    from zira_dashboard import work_centers_store
+    monkeypatch.setattr(work_centers_store, "goal_per_day", lambda loc: 200)
+    monkeypatch.setattr(shift_config, "productive_minutes_for", lambda d: 480)
+
+    result = wc_dashboard_data.fifteen_min_increments("Repair 1", date(2026, 5, 14))
+    # Lunch is 11:30-12:00 wall-clock = minute offset 270-300 from 7am start.
+    # Buckets 18 (270-285) and 19 (285-300) overlap the break.
+    by_offset = {b["minute_offset"]: b for b in result}
+    assert by_offset[270]["target"] == 0, f"bucket 270 (lunch start) should have target=0, got {by_offset[270]['target']}"
+    assert by_offset[285]["target"] == 0, f"bucket 285 (lunch end) should have target=0, got {by_offset[285]['target']}"
+    # Buckets immediately before and after lunch keep the normal target.
+    assert by_offset[255]["target"] > 0
+    assert by_offset[300]["target"] > 0
