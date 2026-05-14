@@ -42,7 +42,7 @@
                     data-theme="light">Light</button>
           </td>
           <td class="tv-url-cell">
-            <a class="tv-url" href="/tv/d/{{ d.slug }}" target="_blank" rel="noopener">/tv/d/{{ d.slug }}</a>
+            <a class="tv-url" href="/tv/{{ d.slug }}" target="_blank" rel="noopener">/tv/{{ d.slug }}</a>
           </td>
           <td>
             <button type="button" class="tv-delete-btn" title="Delete">×</button>
@@ -156,8 +156,8 @@
         tr.dataset.slug = data.slug;
         const urlEl = tr.querySelector('.tv-url');
         if (urlEl) {
-          urlEl.textContent = '/tv/d/' + data.slug;
-          urlEl.setAttribute('href', '/tv/d/' + data.slug);
+          urlEl.textContent = '/tv/' + data.slug;
+          urlEl.setAttribute('href', '/tv/' + data.slug);
         }
       }
       return data;

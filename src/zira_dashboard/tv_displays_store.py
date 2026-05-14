@@ -2,7 +2,7 @@
 
 Each row is a physical TV in the plant: a friendly name, which dashboard
 it shows (kind = vs_recycling / vs_new / wc, plus wc_name when kind=wc),
-and a light/dark theme. The /tv/d/{slug} route looks up the row and
+and a light/dark theme. The /tv/{slug} route looks up the row and
 dispatches to the appropriate render helper with the row's theme.
 
 Seed list of 10 rows inserts on first boot only — once the table has

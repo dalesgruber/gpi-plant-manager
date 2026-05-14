@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 10:29 AM
+
+- **TV display URLs are shorter: `/tv/{slug}` (no more `/d/`)** — saves 3 chars per URL (`/tv/d/junior-2` → `/tv/junior-2`). The Settings → TVs panel now renders the new short URL. Old `/tv/d/{slug}` URLs still work — they 302-redirect to `/tv/{slug}` and preserve the `?theme=…` query string — so already-deployed TVs keep loading without any manual reconfiguration. Two new tests lock in the redirect behavior.
+
 ### 10:25 AM
 
 - **Reverted: pallets counter inside the bar** — the inside-the-bar overlay didn't read well. Restored the prior layout: separate `.pallets-numbers` row above the bar (number + `/ N full day`), then the rectangular fill bar (45-180px tall), then the start/now axis ticks below. Downtime widget's left-aligned `%` change from the prior commit stays.

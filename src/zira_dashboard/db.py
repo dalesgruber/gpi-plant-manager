@@ -528,7 +528,7 @@ CREATE TABLE IF NOT EXISTS tv_dashboard_templates (
 -- TV display registry ---------------------------------------------------
 -- Each row is a TV mounted somewhere in the plant. Carries a friendly
 -- name, the dashboard it shows (kind + optional wc_name), and the theme
--- (light/dark) for that physical display. The /tv/d/{slug} route looks
+-- (light/dark) for that physical display. The /tv/{slug} route looks
 -- up the row and dispatches to the underlying dashboard with the row's
 -- theme. Seed list of 10 rows inserts on first boot only.
 CREATE TABLE IF NOT EXISTS tv_displays (

@@ -35,7 +35,7 @@ def test_post_add_display_returns_url():
     body = r.json()
     assert body["ok"] is True
     assert body["slug"] == "rt-recycling-tv"
-    assert body["url"] == "/tv/d/rt-recycling-tv"
+    assert body["url"] == "/tv/rt-recycling-tv"
     assert isinstance(body["id"], int)
 
 
@@ -81,38 +81,38 @@ def test_delete_display():
     assert r.json()["ok"] is True
 
 
-def test_get_tv_d_unknown_slug_returns_404():
+def test_get_tv_unknown_slug_returns_404():
     c = TestClient(app)
-    r = c.get("/tv/d/rt-not-a-real-display")
+    r = c.get("/tv/rt-not-a-real-display")
     assert r.status_code == 404
     assert "settings" in r.text.lower() or "tvs" in r.text.lower()
 
 
-def test_get_tv_d_vs_recycling_dispatches():
+def test_get_tv_vs_recycling_dispatches():
     c = TestClient(app)
     c.post("/api/tv-displays", json={
         "name": "rt-recyc-light",
         "kind": "vs_recycling",
         "theme": "light",
     })
-    r = c.get("/tv/d/rt-recyc-light")
+    r = c.get("/tv/rt-recyc-light")
     assert r.status_code == 200
     assert 'data-tv-theme="light"' in r.text
 
 
-def test_get_tv_d_with_query_theme_overrides_stored():
+def test_get_tv_with_query_theme_overrides_stored():
     c = TestClient(app)
     c.post("/api/tv-displays", json={
         "name": "rt-recyc-dark",
         "kind": "vs_recycling",
         "theme": "dark",
     })
-    r = c.get("/tv/d/rt-recyc-dark?theme=light")
+    r = c.get("/tv/rt-recyc-dark?theme=light")
     assert r.status_code == 200
     assert 'data-tv-theme="light"' in r.text
 
 
-def test_get_tv_d_wc_archived_returns_404(monkeypatch):
+def test_get_tv_wc_archived_returns_404(monkeypatch):
     from zira_dashboard import staffing
 
     class _Loc:
@@ -126,9 +126,25 @@ def test_get_tv_d_wc_archived_returns_404(monkeypatch):
         "theme": "dark",
     })
     monkeypatch.setattr(staffing, "LOCATIONS", [_Loc("Junior 2")])
-    r = c.get("/tv/d/rt-ghost-wc")
+    r = c.get("/tv/rt-ghost-wc")
     assert r.status_code == 404
     assert "work center" in r.text.lower() or "removed" in r.text.lower()
+
+
+def test_legacy_tv_d_redirects_to_new_path():
+    """Old /tv/d/{slug} URLs should 302 to /tv/{slug} so already-deployed
+    TVs keep working without manual reconfiguration."""
+    c = TestClient(app)
+    r = c.get("/tv/d/anything", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/tv/anything"
+
+
+def test_legacy_tv_d_redirect_preserves_query_string():
+    c = TestClient(app)
+    r = c.get("/tv/d/anything?theme=light", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/tv/anything?theme=light"
 
 
 def test_post_add_custom_kind_rejected():

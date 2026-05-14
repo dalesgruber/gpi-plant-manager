@@ -1,6 +1,7 @@
 """HTTP routes for the TV display registry.
 
-  GET    /tv/d/{slug}                       resolve display -> dispatch
+  GET    /tv/{slug}                         resolve display -> dispatch
+  GET    /tv/d/{slug}                       legacy alias -> 302 to /tv/{slug}
   POST   /api/tv-displays                   add/update
   POST   /api/tv-displays/{id}/theme        theme toggle
   DELETE /api/tv-displays/{id}              delete
@@ -8,7 +9,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import tv_displays_store
 from ..wc_dashboard_data import slug_for_wc
@@ -16,7 +17,18 @@ from ..wc_dashboard_data import slug_for_wc
 router = APIRouter()
 
 
-@router.get("/tv/d/{slug}", response_class=HTMLResponse)
+@router.get("/tv/d/{slug}")
+def tv_display_legacy(request: Request, slug: str):
+    """Backward-compat redirect for the old /tv/d/{slug} URL pattern.
+
+    Preserves the query string (e.g. ?theme=light) so older TVs that
+    bookmarked the long URL keep working without manual reconfiguration.
+    """
+    qs = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"/tv/{slug}{qs}", status_code=302)
+
+
+@router.get("/tv/{slug}", response_class=HTMLResponse)
 def tv_display(request: Request, slug: str, theme: str | None = Query(default=None)):
     row = tv_displays_store.by_slug(slug)
     if row is None:
@@ -112,7 +124,7 @@ async def post_display(request: Request):
         "ok": True,
         "id": saved["id"],
         "slug": saved["slug"],
-        "url": f"/tv/d/{saved['slug']}",
+        "url": f"/tv/{saved['slug']}",
     })
 
 
