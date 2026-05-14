@@ -94,7 +94,6 @@ async def post_display(request: Request):
         return JSONResponse({"ok": False, "error": "name required"}, status_code=400)
     if kind not in ("vs_recycling", "vs_new", "wc"):
         return JSONResponse({"ok": False, "error": "kind invalid"}, status_code=400)
-    custom_dashboard_id = None
     if kind == "wc":
         from .. import staffing
         if not isinstance(wc_name, str) or not wc_name.strip():
@@ -107,7 +106,6 @@ async def post_display(request: Request):
         return JSONResponse({"ok": False, "error": "theme must be light or dark"}, status_code=400)
     saved = tv_displays_store.save(
         name=name.strip(), kind=kind, wc_name=wc_name, theme=theme,
-        custom_dashboard_id=custom_dashboard_id,
         id=int(row_id) if row_id is not None else None,
     )
     return JSONResponse({

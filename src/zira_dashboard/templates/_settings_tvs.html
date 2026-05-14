@@ -138,9 +138,8 @@
     const i = v.indexOf('|');
     const kind = i >= 0 ? v.slice(0, i) : v;
     const ref = i >= 0 ? v.slice(i + 1) : '';
-    if (kind === 'wc') return {kind, wc_name: ref, custom_dashboard_id: null};
-    if (kind === 'custom') return {kind, wc_name: null, custom_dashboard_id: parseInt(ref, 10)};
-    return {kind, wc_name: null, custom_dashboard_id: null};
+    if (kind === 'wc') return {kind, wc_name: ref};
+    return {kind, wc_name: null};
   }
 
   function saveRow(tr) {
@@ -151,8 +150,7 @@
     const theme = themeBtn ? themeBtn.dataset.theme : 'dark';
     return postJson('/api/tv-displays', {
       id: parseInt(id, 10), name,
-      kind: parsed.kind, wc_name: parsed.wc_name,
-      custom_dashboard_id: parsed.custom_dashboard_id, theme,
+      kind: parsed.kind, wc_name: parsed.wc_name, theme,
     }).then(data => {
       if (data.ok) {
         tr.dataset.slug = data.slug;
@@ -197,8 +195,7 @@
       if (!name) { showStatus('tv-add-status', 'name required'); return; }
       showStatus('tv-add-status', 'Adding…');
       postJson('/api/tv-displays', {
-        name, kind: parsed.kind, wc_name: parsed.wc_name,
-        custom_dashboard_id: parsed.custom_dashboard_id, theme,
+        name, kind: parsed.kind, wc_name: parsed.wc_name, theme,
       }).then(data => {
         if (data.ok) {
           showStatus('tv-add-status', 'Added — reloading…');

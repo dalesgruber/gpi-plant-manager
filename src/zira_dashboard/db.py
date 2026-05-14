@@ -535,108 +535,39 @@ CREATE TABLE IF NOT EXISTS tv_displays (
   id                  SERIAL PRIMARY KEY,
   name                TEXT NOT NULL,
   slug                TEXT NOT NULL UNIQUE,
-  kind                TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'wc', 'custom')),
+  kind                TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'wc')),
   wc_name             TEXT,
-  custom_dashboard_id INTEGER,
   theme               TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
   sort_order          INTEGER NOT NULL DEFAULT 0,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Widget Workshop & Custom Dashboards (sub-project 5, phase 1) ---------
--- widget_definitions: named presets — type + visual config + default data scope.
-CREATE TABLE IF NOT EXISTS widget_definitions (
-  id                SERIAL PRIMARY KEY,
-  name              TEXT NOT NULL,
-  type              TEXT NOT NULL,
-  visual_json       JSONB NOT NULL DEFAULT '{}'::jsonb,
-  default_data_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_widget_definitions_type ON widget_definitions (type);
-
--- custom_dashboards: user-built dashboards. scope drives the TV header.
-CREATE TABLE IF NOT EXISTS custom_dashboards (
-  id          SERIAL PRIMARY KEY,
-  name        TEXT NOT NULL,
-  slug        TEXT NOT NULL UNIQUE,
-  scope_kind  TEXT NOT NULL CHECK (scope_kind IN ('wc', 'group')),
-  scope_value TEXT NOT NULL,
-  theme       TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
-  sort_order  INTEGER NOT NULL DEFAULT 0,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- dashboard_widgets: placements. Each row is one widget on one dashboard.
--- ON DELETE CASCADE so deleting a dashboard sweeps its placements.
--- ON DELETE RESTRICT so a referenced widget definition can't be deleted.
-CREATE TABLE IF NOT EXISTS dashboard_widgets (
-  id                  SERIAL PRIMARY KEY,
-  dashboard_id        INTEGER NOT NULL
-                        REFERENCES custom_dashboards(id) ON DELETE CASCADE,
-  widget_def_id       INTEGER NOT NULL
-                        REFERENCES widget_definitions(id) ON DELETE RESTRICT,
-  x                   INTEGER NOT NULL DEFAULT 0,
-  y                   INTEGER NOT NULL DEFAULT 0,
-  w                   INTEGER NOT NULL DEFAULT 4,
-  h                   INTEGER NOT NULL DEFAULT 4,
-  data_overrides_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  sort_order          INTEGER NOT NULL DEFAULT 0,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_dashboard_widgets_dashboard
-  ON dashboard_widgets (dashboard_id);
-
--- Phase 3 migrations for tv_displays (idempotent on fresh DBs too) ------
--- Add the custom_dashboard_id column if missing.
-ALTER TABLE tv_displays ADD COLUMN IF NOT EXISTS custom_dashboard_id INTEGER;
--- Add the FK separately (DO block makes it idempotent across reboots).
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'tv_displays_custom_dashboard_id_fkey'
-  ) THEN
-    ALTER TABLE tv_displays
-      ADD CONSTRAINT tv_displays_custom_dashboard_id_fkey
-      FOREIGN KEY (custom_dashboard_id) REFERENCES custom_dashboards(id)
-      ON DELETE SET NULL;
-  END IF;
-END$$;
--- Extend kind CHECK to allow 'custom'.
-ALTER TABLE tv_displays DROP CONSTRAINT IF EXISTS tv_displays_kind_check;
-ALTER TABLE tv_displays ADD CONSTRAINT tv_displays_kind_check
-  CHECK (kind IN ('vs_recycling', 'vs_new', 'wc', 'custom'));
-
--- pinned_dashboards: which dashboards (built-in VS / per-WC / custom)
--- the user has favorited for the sub-nav. ref is '' for vs_*, WC name
--- for wc, slug for custom.
-CREATE TABLE IF NOT EXISTS pinned_dashboards (
-  id          SERIAL PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'vs_work_centers', 'wc', 'custom')),
-  ref         TEXT NOT NULL,
-  sort_order  INTEGER NOT NULL DEFAULT 0,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (kind, ref)
-);
-
--- Extend pinned_dashboards.kind to include vs_work_centers (idempotent
--- on fresh DBs since the CREATE TABLE above already has it).
-ALTER TABLE pinned_dashboards DROP CONSTRAINT IF EXISTS pinned_dashboards_kind_check;
-ALTER TABLE pinned_dashboards ADD CONSTRAINT pinned_dashboards_kind_check
-  CHECK (kind IN ('vs_recycling', 'vs_new', 'vs_work_centers', 'wc', 'custom'));
-
 -- Tear-down (2026-05-14): workshop + custom dashboards experiment is gone.
--- DROP order respects FK references: dashboard_widgets first
--- (it references both custom_dashboards and widget_definitions).
+-- This block runs idempotently on every boot. It drops every workshop
+-- artifact (tables, the tv_displays FK + column that referenced them,
+-- the 'custom' kind in CHECK constraints, any leftover rows).
+--
+-- Order matters:
+--   1. Drop tv_displays.custom_dashboard_id FK before dropping the
+--      table it references — otherwise DROP TABLE fails.
+--   2. Drop dashboard_widgets before custom_dashboards / widget_definitions
+--      (it FKs both).
+ALTER TABLE tv_displays
+  DROP CONSTRAINT IF EXISTS tv_displays_custom_dashboard_id_fkey;
+ALTER TABLE tv_displays DROP COLUMN IF EXISTS custom_dashboard_id;
+
 DROP TABLE IF EXISTS dashboard_widgets;
 DROP TABLE IF EXISTS custom_dashboards;
 DROP TABLE IF EXISTS widget_definitions;
 DROP TABLE IF EXISTS tv_dashboard_templates;
 DROP TABLE IF EXISTS pinned_dashboards;
+
+-- Tighten tv_displays.kind CHECK back down to the live kinds.
 DELETE FROM tv_displays WHERE kind = 'custom';
+ALTER TABLE tv_displays DROP CONSTRAINT IF EXISTS tv_displays_kind_check;
+ALTER TABLE tv_displays ADD CONSTRAINT tv_displays_kind_check
+  CHECK (kind IN ('vs_recycling', 'vs_new', 'wc'));
 """
 
 

@@ -59,7 +59,6 @@ def save(
     kind: str,
     wc_name: Optional[str],
     theme: str,
-    custom_dashboard_id: Optional[int] = None,
     id: Optional[int] = None,
 ) -> dict:
     """Insert a new row or update an existing one (when `id` given).
@@ -74,24 +73,24 @@ def save(
         raise ValueError("name must produce a non-empty slug")
     if theme not in ("light", "dark"):
         theme = "dark"
-    if kind not in ("vs_recycling", "vs_new", "wc", "custom"):
+    if kind not in ("vs_recycling", "vs_new", "wc"):
         raise ValueError(f"invalid kind: {kind}")
     slug = _unique_slug(slug_base, exclude_id=id)
     if id is None:
         rows = db.query(
-            "INSERT INTO tv_displays (name, slug, kind, wc_name, custom_dashboard_id, theme) "
-            "VALUES (%s, %s, %s, %s, %s, %s) "
-            "RETURNING id, name, slug, kind, wc_name, custom_dashboard_id, theme, sort_order",
-            (name, slug, kind, wc_name, custom_dashboard_id, theme),
+            "INSERT INTO tv_displays (name, slug, kind, wc_name, theme) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "RETURNING id, name, slug, kind, wc_name, theme, sort_order",
+            (name, slug, kind, wc_name, theme),
         )
     else:
         rows = db.query(
             "UPDATE tv_displays SET "
             "  name = %s, slug = %s, kind = %s, wc_name = %s, "
-            "  custom_dashboard_id = %s, theme = %s, updated_at = now() "
+            "  theme = %s, updated_at = now() "
             "WHERE id = %s "
-            "RETURNING id, name, slug, kind, wc_name, custom_dashboard_id, theme, sort_order",
-            (name, slug, kind, wc_name, custom_dashboard_id, theme, id),
+            "RETURNING id, name, slug, kind, wc_name, theme, sort_order",
+            (name, slug, kind, wc_name, theme, id),
         )
     if not rows:
         raise LookupError(f"no tv_displays row with id={id}")
@@ -117,7 +116,7 @@ def delete(id: int) -> None:
 def by_slug(slug: str) -> Optional[dict]:
     from . import db
     rows = db.query(
-        "SELECT id, name, slug, kind, wc_name, custom_dashboard_id, theme, sort_order "
+        "SELECT id, name, slug, kind, wc_name, theme, sort_order "
         "FROM tv_displays WHERE slug = %s",
         (slug,),
     )
@@ -128,7 +127,7 @@ def list_displays() -> list[dict]:
     """All rows ordered by (sort_order ASC, name ASC). Stable for UI."""
     from . import db
     rows = db.query(
-        "SELECT id, name, slug, kind, wc_name, custom_dashboard_id, theme, sort_order "
+        "SELECT id, name, slug, kind, wc_name, theme, sort_order "
         "FROM tv_displays ORDER BY sort_order ASC, lower(name) ASC"
     )
     return [_hydrate(r) for r in rows]
@@ -171,9 +170,6 @@ def _hydrate(row) -> dict:
         "slug": row["slug"],
         "kind": row["kind"],
         "wc_name": row["wc_name"],
-        "custom_dashboard_id": (
-            int(row["custom_dashboard_id"]) if row.get("custom_dashboard_id") is not None else None
-        ),
         "theme": row["theme"],
         "sort_order": int(row["sort_order"]),
     }

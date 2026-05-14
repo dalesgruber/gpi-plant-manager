@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 8:01 AM
+
+- **Deploy crash fix — finish the workshop column drop** — the 7:41 AM deploy boot-looped because the schema bootstrap re-created the `tv_displays_custom_dashboard_id_fkey` FK on every start, then `DROP TABLE custom_dashboards` couldn't drop the table the FK still referenced. The teardown DDL now drops the FK + column first, in FK-safe order. Downstream cleanup followed: `tv_displays_store.save()` lost its `custom_dashboard_id` kwarg and the column is gone from every INSERT/UPDATE/SELECT; `POST /api/tv-displays` no longer accepts the field; the Settings → TVs picker JS stopped sending it. Old workshop tests trimmed.
+
 ### 7:41 AM
 
 - **Workshop tear-down + new Operator dashboard** — the widget workshop / custom dashboards / pinned dashboards / layout templates experiments are removed entirely. Roughly 30 files deleted, 5 DB tables dropped (`widget_definitions`, `custom_dashboards`, `dashboard_widgets`, `tv_dashboard_templates`, `pinned_dashboards`); any TV display rows with `kind = 'custom'` are also deleted. Sub-nav is now a fixed 4-tab strip: **Recycling VS · New VS · Operator · Work Centers**. The top-nav "My Dashboards" link is gone (page removed). The new **Operator dashboard** lives at `/wc/{slug}` (TV: `/tv/wc/{slug}`) and mirrors `/recycling`'s visual style scoped to a single work center: KPI tiles row (Units / Up Time / Downtime / Pallets/hr), Pallets banner, 15-min progress chart, Cumulative Daily Progress, Downtime stacked bar, Vs. GOAT Pace, Monthly Ribbons. A WC dropdown at the top lets you switch which work center the page shows. `/operator` redirects to the first WC. The Settings → TVs panel drops the Custom optgroup and the Layout Templates section.

@@ -131,56 +131,11 @@ def test_get_tv_d_wc_archived_returns_404(monkeypatch):
     assert "work center" in r.text.lower() or "removed" in r.text.lower()
 
 
-def test_post_add_custom_requires_dashboard_id():
+def test_post_add_custom_kind_rejected():
+    """The 'custom' kind was removed when the workshop was torn out
+    (2026-05-14). POSTing with kind=custom must 400."""
     c = TestClient(app)
     r = c.post("/api/tv-displays", json={
-        "name": "rt-cust-bad", "kind": "custom", "theme": "dark",
+        "name": "rt-cust-gone", "kind": "custom", "theme": "dark",
     })
     assert r.status_code == 400
-
-
-def test_post_add_custom_returns_url():
-    from zira_dashboard import custom_dashboards_store, db
-    c = TestClient(app)
-    dash = custom_dashboards_store.save_dashboard(
-        name="rt-cust-dash", scope_kind="wc", scope_value="Repair 1", theme="dark",
-    )
-    r = c.post("/api/tv-displays", json={
-        "name": "rt-cust-tv", "kind": "custom",
-        "custom_dashboard_id": dash["id"], "theme": "dark",
-    })
-    assert r.status_code == 200
-    body = r.json()
-    assert body["url"] == "/tv/d/rt-cust-tv"
-    db.execute("DELETE FROM custom_dashboards WHERE slug = 'rt-cust-dash'")
-
-
-def test_get_tv_d_custom_dispatches():
-    """/tv/d/{slug} where kind=custom renders the custom dashboard."""
-    from zira_dashboard import custom_dashboards_store, db
-    c = TestClient(app)
-    dash = custom_dashboards_store.save_dashboard(
-        name="rt-cust-render", scope_kind="wc", scope_value="Repair 1", theme="light",
-    )
-    c.post("/api/tv-displays", json={
-        "name": "rt-cust-render-tv", "kind": "custom",
-        "custom_dashboard_id": dash["id"], "theme": "light",
-    })
-    r = c.get("/tv/d/rt-cust-render-tv")
-    assert r.status_code == 200
-    assert 'data-tv-theme="light"' in r.text
-    assert "Repair 1" in r.text
-    db.execute("DELETE FROM custom_dashboards WHERE slug = 'rt-cust-render'")
-
-
-def test_get_tv_d_custom_returns_404_when_dashboard_deleted():
-    from zira_dashboard import db
-    c = TestClient(app)
-    db.execute(
-        "INSERT INTO tv_displays (name, slug, kind, custom_dashboard_id, theme) "
-        "VALUES ('rt-orphan', 'rt-orphan', 'custom', NULL, 'dark')"
-    )
-    r = c.get("/tv/d/rt-orphan")
-    assert r.status_code == 404
-    assert "dashboard" in r.text.lower() or "removed" in r.text.lower()
-    db.execute("DELETE FROM tv_displays WHERE slug = 'rt-orphan'")
