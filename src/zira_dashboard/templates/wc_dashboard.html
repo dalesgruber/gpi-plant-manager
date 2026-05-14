@@ -91,6 +91,10 @@
       {% endif %}
     </div>
   </div>
+  <div class="edit-bar">
+    <span class="save-indicator" id="save-indicator">Drag / resize — layout auto-saves</span>
+    <button type="button" id="reset-layout">Reset Layout</button>
+  </div>
 {% endif %}
 
 <main>
@@ -265,23 +269,49 @@
 <script>
   const grid = GridStack.init({
     column: 12,
-    cellHeight: 80,
+    cellHeight: 60,
     margin: 8,
     float: false,
+    handle: '.grid-stack-item-content > h3, .grid-stack-item-content > .label',
   });
+
+  {% if not tv_mode %}
+  const indicator = document.getElementById('save-indicator');
+  let saveTimer = null;
+
   function persistLayout() {
     const items = grid.save(false).map(it => ({
       id: it.id, x: it.x, y: it.y, w: it.w, h: it.h,
     })).filter(it => it.id);
-    fetch('/api/layout/{{ layout_key }}', {
+    fetch('/api/layout/operator', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(items),
-    });
+    }).then(r => {
+      if (r.ok) {
+        indicator.textContent = 'Saved';
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          indicator.textContent = 'Drag / resize — layout auto-saves';
+        }, 1500);
+      } else {
+        indicator.textContent = 'Save failed';
+      }
+    }).catch(() => indicator.textContent = 'Save failed (network)');
   }
-  grid.on('change', persistLayout);
 
-  {% if not tv_mode %}
+  grid.on('change', persistLayout);
+  grid.on('resizestop', persistLayout);
+  grid.on('dragstop', persistLayout);
+
+  document.getElementById('reset-layout').addEventListener('click', () => {
+    fetch('/api/layout/operator', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify([]),
+    }).then(() => location.reload());
+  });
+
   // WC picker: navigate to the chosen WC.
   const picker = document.getElementById('wc-picker');
   if (picker) {

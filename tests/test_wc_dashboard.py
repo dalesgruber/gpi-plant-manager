@@ -212,3 +212,34 @@ def test_operator_dashboard_body_has_wc_dashboard_class(monkeypatch):
     c = TestClient(app)
     r = c.get("/wc/repair-1")
     assert 'class="wc-dashboard"' in r.text
+
+
+def test_operator_dashboard_has_edit_bar(monkeypatch):
+    """The edit-bar with save-indicator + Reset Layout button is in screen mode."""
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
+    assert 'class="edit-bar"' in r.text
+    assert 'id="save-indicator"' in r.text
+    assert 'id="reset-layout"' in r.text
+    assert "Drag / resize" in r.text
+
+
+def test_tv_wc_dashboard_omits_edit_bar(monkeypatch):
+    """TV view skips the edit-bar (read-only)."""
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/tv/wc/repair-1")
+    assert r.status_code == 200
+    assert 'id="save-indicator"' not in r.text
+    assert 'id="reset-layout"' not in r.text
+
+
+def test_operator_dashboard_persists_to_operator_layout_endpoint(monkeypatch):
+    """The JS posts to /api/layout/operator (not the old /api/layout/wc:...)."""
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert "/api/layout/operator" in r.text
+    assert "/api/layout/wc:" not in r.text
