@@ -1,9 +1,12 @@
-{# Per-WC dashboard. Two routes share this template:
-   - /wc/{slug}        editor view (gridstack enabled, edit buttons visible)
-   - /tv/wc/{slug}     TV view (read-only, no chrome, theme = data-tv-theme on <html>)
+{# Operator dashboard. Two routes share this template:
+   - /wc/{slug}        screen editor view (gridstack enabled, WC picker visible)
+   - /tv/wc/{slug}     TV view (chrome stripped, picker hidden)
+
+   Widgets mirror /recycling's layout, scoped to a single WC.
 #}
 {% from "_tv_header.html" import tv_header %}
 {% from "_goat_badges.html" import goat_badges, goat_badges_css, hover_tip_clamp_script %}
+{% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
 <!doctype html>
 <html lang="en"{% if tv_mode %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
 <head>
@@ -18,115 +21,208 @@
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
 <meta http-equiv="refresh" content="60">
 {% endif %}
-<style>{{ goat_badges_css() }}</style>
 <link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
+<style>{{ goat_badges_css() }}</style>
+<style>
+  .wc-picker-bar { display: flex; justify-content: flex-end; padding: 0.5rem 1rem 0; }
+  .wc-picker-bar select {
+    background: var(--panel-2, #f1f4f7); color: var(--fg, #1f2937);
+    border: 1px solid var(--border, #d8dee5); border-radius: 6px;
+    padding: 0.3rem 0.5rem; font: inherit; font-size: 0.9rem;
+  }
+</style>
 </head>
 <body>
 {% if tv_mode %}
-{{ tv_header(
-    wc_name,
-    crumb="WORK CENTER · " + (wc_group or "")|upper,
-    right=operators_display or "(unassigned)",
-) }}
+  {{ tv_header(
+      wc_name,
+      crumb="OPERATOR · " + (wc_group or "")|upper,
+      right=operators_display or "(unassigned)",
+  ) }}
 {% else %}
-{% include "_dashboards_subnav.html" %}
-{% endif %}
-
-{% if not tv_mode %}
-<div class="wc-template-bar">
-  <details class="wc-template-popover">
-    <summary class="wc-template-btn">Save as template…</summary>
-    <div class="wc-template-form">
-      <input type="text" id="wc-template-name" placeholder="Template name (e.g. Repairs)">
-      <button type="button" id="wc-template-save">Save</button>
-      <span class="wc-template-status" id="wc-template-save-status"></span>
+  <header>
+    <div style="display:flex;gap:1.25rem;align-items:center">
+      <a href="/recycling" style="display:flex;align-items:center;gap:0.55rem;text-decoration:none;color:inherit">
+        <img src="/static/gpi-logo.png" alt="GPI" style="height:28px;width:auto;display:block">
+        <h1 style="margin:0">Plant Manager</h1>
+      </a>
+      <nav>
+        <a href="/recycling">Dashboards</a>
+        <a href="/trophies">Trophy Case</a>
+        <a href="/staffing">Staffing</a>
+        <a href="/settings">Settings</a>
+      </nav>
     </div>
-  </details>
-  <details class="wc-template-popover">
-    <summary class="wc-template-btn">Apply template…</summary>
-    <div class="wc-template-form">
-      <select id="wc-template-pick"><option value="">— pick a template —</option></select>
-      <select id="wc-template-target">
-        <option value="this">Apply to this WC only</option>
-        <option value="group">Apply to every WC in this group</option>
-        <option value="all">Apply to every WC</option>
+  </header>
+  {% include "_dashboards_subnav.html" %}
+  <div class="wc-picker-bar">
+    <label style="display:flex;gap:0.4rem;align-items:center;font-size:0.85rem;color:var(--muted)">
+      Work center:
+      <select id="wc-picker">
+        {% for w in wc_options %}
+          <option value="{{ w.slug }}" {% if w.slug == slug %}selected{% endif %}>{{ w.name }}</option>
+        {% endfor %}
       </select>
-      <button type="button" id="wc-template-apply">Apply</button>
-      <span class="wc-template-status" id="wc-template-apply-status"></span>
-    </div>
-  </details>
-</div>
+    </label>
+  </div>
 {% endif %}
 
 <main>
 <div class="grid-stack">
 
-  {# Pallets banner — full width #}
-  <div class="grid-stack-item" gs-id="wc-pallets-banner" gs-x="0" gs-y="0" gs-w="12" gs-h="2">
-    {% with placement={"type":"pallets_banner","name":"Today · " + wc_name},
-            data=widgets.pallets_banner, visual={}, placement_title="Today · " + wc_name %}
-      {% include "widgets/_widget_pallets_banner.html" %}
-    {% endwith %}
+  {# KPI tiles row #}
+  <div class="grid-stack-item" gs-id="wc-kpi-row" gs-x="0" gs-y="0" gs-w="12" gs-h="2">
+    <div class="grid-stack-item-content">
+      <div class="kpi-row">
+        <div class="kpi"><div class="label">Units today</div><div class="val">{{ '{:,}'.format(kpi.units_today) }}</div></div>
+        <div class="kpi"><div class="label">Up Time</div><div class="val">{{ kpi.up_time_pct }} %</div></div>
+        <div class="kpi"><div class="label">Downtime</div><div class="val">{{ kpi.downtime_minutes }}m</div></div>
+        <div class="kpi"><div class="label">Pallets / hr</div><div class="val">{{ kpi.pallets_per_hour }}</div></div>
+      </div>
+    </div>
   </div>
 
-  {# 15-min progress — THIS WC #}
-  <div class="grid-stack-item" gs-id="wc-15min-progress" gs-x="0" gs-y="2" gs-w="12" gs-h="5">
-    {% with placement={"type":"daily_progress","name":wc_name + " — 15-minute progress"},
-            data=widgets.fifteen_min, visual={}, placement_title=wc_name + " — 15-minute progress" %}
-      {% include "widgets/_widget_daily_progress.html" %}
-    {% endwith %}
-  </div>
-
-  {# Cumulative Daily Progress — THIS WC #}
-  <div class="grid-stack-item" gs-id="wc-cumulative" gs-x="0" gs-y="7" gs-w="12" gs-h="5">
-    {% with placement={"type":"cumulative","name":wc_name + " — Daily Progress"},
-            data=widgets.cumulative, visual={}, placement_title=wc_name + " — Daily Progress" %}
-      {% include "widgets/_widget_cumulative.html" %}
-    {% endwith %}
-  </div>
-
-  {# Vs. Goat Pace — group of THIS WC (in the slot Recycling uses for repair-progress) #}
-  <div class="grid-stack-item" gs-id="wc-goat-race" gs-x="0" gs-y="12" gs-w="12" gs-h="5">
-    {% if widgets.goat_race %}
-      {% with placement={"type":"goat_race","name":"Vs. GOAT Pace — " + (wc_group or "")},
-              data=widgets.goat_race, visual={},
-              placement_title="Vs. GOAT Pace — " + (wc_group or "") %}
-        {% include "widgets/_widget_goat_race.html" %}
-      {% endwith %}
-    {% else %}
-      <div class="grid-stack-item-content">
-        <h3>Vs. GOAT Pace</h3>
-        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">
-          {{ wc_name }} isn't in a group — assign it one in Settings to enable this widget.
+  {# Pallets banner — big number vs goal #}
+  <div class="grid-stack-item" gs-id="wc-pallets-banner" gs-x="0" gs-y="2" gs-w="12" gs-h="2">
+    <div class="grid-stack-item-content">
+      <h3>Today · Pallets</h3>
+      <div class="pallets-banner">
+        <div class="pallets-numbers">
+          <span class="units">{{ pallets.units_today }}</span>
+          <span class="target">/ {{ pallets.target_today }} goal so far ({{ pallets.target_full_day }} full day)</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ (pallets.pct_of_target|float)|round(0)|int if pallets.pct_of_target else 0 }}%"></div>
         </div>
       </div>
-    {% endif %}
+    </div>
   </div>
 
-  {# Monthly Ribbons — group of THIS WC (in the slot Recycling uses for repair-cumulative) #}
-  <div class="grid-stack-item" gs-id="wc-monthly-ribbons" gs-x="0" gs-y="17" gs-w="12" gs-h="5">
-    {% if widgets.ribbons %}
-      {% with placement={"type":"ribbons","name":month_name(month) + " " + (year|string) + " · " + (wc_group or "")},
-              data=widgets.ribbons, visual={},
-              placement_title=month_name(month) + " " + (year|string) + " · " + (wc_group or "Ribbons") %}
-        {% include "widgets/_widget_ribbons.html" %}
-      {% endwith %}
-    {% else %}
-      <div class="grid-stack-item-content">
-        <h3>Monthly Ribbons</h3>
-        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">
-          {{ wc_name }} isn't in a group — assign it one in Settings to enable this widget.
+  {# 15-min progress chart — mirrors /recycling progress_chart markup #}
+  <div class="grid-stack-item" gs-id="wc-15min-progress" gs-x="0" gs-y="4" gs-w="12" gs-h="5">
+    <div class="grid-stack-item-content">
+      <h3>{{ wc_name }} — 15-minute progress</h3>
+      {% if progress_buckets %}
+        {%- set max_val = namespace(v=progress_bucket_target) -%}
+        {%- for b in progress_buckets -%}
+          {%- if b.actual > max_val.v %}{% set max_val.v = b.actual %}{% endif -%}
+          {%- if b.target > max_val.v %}{% set max_val.v = b.target %}{% endif -%}
+        {%- endfor -%}
+        {%- set scale = max_val.v if max_val.v > 0 else 1 -%}
+        <div class="progress">
+          <div class="legend">
+            <span><span class="swatch" style="background:var(--hit, var(--good))"></span>At / above goal</span>
+            <span><span class="swatch" style="background:var(--bad)"></span>Below goal</span>
+            {% if progress_bucket_target %}
+              <span style="margin-left:auto">{{ progress_bucket_target }} per 15 min</span>
+            {% endif %}
+          </div>
+          <div class="plot">
+            <div class="bars">
+              {% for b in progress_buckets %}
+                {% set hit = b.actual >= b.target and not b.in_progress %}
+                {% set h = (b.actual / scale * 100.0) if scale else 0 %}
+                {% set t_h = (b.target / scale * 100.0) if (scale and b.target) else 0 %}
+                <div class="col {% if hit %}hit{% else %}{% if b.in_progress %}hit{% else %}miss{% endif %}{% endif %} {% if b.in_progress %}in-progress{% endif %}"
+                     title="{{ b.label }} · {{ b.actual }} pallets (goal {{ b.target }})">
+                  <div class="bar" style="height: {{ h }}%">
+                    {% if b.actual > 0 %}<span class="bar-label">{{ b.actual }}</span>{% endif %}
+                  </div>
+                  {% if not b.in_progress and b.target %}
+                    <div class="target-tick" style="bottom: {{ t_h }}%"></div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="x-ticks">
+            {% for b in progress_buckets %}
+              {% if loop.index0 % 2 == 0 %}<span>{{ b.label }}</span>{% else %}<span></span>{% endif %}
+            {% endfor %}
+          </div>
         </div>
-      </div>
-    {% endif %}
+      {% else %}
+        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No shift data for this day.</div>
+      {% endif %}
+    </div>
   </div>
 
-  {# Downtime — THIS WC (single-row stacked working/down) #}
-  <div class="grid-stack-item" gs-id="wc-downtime-report" gs-x="0" gs-y="22" gs-w="12" gs-h="4">
-    {% with placement={"type":"downtime","name":wc_name + " — Downtime"},
-            data=widgets.downtime, visual={}, placement_title=wc_name + " — Downtime" %}
-      {% include "widgets/_widget_downtime.html" %}
-    {% endwith %}
+  {# Cumulative daily progress — shared macro #}
+  <div class="grid-stack-item" gs-id="wc-cumulative" gs-x="0" gs-y="9" gs-w="12" gs-h="5">
+    <div class="grid-stack-item-content">
+      <h3>{{ wc_name }} — Daily Progress</h3>
+      {% if progress_buckets %}
+        {{ cumulative_progress_chart(progress_buckets) }}
+      {% else %}
+        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No shift data for this day.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Downtime — single-row stacked working/down #}
+  <div class="grid-stack-item" gs-id="wc-downtime" gs-x="0" gs-y="14" gs-w="12" gs-h="3">
+    <div class="grid-stack-item-content">
+      <h3>{{ wc_name }} — Downtime · green = working, red = down</h3>
+      {% if downtime_elapsed_minutes == 0 %}
+        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No elapsed shift minutes on this day.</div>
+      {% else %}
+        <div class="bar-row numpos-widget">
+          <div class="name"><span class="name-primary">{{ downtime_row.name }}</span></div>
+          <div class="stacked-track">
+            <div class="good" style="width: {{ downtime_row.working_pct }}%" title="Working {{ downtime_row.working }}m"></div>
+            <div class="bad"  style="width: {{ downtime_row.down_pct }}%"    title="Down {{ downtime_row.down }}m"></div>
+          </div>
+          <div class="val">{{ downtime_row.down }}m</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Vs. GOAT Pace — group of this WC #}
+  <div class="grid-stack-item" gs-id="wc-goat-race" gs-x="0" gs-y="17" gs-w="12" gs-h="4">
+    <div class="grid-stack-item-content">
+      <h3>Vs. GOAT Pace{% if wc_group %} — {{ wc_group }}{% endif %}</h3>
+      {% if goat_race %}
+        <div class="goat-race">
+          {% if goat_race.status %}
+            <div class="status-pill status-{{ goat_race.status|lower }}">{{ goat_race.status|replace('_', ' ') }}</div>
+          {% else %}
+            <div class="status-pill status-none">no record yet</div>
+          {% endif %}
+          <div class="race-stats">
+            <div>Today: <b>{{ goat_race.units_today }}</b></div>
+            <div>GOAT pace now: <b>{{ goat_race.goat_pace_today|round(0)|int }}</b></div>
+            {% if goat_race.goat %}
+              <div class="goat-meta">🐐 {{ goat_race.goat.name }} · {{ goat_race.goat.units }} on {{ goat_race.goat.day }}</div>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">{{ wc_name }} isn't in a group.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Monthly Ribbons — group of this WC #}
+  <div class="grid-stack-item" gs-id="wc-monthly-ribbons" gs-x="0" gs-y="21" gs-w="12" gs-h="4">
+    <div class="grid-stack-item-content">
+      <h3>{{ month_name(month) }} {{ year }}{% if ribbons and ribbons.group %} · {{ ribbons.group }}{% endif %} — Ribbons</h3>
+      {% if ribbons %}
+        <ul class="ribbons-list">
+          {% for r in ribbons.entries %}
+            <li>
+              <span class="medal">{% if r.position == 1 %}🥇{% elif r.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+              <span class="name"><a href="/staffing/people/{{ r.name|urlencode }}">{{ r.name }}</a></span>
+              <span class="units">{{ r.units|round(0)|int }}</span>
+            </li>
+          {% else %}
+            <li class="empty">no qualifying days yet</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state" style="color:var(--muted);font-size:0.85rem">{{ wc_name }} isn't in a group.</div>
+      {% endif %}
+    </div>
   </div>
 
 </div>{# /.grid-stack #}
@@ -140,12 +236,9 @@
     margin: 8,
     float: false,
   });
-  // Autosave layout on drag/resize end. Runs in both editor and TV
-  // mode — TV pages are now editable too so the wall TV's resize sticks.
   function persistLayout() {
     const items = grid.save(false).map(it => ({
-      id: it.id,
-      x: it.x, y: it.y, w: it.w, h: it.h,
+      id: it.id, x: it.x, y: it.y, w: it.w, h: it.h,
     })).filter(it => it.id);
     fetch('/api/layout/{{ layout_key }}', {
       method: 'POST',
@@ -155,65 +248,15 @@
   }
   grid.on('change', persistLayout);
 
-{% if not tv_mode %}
-  // ---- Template Save / Apply UI ----
-  function templateLayout() {
-    return grid.save(false).map(it => ({
-      id: it.id, x: it.x, y: it.y, w: it.w, h: it.h,
-    })).filter(it => it.id);
-  }
-
-  function refreshTemplateList() {
-    fetch('/api/tv-templates').then(r => r.json()).then(data => {
-      const sel = document.getElementById('wc-template-pick');
-      const current = sel.value;
-      sel.innerHTML = '<option value="">— pick a template —</option>'
-        + (data.templates || []).map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-      if (current) sel.value = current;
+  {% if not tv_mode %}
+  // WC picker: navigate to the chosen WC.
+  const picker = document.getElementById('wc-picker');
+  if (picker) {
+    picker.addEventListener('change', (e) => {
+      window.location.href = '/wc/' + e.target.value;
     });
   }
-
-  document.getElementById('wc-template-save').addEventListener('click', () => {
-    const name = document.getElementById('wc-template-name').value.trim();
-    const status = document.getElementById('wc-template-save-status');
-    if (!name) { status.textContent = 'name required'; return; }
-    status.textContent = 'Saving…';
-    fetch('/api/tv-templates', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name: name, layout: templateLayout()}),
-    }).then(r => r.json()).then(data => {
-      status.textContent = data.ok ? `Saved "${name}"` : ('Error: ' + (data.error || 'unknown'));
-      if (data.ok) refreshTemplateList();
-    });
-  });
-
-  document.getElementById('wc-template-apply').addEventListener('click', () => {
-    const tid = document.getElementById('wc-template-pick').value;
-    const scope = document.getElementById('wc-template-target').value;
-    const status = document.getElementById('wc-template-apply-status');
-    if (!tid) { status.textContent = 'pick a template first'; return; }
-    let targets;
-    if (scope === 'this') targets = ['{{ layout_key }}'];
-    else if (scope === 'group') targets = '{{ ('group:' + wc_group) if wc_group else 'all' }}';
-    else targets = 'all';
-    status.textContent = 'Applying…';
-    fetch(`/api/tv-templates/${tid}/apply`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({targets: targets}),
-    }).then(r => r.json()).then(data => {
-      if (data.ok) {
-        status.textContent = `Applied to ${data.applied_count} WC${data.applied_count === 1 ? '' : 's'} · reloading…`;
-        setTimeout(() => location.reload(), 700);
-      } else {
-        status.textContent = 'Error: ' + (data.error || 'unknown');
-      }
-    });
-  });
-
-  refreshTemplateList();
-{% endif %}
+  {% endif %}
 </script>
 {{ hover_tip_clamp_script() }}
 </body>
