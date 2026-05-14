@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 12:18 PM
+
+- **TV view: per-row labels actually fit, footer + resize handles hidden** — screenshot from a 1080p TV showed three concrete problems my prior scaling pass introduced: (1) bar-row labels (operator names) in the Pallets-by-WC and Downtime widgets were stacking on top of each other because the screen-mode CSS floor of `0.9rem` on `.bar-row .name` was bigger than the per-row pixel slice when a widget has 6 dismantlers and only ~100px of vertical space. (2) The in-page footer ("Refreshed … · What's new ↗") rendered at the bottom — that should be gated to screen mode only. (3) Gridstack's resize-handle chevrons still painted despite `staticGrid: true`. Fixes: TV-mode CSS drops the bar-row name font floor to `0.5rem`, hides every `.ui-resizable-*` handle, and stops the `What's new` + Refreshed footer from rendering in TV mode. Also removed the `max-height: 100vh` clamp on `.grid-stack` and `main` since it was clipping chart content visible at the bottom of the dashboard.
+
 ### 11:25 AM
 
 - **TV scaling — measure actual header, fit on every resize** — the prior cellHeight formula reserved a hardcoded 80px for the TV header, but the header scales with root font, so on a 1440p+ TV it's actually 100-120px and the layout still overflowed. The JS now `getBoundingClientRect`s the `.tv-header` element to get its real rendered height. The fit also runs twice (once on init + once on `requestAnimationFrame`) in case the first call mistimed against font loading, plus on every `resize` event. CSS strengthened: `html`, `body`, `main`, `.grid-stack`, and `.grid-stack-item` all get `overflow: hidden` (with `!important` on the latter two) so nothing can render outside its widget bounds. `.grid-stack` and `main` get `max-height: 100vh`. Body padding/margin zeroed in TV mode so chrome can't sneak in extra space.

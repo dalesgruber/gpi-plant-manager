@@ -356,10 +356,12 @@
 
   </div>
 
+  {% if not tv_mode %}
   <div class="footer">
     Refreshed {{ refreshed_at }}{% if range_includes_today %} · auto-refresh 60s{% endif %}
     {% if elapsed_minutes > 0 %} · shift elapsed: {{ elapsed_minutes }}m{% endif %}
   </div>
+  {% endif %}
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
@@ -554,7 +556,7 @@
 {% if range_includes_today %}
 <script>setTimeout(() => location.reload(), 60000);</script>
 {% endif %}
-{% include '_footer.html' %}
+{% if not tv_mode %}{% include '_footer.html' %}{% endif %}
 {{ hover_tip_clamp_script() }}
 </body>
 </html>
