@@ -112,16 +112,16 @@
       {% if not tv_mode %}{{ edit_controls('pallets-banner', 'Today · Pallets', 'kpi') }}{% endif %}
       <h3>{{ widget_title('pallets-banner', 'Today · Pallets') }}</h3>
       <div class="pallets-banner">
-        <div class="pallets-numbers">
-          <span class="units" {{ widget_color_style('pallets-banner', 'color') }}>{{ pallets.units_today }}</span>
-          <span class="target">/ {{ pallets.target_full_day }} full day</span>
-        </div>
         {% set fill_pct = ((pallets.units_today / pallets.target_full_day * 100.0) if pallets.target_full_day else 0) %}
         <div class="bar-track">
           <div class="bar-fill" style="width: {{ [fill_pct, 100]|min }}%"></div>
           {% if banner_now_pct and banner_now_pct > 0 %}
             <div class="bar-target-line" style="left: {{ banner_now_pct }}%" title="On-pace target right now"></div>
           {% endif %}
+          <div class="bar-overlay">
+            <span class="units" {{ widget_color_style('pallets-banner', 'color') }}>{{ pallets.units_today }}</span>
+            <span class="target">/ {{ pallets.target_full_day }}</span>
+          </div>
         </div>
         {% if shift_start_label or now_label %}
           <div class="bar-row axis-row numpos-widget pallets-axis">

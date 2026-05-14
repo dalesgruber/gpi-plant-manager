@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 10:19 AM
+
+- **Downtime % moves to the LEFT of the green bar; pallets counter moves INSIDE the bar** — two related layout cleanups. (1) The downtime widget's up-time label was right-aligned at the green/red boundary; now it's left-aligned at the left edge of the green portion. The downtime minutes (`12m`) stay right-aligned inside the red portion. (2) The pallets banner's big units number moves *inside* the bar at the left edge — the separate numbers row above the bar is gone. The bar now fills the available vertical space (grid row 1fr) with the number overlaid in white at the left, target denominator (`/ 240`) right after it. Frees ~30px of vertical space and makes the banner read as a single dense element.
+
 ### 10:16 AM
 
 - **GOAT widget delta line gets a big 🐐 next to the counter** — added a goat emoji after the AHEAD / BEHIND label, sized to match the number itself (`clamp(1.8rem, min(30cqh, 12cqw), 5.5rem)`). The delta line now reads `+5 AHEAD 🐐` / `-3 BEHIND 🐐`, doubling down on the GOAT theme. Replaces the earlier 🔥. ON PACE case omits it.
