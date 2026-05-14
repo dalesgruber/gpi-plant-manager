@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 10:25 AM
+
+- **Reverted: pallets counter inside the bar** — the inside-the-bar overlay didn't read well. Restored the prior layout: separate `.pallets-numbers` row above the bar (number + `/ N full day`), then the rectangular fill bar (45-180px tall), then the start/now axis ticks below. Downtime widget's left-aligned `%` change from the prior commit stays.
+
 ### 10:19 AM
 
 - **Downtime % moves to the LEFT of the green bar; pallets counter moves INSIDE the bar** — two related layout cleanups. (1) The downtime widget's up-time label was right-aligned at the green/red boundary; now it's left-aligned at the left edge of the green portion. The downtime minutes (`12m`) stay right-aligned inside the red portion. (2) The pallets banner's big units number moves *inside* the bar at the left edge — the separate numbers row above the bar is gone. The bar now fills the available vertical space (grid row 1fr) with the number overlaid in white at the left, target denominator (`/ 240`) right after it. Frees ~30px of vertical space and makes the banner read as a single dense element.

@@ -179,51 +179,36 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-rows: 1fr auto;   /* bar fills, axis pinned bottom */
+  grid-template-rows: 1fr auto auto;
   gap: 6px;
   overflow: hidden;
 }
-.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-track {
-  position: relative;
-  margin-top: 0;
-  height: 100%;             /* fills the 1fr grid row */
-  min-height: 45px;
-  border-radius: 0;
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .pallets-numbers {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   overflow: hidden;
-  /* Nested container so the .units font can scale to THIS row's height. */
+  min-height: 0;
+  /* Nested container so the .units font can scale to THIS row's height
+     (the 1fr grid row) rather than the whole widget. */
   container-type: size;
 }
-.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-fill {
-  border-radius: 0;
-}
-/* The big units number sits INSIDE the bar at the left edge. Absolute
-   positioning so the bar-fill slides underneath. White with a soft
-   shadow so it stays readable against both the green fill and the
-   gray track background. */
-.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-overlay {
-  position: absolute;
-  left: clamp(8px, 1.5cqw, 18px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  color: #fff;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-  line-height: 1;
-}
 .wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .units {
-  font-size: clamp(1.8rem, min(65cqh, 11cqw), 7rem);
+  font-size: clamp(1.5rem, min(80cqh, 9cqw), 6rem);
   font-weight: 800;
   line-height: 1;
 }
 .wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .target {
-  font-size: clamp(0.85rem, min(22cqh, 2.4cqw), 1.6rem);
-  font-weight: 600;
-  opacity: 0.9;
+  font-size: clamp(0.85rem, min(30cqh, 2.2cqw), 1.4rem);
+  margin-left: 8px;
+}
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-track {
+  margin-top: 0;
+  height: clamp(45px, 45cqh, 180px);
+  border-radius: 0;
+}
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-fill {
+  border-radius: 0;
 }
 .wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .pallets-axis {
   margin-top: 0;
