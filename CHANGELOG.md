@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 9:58 AM
+
+- **Pallets banner bar is now rectangular and 50% taller** — dropped the pill rounding (`border-radius: 0`) and bumped the height clamp from `clamp(30px, 30cqh, 120px)` to `clamp(45px, 45cqh, 180px)`. Squared-off corners, chunkier vertical presence.
+
 ### 9:53 AM
 
 - **Pallets banner bar is chunkier and scales with widget height** — the progress bar was capped at 22px regardless of widget size. New rule: `clamp(30px, 30cqh, 120px)` — chunky 30px floor, scales at 30% of widget height, up to a 120px ceiling. Border-radius set to a full pill so the bar reads as a single thick stripe at any size. Drag the banner taller and the bar grows with it.
