@@ -6,7 +6,8 @@
 
 The /wc/{slug} dashboard mirrors /recycling's visual style — same CSS
 classes, same widget markup — scoped to a single WC. A picker at the
-top lets the user switch which WC.
+top lets the user switch which WC. Layout + per-widget customizations
+are shared across every WC under page='operator'.
 """
 from __future__ import annotations
 
@@ -15,10 +16,34 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import layout_store, wc_dashboard_data, work_centers_store
+from .. import (
+    layout_store,
+    shift_config,
+    wc_dashboard_data,
+    widget_customizer,
+    work_centers_store,
+)
 from ..deps import templates
 
 router = APIRouter()
+
+
+def _shift_start_label(day) -> str:
+    """`HH:MM` for the day's shift start, or "" if unavailable."""
+    try:
+        t = shift_config.shift_start_for(day)
+    except Exception:
+        return ""
+    return f"{t.hour:02d}:{t.minute:02d}"
+
+
+def _now_label(day) -> str:
+    """Current local time `HH:MM` if `day` is today (in SITE_TZ); empty otherwise."""
+    today_local = datetime.now(shift_config.SITE_TZ).date()
+    if day != today_local:
+        return ""
+    now_local = datetime.now(shift_config.SITE_TZ)
+    return f"{now_local.hour:02d}:{now_local.minute:02d}"
 
 
 def _render_wc_dashboard(
@@ -28,17 +53,7 @@ def _render_wc_dashboard(
     tv_mode: bool,
     tv_theme: str,
 ):
-    """Render the Operator dashboard for one WC.
-
-    Layout mirrors /recycling's widget set, scoped to a single WC:
-      - KPI tiles row
-      - Pallets banner
-      - 15-min progress chart
-      - Cumulative daily progress
-      - Downtime stacked bar
-      - GOAT race (group)
-      - Monthly Ribbons (group)
-    """
+    """Render the Operator dashboard for one WC."""
     from .. import staffing
     loc = wc_dashboard_data.wc_by_slug(slug)
     if loc is None:
@@ -55,7 +70,6 @@ def _render_wc_dashboard(
     progress = wc_dashboard_data.fifteen_min_progress_buckets(wc_name, today)
     kpi = wc_dashboard_data.kpi_tiles(wc_name, today)
     report = wc_dashboard_data.downtime_report(wc_name, today) or {}
-    # Single-row stacked working/down for this WC (mirrors /recycling shape).
     down_min = int(report.get("total_minutes", 0))
     elapsed_min = int(kpi["hours_elapsed"] * 60)
     working_min = max(0, elapsed_min - down_min)
@@ -70,7 +84,12 @@ def _render_wc_dashboard(
     goat = wc_dashboard_data.goat_race(wc_name, today) if wc_group else None
     ribbons = wc_dashboard_data.monthly_ribbons(wc_name, today.year, today.month) if wc_group else None
 
-    layout_key = f"wc:{slug}"
+    layout_key = "operator"
+
+    # Pallets-banner axis-tick position: prorated target as % of full-day goal.
+    full_day = int(pallets.get("target_full_day") or 0)
+    today_target = int(pallets.get("target_today") or 0)
+    banner_now_pct = (today_target / full_day * 100.0) if full_day > 0 else 0.0
 
     return templates.TemplateResponse(
         request,
@@ -99,6 +118,10 @@ def _render_wc_dashboard(
             "active_dashboard_key": "wc:" + wc_name,
             "layout": layout_store.layout_map(layout_key),
             "layout_key": layout_key,
+            "customs": widget_customizer.load_all(layout_key),
+            "shift_start_label": _shift_start_label(today),
+            "now_label": _now_label(today),
+            "banner_now_pct": banner_now_pct,
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
         },

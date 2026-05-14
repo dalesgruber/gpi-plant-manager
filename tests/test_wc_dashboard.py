@@ -103,3 +103,52 @@ def test_unassigned_wc_renders_with_placeholder(monkeypatch):
     r = c.get("/tv/wc/repair-1")
     assert r.status_code == 200
     assert "(unassigned)" in r.text
+
+
+def test_operator_route_uses_shared_layout_key(monkeypatch):
+    """Both /wc/repair-1 and /wc/dismantler-2 read layout from page='operator'."""
+    _stub_wc(monkeypatch)
+    calls = []
+    from zira_dashboard import layout_store
+    monkeypatch.setattr(layout_store, "layout_map", lambda page: (calls.append(page) or {}))
+    # Make wc_by_slug resolve both slugs to fake Locations.
+    from zira_dashboard import wc_dashboard_data
+
+    class _Loc:
+        def __init__(self, n): self.name = n; self.meter_id = "m"; self.skill = "Repair"; self.bay = "Bay 1"
+
+    monkeypatch.setattr(
+        wc_dashboard_data, "wc_by_slug",
+        lambda s: _Loc("Repair 1") if s == "repair-1"
+              else _Loc("Dismantler 2") if s == "dismantler-2"
+              else None,
+    )
+    c = TestClient(app)
+    c.get("/wc/repair-1")
+    c.get("/wc/dismantler-2")
+    assert "operator" in calls, f"layout_map never called with 'operator'; got {calls}"
+    assert all(p == "operator" for p in calls), f"unexpected layout keys: {calls}"
+
+
+def test_operator_route_loads_widget_customizations(monkeypatch):
+    """The render context loads widget customizations from page='operator'."""
+    _stub_wc(monkeypatch)
+    seen = {}
+    from zira_dashboard import widget_customizer
+    monkeypatch.setattr(
+        widget_customizer, "load_all",
+        lambda page: (seen.setdefault("page", page) or {}),
+    )
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
+    assert seen.get("page") == "operator", f"expected widget_customizer.load_all('operator'); got {seen}"
+
+
+def test_operator_route_renders_without_500_after_context_changes(monkeypatch):
+    """Smoke: the route still 200s with the new context vars (customs,
+    shift_start_label, now_label, banner_now_pct)."""
+    _stub_wc(monkeypatch)
+    c = TestClient(app)
+    r = c.get("/wc/repair-1")
+    assert r.status_code == 200
