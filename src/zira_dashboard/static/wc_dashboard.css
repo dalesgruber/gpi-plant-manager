@@ -101,8 +101,11 @@ main { padding: 12px 16px; }
 /* ---------------------------------------------------------------------- */
 
 /* Each widget content area becomes its own container so child font sizes
-   can scale with widget width via cqw units. */
-.wc-dashboard .grid-stack-item-content { container-type: inline-size; }
+   can scale with widget width AND height via cqw / cqh units. Note: we
+   use `container-type: size` (not `inline-size`) so cqh actually tracks
+   the widget's pixel height — gridstack sets explicit dimensions on the
+   parent .grid-stack-item, so size containment is safe here. */
+.wc-dashboard .grid-stack-item-content { container-type: size; }
 
 /* KPI tiles: shrink-to-fit text, no wrap, minimal padding so the
    number can use the full widget area. Scale by the SMALLER of width
@@ -114,13 +117,18 @@ main { padding: 12px 16px; }
   flex-direction: column;
 }
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .label {
-  font-size: clamp(0.65rem, 3.5cqw, 1rem);
+  /* Match the <h3> styling other widgets use so all titles look the same. */
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted, #6b7280);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.1;
   flex-shrink: 0;
-  margin: 0;
 }
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val {
   flex: 1 1 auto;
@@ -138,32 +146,50 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .align-left   .val { justify-content: flex-start; }
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .align-right  .val { justify-content: flex-end; }
 
-/* Pallets banner: scale to the smaller of widget width/height so the
-   big number never exceeds the widget's vertical space (otherwise a
-   12-col banner at full width tries to render the number at ~9% of
-   1400px = 126px tall, which overflows the gs-h=2 default and shows
-   a scroll affordance). overflow:hidden on the inner banner div is a
-   safety net even if a future change pushes content over. */
-.wc-dashboard .pallets-banner {
+/* Pallets banner: make the widget content area a flex column so the
+   .pallets-banner div takes the remaining height after the h3 title,
+   then inside the banner use a grid where the big-number row flexes
+   (1fr) while the bar and axis row hold their natural height. This
+   guarantees the bar + start/now ticks never get clipped no matter
+   how tall the widget is — they sit at the bottom; the number grows
+   into the space in between. */
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .grid-stack-item-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-  min-height: 0;
 }
-.wc-dashboard .pallets-banner .pallets-numbers {
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .pallets-banner {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 6px;
+  overflow: hidden;
+}
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .pallets-numbers {
+  display: flex;
+  align-items: center;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1;
+  min-height: 0;
+  /* Nested container so the .units font can scale to THIS row's height
+     (the 1fr grid row) rather than the whole widget. */
+  container-type: size;
 }
-.wc-dashboard .pallets-banner .units  {
-  font-size: clamp(1.5rem, min(40cqh, 8cqw), 3.6rem);
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .units {
+  font-size: clamp(1.5rem, min(80cqh, 9cqw), 6rem);
   font-weight: 800;
   line-height: 1;
 }
-.wc-dashboard .pallets-banner .target {
-  font-size: clamp(0.8rem, min(12cqh, 2.4cqw), 1.4rem);
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .target {
+  font-size: clamp(0.85rem, min(30cqh, 2.2cqw), 1.4rem);
+  margin-left: 8px;
+}
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .bar-track {
+  margin-top: 0;
+  height: clamp(10px, 2.5cqh, 22px);
+}
+.wc-dashboard .grid-stack-item[gs-id="pallets-banner"] .pallets-axis {
+  margin-top: 0;
 }
 
 /* GOAT race text + status pill scale by the SMALLER of widget height

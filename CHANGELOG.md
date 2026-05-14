@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 9:45 AM
+
+- **Pallets banner layout fixed; Pallets/hr title matches other widgets** — two operator-dashboard polish items. (1) The Pallets banner's big number was overlapping the widget title and the start/now axis labels were getting clipped. Root cause: the widget's container query was `container-type: inline-size` so `cqh` (container-query height) silently fell back to 0, breaking every `min(cqh, cqw)` rule. Switched the widget container type to `size` so `cqh` actually tracks the widget's pixel height. Banner now uses a CSS grid (`grid-template-rows: 1fr auto auto`) — the number row flexes to fill, while the bar and axis row hold their natural height and stay glued to the bottom, no clipping. The big number sits in its own nested container so its font scales by the row's height, not the widget's full height. (2) The Pallets/hr widget's `.label` was using a custom KPI style different from the `<h3>` other widgets use — now styled identically (11px, uppercase, muted, 8px bottom margin) so all widget titles read as one family.
+
 ### 9:30 AM
 
 - **Downtime widget: up-time % moves inside the green bar; right side shows just `Xm`** — the up-time percent now renders as a white label at the right edge of the green "working" portion of the stacked bar, sitting right where the bar transitions to red. The right-side value column drops the word "down" — just shows `Xm` (the bar's red color makes "down" redundant). If the green bar is too narrow to fit the label (very high downtime), the parent's `overflow: hidden` clips it cleanly.
