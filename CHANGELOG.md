@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 10:02 AM
+
+- **Pallets/hr, GOAT Pace, Monthly Ribbons — bigger titles top-left, less padding, body fills widget** — three operator-dashboard polish items grouped. (1) Widget titles for those three are now `0.95rem` (was 11px ~0.7rem) and pinned top-left regardless of the widget's align-X class. (2) Padding cut from the default `10px 12px` to `2px 8px` (Pallets/hr) or `4px 10px` (GOAT Pace, Monthly Ribbons) so the number and body content reach the widget edges. (3) Number and body sizing bumped much higher: Pallets/hr number scales as `clamp(2rem, min(75cqh, 28cqw), 8rem)` so it fills the area after the title. GOAT Pace stats scale `clamp(1.1rem, min(18cqh, 7cqw), 4.5rem)` with the inner content flex-centered to fill vertically. Monthly Ribbons rows scale `clamp(1.1rem, min(20cqh, 5cqw), 3rem)` with `justify-content: space-around` so the three rows spread out to fill the widget height.
+
 ### 9:58 AM
 
 - **Pallets banner bar is now rectangular and 50% taller** — dropped the pill rounding (`border-radius: 0`) and bumped the height clamp from `clamp(30px, 30cqh, 120px)` to `clamp(45px, 45cqh, 180px)`. Squared-off corners, chunkier vertical presence.

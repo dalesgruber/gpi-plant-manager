@@ -112,7 +112,7 @@ main { padding: 12px 16px; }
    or height so the text fits both axes. Target by gs-id prefix so
    only the four KPI widgets get this treatment. */
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .grid-stack-item-content {
-  padding: 4px 6px;
+  padding: 2px 8px;
   display: flex;
   flex-direction: column;
 }
@@ -130,12 +130,30 @@ main { padding: 12px 16px; }
   line-height: 1.1;
   flex-shrink: 0;
 }
+
+/* Titles for Pallets/hr, GOAT Pace, Monthly Ribbons — bigger and always
+   pinned top-left regardless of the widget's align-X class. */
+.wc-dashboard .grid-stack-item[gs-id="kpi-pph"] .label,
+.wc-dashboard .grid-stack-item[gs-id="goat-race"] h3,
+.wc-dashboard .grid-stack-item[gs-id="monthly-ribbons"] h3 {
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+  text-align: left;
+  align-self: flex-start;
+}
+/* Override the parent .align-center text-align so the Pallets/hr title
+   stays left even when the user picks center alignment for the value. */
+.wc-dashboard .grid-stack-item[gs-id="kpi-pph"] .grid-stack-item-content.align-center .label {
+  text-align: left;
+}
 .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   white-space: nowrap;
-  font-size: min(40cqh, 16cqw);
+  /* Bigger floor + more aggressive scaling so the number fills the
+     remaining widget area after the title. */
+  font-size: clamp(2rem, min(75cqh, 28cqw), 8rem);
   line-height: 1;
   font-weight: 800;
   overflow: hidden;
@@ -199,23 +217,56 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
   margin-top: 0;
 }
 
-/* GOAT race text + status pill scale by the SMALLER of widget height
-   or width so the content fills the widget at any size. Larger floor
-   so the text stays bold even when the widget is small. */
-.wc-dashboard .goat-race .race-stats  { font-size: clamp(1rem,    min(10cqh, 5cqw),   2.6rem); line-height: 1.3; }
+/* GOAT race — make the inner content fill the widget vertically AND
+   scale much more aggressively so the body uses all the open space.
+   Slim padding so content reaches the widget edges. */
+.wc-dashboard .grid-stack-item[gs-id="goat-race"] .grid-stack-item-content {
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.wc-dashboard .grid-stack-item[gs-id="goat-race"] .goat-race {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(0.4rem, 1.5cqh, 1.2rem);
+}
+.wc-dashboard .goat-race .race-stats  {
+  font-size: clamp(1.1rem, min(18cqh, 7cqw), 4.5rem);
+  line-height: 1.2;
+  font-weight: 600;
+}
+.wc-dashboard .goat-race .race-stats b { font-weight: 800; }
 .wc-dashboard .goat-race .status-pill {
-  font-size: clamp(0.9rem, min(8cqh,  3.5cqw), 1.8rem);
-  padding:   clamp(2px,    min(1cqh,  0.8cqw), 8px) clamp(6px, min(2cqh, 1.5cqw), 14px);
+  font-size: clamp(1rem,   min(13cqh, 4.5cqw), 3rem);
+  padding:   clamp(3px,    min(1.5cqh, 1cqw), 12px) clamp(8px, min(3cqh, 2cqw), 20px);
 }
-.wc-dashboard .goat-race .goat-meta   { font-size: clamp(0.85rem, min(7cqh,  3cqw),   1.5rem); }
+.wc-dashboard .goat-race .goat-meta   { font-size: clamp(0.9rem, min(10cqh, 3.5cqw), 2rem); }
 
-/* Monthly ribbons rows + medals scale by smaller of widget height/width too. */
-.wc-dashboard .ribbons-list li      {
-  font-size: clamp(1rem,   min(11cqh, 4cqw),  2.4rem);
-  gap:       clamp(4px,    min(1.5cqh, 1cqw), 14px);
+/* Monthly Ribbons — slim padding, content fills the widget. The
+   three ribbon rows expand to fill vertical space; row text scales
+   with widget size. */
+.wc-dashboard .grid-stack-item[gs-id="monthly-ribbons"] .grid-stack-item-content {
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
 }
-.wc-dashboard .ribbons-list .medal  { font-size: clamp(1.3rem, min(15cqh, 5.5cqw), 3rem); }
-.wc-dashboard .ribbons-list .units  { font-size: clamp(1rem,   min(12cqh, 4.5cqw), 2.6rem); }
+.wc-dashboard .grid-stack-item[gs-id="monthly-ribbons"] .ribbons-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+.wc-dashboard .ribbons-list li      {
+  font-size: clamp(1.1rem, min(20cqh, 5cqw),  3rem);
+  gap:       clamp(4px,    min(2cqh,  1.2cqw), 18px);
+}
+.wc-dashboard .ribbons-list .medal  { font-size: clamp(1.4rem, min(25cqh, 6.5cqw), 4rem); }
+.wc-dashboard .ribbons-list .units  { font-size: clamp(1.1rem, min(22cqh, 5.5cqw), 3.2rem); }
 
 /* Operator strip — one unified chrome row sitting between the dashboards
    sub-nav and the widget grid. Left: WC picker (styled like a page
