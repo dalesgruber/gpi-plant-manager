@@ -350,22 +350,38 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
   margin-top: 0.35rem;
 }
 
-/* Downtime widget — up-time % rendered as a white label inside the
-   right edge of the green "working" bar, just before it transitions
-   to the red "down" portion. The .stacked-track parent already has
-   overflow: hidden so the label is clipped if the green bar is too
-   narrow to hold it (high-downtime case). */
-.wc-dashboard .stacked-track .good {
+/* Downtime widget — the bar spans the full widget width (no name or
+   val columns flanking it; the operator-strip at top already shows the
+   WC + operator). Up-time % sits inside the right edge of the green
+   bar; the downtime minutes sit inside the right edge of the red bar.
+   Both are white, bold, scale with widget size. */
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .grid-stack-item-content {
+  display: flex;
+  flex-direction: column;
+}
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .downtime-bar {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+}
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .stacked-track {
+  width: 100%;
+  height: clamp(40px, 55cqh, 220px);
+}
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .stacked-track .good,
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .stacked-track .bad {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   overflow: hidden;
 }
-.wc-dashboard .stacked-track .good .up-label {
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .up-label,
+.wc-dashboard .grid-stack-item[gs-id="downtime-row"] .down-label {
   color: #fff;
-  font-weight: 700;
-  font-size: clamp(0.7rem, 1.8cqw, 1.1rem);
+  font-weight: 800;
+  font-size: clamp(1.1rem, min(35cqh, 4cqw), 3.2rem);
   white-space: nowrap;
-  padding: 0 6px;
+  padding: 0 14px;
   line-height: 1;
 }

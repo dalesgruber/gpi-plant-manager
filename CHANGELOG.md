@@ -4,6 +4,9 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-14
 
+### 10:04 AM
+
+- **Downtime widget bar spans the whole widget; both labels live inside it** — dropped the name column and the right-side val column (the operator-strip at the top of the dashboard already shows the WC + operator, so the name was redundant). The stacked working/down bar now fills the full widget width. Up-time % sits at the right edge of the green portion (without the word "up" — just `95.0%`); downtime minutes (`12m`) sit at the right edge of the red portion. Both labels are white, bold, and scale with widget size (`clamp(1.1rem, min(35cqh, 4cqw), 3.2rem)`). Bar height also grows with widget height — `clamp(40px, 55cqh, 220px)`.
 ### 10:02 AM
 
 - **Pallets/hr, GOAT Pace, Monthly Ribbons — bigger titles top-left, less padding, body fills widget** — three operator-dashboard polish items grouped. (1) Widget titles for those three are now `0.95rem` (was 11px ~0.7rem) and pinned top-left regardless of the widget's align-X class. (2) Padding cut from the default `10px 12px` to `2px 8px` (Pallets/hr) or `4px 10px` (GOAT Pace, Monthly Ribbons) so the number and body content reach the widget edges. (3) Number and body sizing bumped much higher: Pallets/hr number scales as `clamp(2rem, min(75cqh, 28cqw), 8rem)` so it fills the area after the title. GOAT Pace stats scale `clamp(1.1rem, min(18cqh, 7cqw), 4.5rem)` with the inner content flex-centered to fill vertically. Monthly Ribbons rows scale `clamp(1.1rem, min(20cqh, 5cqw), 3rem)` with `justify-content: space-around` so the three rows spread out to fill the widget height.

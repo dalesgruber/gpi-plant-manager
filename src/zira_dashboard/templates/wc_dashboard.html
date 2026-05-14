@@ -208,22 +208,15 @@
       {% if downtime_elapsed_minutes == 0 %}
         <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No elapsed shift minutes on this day.</div>
       {% else %}
-        <div class="bar-row numpos-widget">
-          <div class="name">
-            {% if downtime_row.who %}
-              <span class="name-primary">{{ downtime_row.who }}</span>
-              <span class="name-secondary">{{ downtime_row.name }}</span>
-            {% else %}
-              <span class="name-primary">{{ downtime_row.name }}</span>
-            {% endif %}
-          </div>
+        <div class="downtime-bar">
           <div class="stacked-track">
             <div class="good" style="width: {{ downtime_row.working_pct }}%" title="Working {{ downtime_row.working }}m">
-              {% if downtime_row.working_pct > 0 %}<span class="up-label">{{ kpi.up_time_pct }}% up</span>{% endif %}
+              {% if downtime_row.working_pct > 0 %}<span class="up-label">{{ kpi.up_time_pct }}%</span>{% endif %}
             </div>
-            <div class="bad"  style="width: {{ downtime_row.down_pct }}%"    title="Down {{ downtime_row.down }}m"></div>
+            <div class="bad"  style="width: {{ downtime_row.down_pct }}%"    title="Down {{ downtime_row.down }}m">
+              {% if downtime_row.down_pct > 0 %}<span class="down-label">{{ downtime_row.down }}m</span>{% endif %}
+            </div>
           </div>
-          <div class="val">{{ downtime_row.down }}m</div>
         </div>
       {% endif %}
     </div>
