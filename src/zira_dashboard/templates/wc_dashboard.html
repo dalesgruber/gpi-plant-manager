@@ -224,7 +224,14 @@
         <div class="empty-state" style="color:var(--muted);font-size:0.85rem">No elapsed shift minutes on this day.</div>
       {% else %}
         <div class="bar-row numpos-widget">
-          <div class="name"><span class="name-primary">{{ downtime_row.name }}</span></div>
+          <div class="name">
+            {% if downtime_row.who %}
+              <span class="name-primary">{{ downtime_row.who }}</span>
+              <span class="name-secondary">{{ downtime_row.name }}</span>
+            {% else %}
+              <span class="name-primary">{{ downtime_row.name }}</span>
+            {% endif %}
+          </div>
           <div class="stacked-track">
             <div class="good" style="width: {{ downtime_row.working_pct }}%" title="Working {{ downtime_row.working }}m"></div>
             <div class="bad"  style="width: {{ downtime_row.down_pct }}%"    title="Down {{ downtime_row.down }}m"></div>
@@ -238,8 +245,9 @@
   {# Vs. GOAT Pace. #}
   <div class="grid-stack-item" {{ widget_attrs('goat-race', 0, 17, 12, 4) }}>
     <div class="grid-stack-item-content">
-      {% if not tv_mode %}{{ edit_controls('goat-race', 'Vs. GOAT Pace', 'kpi') }}{% endif %}
-      <h3>{{ widget_title('goat-race', 'Vs. GOAT Pace') }}{% if wc_group %} — {{ wc_group }}{% endif %}</h3>
+      {%- set goat_default -%}Vs. GOAT Pace{% if wc_group %} — {{ wc_group }}{% endif %}{%- endset %}
+      {% if not tv_mode %}{{ edit_controls('goat-race', goat_default, 'kpi') }}{% endif %}
+      <h3>{{ widget_title('goat-race', goat_default) }}</h3>
       {% if goat_race %}
         <div class="goat-race">
           {% if goat_race.status %}
@@ -264,8 +272,9 @@
   {# Monthly Ribbons. #}
   <div class="grid-stack-item" {{ widget_attrs('monthly-ribbons', 0, 21, 12, 4) }}>
     <div class="grid-stack-item-content">
-      {% if not tv_mode %}{{ edit_controls('monthly-ribbons', 'Monthly Ribbons', 'kpi') }}{% endif %}
-      <h3>{{ widget_title('monthly-ribbons', 'Monthly Ribbons') }} — {{ month_name(month) }} {{ year }}{% if ribbons and ribbons.group %} · {{ ribbons.group }}{% endif %}</h3>
+      {%- set ribbons_default -%}Monthly Ribbons — {{ month_name(month) }} {{ year }}{% if ribbons and ribbons.group %} · {{ ribbons.group }}{% endif %}{%- endset %}
+      {% if not tv_mode %}{{ edit_controls('monthly-ribbons', ribbons_default, 'kpi') }}{% endif %}
+      <h3>{{ widget_title('monthly-ribbons', ribbons_default) }}</h3>
       {% if ribbons %}
         <ul class="ribbons-list">
           {% for r in ribbons.entries %}

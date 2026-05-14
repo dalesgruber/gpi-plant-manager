@@ -76,6 +76,7 @@ def _render_wc_dashboard(
     denom = elapsed_min if elapsed_min else 1
     downtime_row = {
         "name": wc_name,
+        "who": operators_display or None,
         "working": working_min,
         "down": down_min,
         "working_pct": working_min / denom * 100.0,
