@@ -257,6 +257,7 @@
     <div class="grid-stack-item" {{ widget_attrs('dismantler-progress', 0, 6, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('dismantler-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('dismantler-progress', 'All Dismantlers — 15-minute progress', 'progress') }}{% endif %}
+        <span class="people-count" title="{% if is_range %}Total person-days in this group across the range{% else %}People scheduled in this group{% endif %}">{{ dismantler_people }}{% if is_range %} pd{% endif %}</span>
         <h3>{{ widget_title('dismantler-progress', 'All Dismantlers — 15-minute progress') }}</h3>
         {% if dismantler_progress %}
           <div class="widget-total">Goal <b>{{ dismantler_group_target|round|int }}</b>/hr · <b>{{ (dismantler_group_target / 4)|round|int }}</b>/15 min</div>
@@ -274,6 +275,7 @@
     <div class="grid-stack-item" {{ widget_attrs('repair-progress', 0, 11, 12, 5) }}>
       <div class="grid-stack-item-content" {% set pc = customs.get('repair-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('repair-progress', 'All Repairs — 15-minute progress', 'progress') }}{% endif %}
+        <span class="people-count" title="{% if is_range %}Total person-days in this group across the range{% else %}People scheduled in this group{% endif %}">{{ repair_people }}{% if is_range %} pd{% endif %}</span>
         <h3>{{ widget_title('repair-progress', 'All Repairs — 15-minute progress') }}</h3>
         {% if repair_progress %}
           <div class="widget-total">Goal <b>{{ repair_group_target|round|int }}</b>/hr · <b>{{ (repair_group_target / 4)|round|int }}</b>/15 min</div>

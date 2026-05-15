@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-15
+
+### 7:53 AM
+
+- **15-minute progress widgets get the people-count icon** — the Dismantlers + Repairs 15-min progress widgets on `/recycling` now show the same person/people-day counter that the Daily Progress widgets have always shown. Uses the existing `dismantler_people` / `repair_people` context vars (already populated by the route) and the `.people-count` CSS class. `new_vs.html` only has Daily Progress widgets so no change needed there.
+
 ## 2026-05-14
 
 ### 3:14 PM
