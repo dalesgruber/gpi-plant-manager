@@ -3,7 +3,15 @@
 **Contact:** Dale Gruber, Gruber Pallets (dale@gruberpallets.com)
 **Date prepared:** 2026-05-15
 
-This document describes the StratusTime web-services endpoints that the GPI Plant Manager (a custom internal dashboard for Gruber Pallets, hosted on Railway) calls during normal operation, with the exact date parameters and call frequency. Shared with the StratusTime engineering team in response to a request for context on date-handling errors we may be triggering.
+## What we're doing
+
+Hey team,
+
+We built an in-house plant-floor dashboard called GPI Plant Manager. It's the screen our supervisors and operators look at all day to see who's working, who's out, how production is tracking against goal, and where the downtime is coming from. It runs as a single web app on Railway and pulls data from a few places: our production meters (Zira), our HR system, and StratusTime for everything time-clock related.
+
+StratusTime is where we get the source of truth for who's scheduled, who's on PTO, who's clocked in, and who's running late or absent. Throughout the workday the dashboard polls your API in the background so the on-screen view stays current without anyone hitting refresh. The polling is roughly every 45 seconds for attendance and every 3 minutes for the slower-moving stuff like the employee roster and approved time-off. We're not doing any bulk historical pulls or nightly imports right now — just keeping today's view live.
+
+You mentioned an uptick in date-related errors and asked what we're sending. The rest of this doc lays out every endpoint we call, how often, and exactly how we format the date parameters. If you can point us at a specific call or timeframe where things are failing on your side, we can pull our logs and replay the exact request body. Happy to adjust anything we're doing that's hitting an edge case.
 
 ---
 
