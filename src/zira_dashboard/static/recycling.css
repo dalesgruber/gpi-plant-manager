@@ -414,13 +414,16 @@
   .axis-tick.axis-start::before { left: 0; margin-left: 0; }
   /* Widget total sits in the top-right of its widget content area
      on the same row as the <h3> title — for both screen mode AND
-     TV mode. Title gets right-padding (via :has) so its text
-     doesn't run under the total. */
+     TV mode. Sits at `right: 2.5rem` to clear the ⋮ widget-edit-btn
+     (at right: 0.4rem, 22px wide → ~28px from the right edge). On
+     TV mode the edit button is hidden, but keeping the same offset
+     keeps the layout consistent between modes. h3 gets right-padding
+     (via :has) so its text doesn't run under the total. */
   .grid-stack-item-content { position: relative; }
   .widget-total {
     position: absolute;
     top: clamp(4px, 1.5cqh, 14px);
-    right: clamp(6px, 1.5cqw, 18px);
+    right: 2.5rem;
     margin: 0;
     font-size: clamp(0.85rem, 3cqh, 1.4rem);
     color: var(--muted);
@@ -432,17 +435,17 @@
   .widget-total b { color: var(--fg); font-weight: 700; }
   .widget-total-pct { color: var(--muted); }
   .grid-stack-item-content:has(.widget-total) > h3 {
-    padding-right: clamp(80px, 28%, 220px);
+    padding-right: clamp(100px, 32%, 240px);
   }
   /* When a widget has BOTH a people-count pill (top-right at 2.5rem)
      AND a widget-total, slide widget-total leftward so they sit side
      by side instead of stacking. h3 gets more right-padding to clear
      both. */
   .grid-stack-item-content:has(.people-count) .widget-total {
-    right: 6.5rem;
+    right: 7rem;
   }
   .grid-stack-item-content:has(.people-count):has(.widget-total) > h3 {
-    padding-right: clamp(160px, 45%, 320px);
+    padding-right: clamp(180px, 50%, 340px);
   }
 
   .vbar-track { position: relative; }
@@ -521,25 +524,28 @@
   }
   .downtime-vbar-name .name-primary { font-weight: 600; color: var(--fg); }
   .downtime-vbar-name .name-secondary { color: var(--muted); font-size: 0.85em; }
-  /* Per-WC uptime % rendered INSIDE the green .good bar at the bottom.
-     White text + soft shadow reads on the green fill; overflow:hidden
-     on .good clips the label cleanly when the bar gets too short to
-     hold it (high-downtime case). */
+  /* Per-WC uptime % rendered INSIDE the green .good bar near its bottom.
+     Absolute positioning so the label sits unambiguously within the green
+     fill (not on the boundary between bar and name section below).
+     overflow: hidden on .good clips the label cleanly if the green bar
+     is too short to hold it (high-downtime case). */
   .downtime-vbar-track .good {
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
+    position: relative;
     overflow: hidden;
   }
   .downtime-vbar-uptime {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 6px;
+    text-align: center;
     color: #fff;
     font-weight: 700;
-    font-size: clamp(0.65rem, 3cqh, 1rem);
+    font-size: clamp(0.7rem, 3cqh, 1.05rem);
     font-variant-numeric: tabular-nums;
-    padding: 0 4px 3px;
     white-space: nowrap;
     line-height: 1;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
     pointer-events: none;
   }
 
