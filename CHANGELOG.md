@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-15
 
+### 1:39 PM
+
+- **Downtime Report: per-WC uptime % moves inside the green bar (bottom)** — was rendered below the operator/WC name as a separate line. Now it sits at the bottom of each column's green "working" segment in white text, anchored via `align-items: flex-end` on the `.good` div. Reads as part of the visual bar instead of an extra footer line. Falls back to silent clip if the green segment is too short (high-downtime case) — `.good` already had `overflow: hidden`.
+
 ### 1:36 PM
 
 - **Downtime Report now shows per-WC uptime % + total uptime moves into widget header; Up Time KPI tile dropped** — three changes on `/recycling`. (1) Each vertical column in the Downtime Report gets an uptime % rendered in green below the operator/WC name (e.g. "Eulogio Mendez / Dismantler 1 / **82% up**"). (2) The widget-total at the top-right of the Downtime widget now shows total uptime and downtime side by side ("76% up · 594m down" instead of just "594m"). (3) Removed the standalone `kpi-uptime` KPI tile since the same number now lives at the top-right of the Downtime widget. Three KPI tiles → two (Total Pallets Processed, pallets/hr/person).
