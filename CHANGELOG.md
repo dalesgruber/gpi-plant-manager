@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-15
 
+### 12:37 PM
+
+- **StratusTime: log every `TimeGetPunchesByEmpIdentifier` request + response** — temporary diagnostic logging added at StratusTime's request to capture the exact request bodies we send. INFO-level logs go to Railway with the AuthToken redacted and the response status / first 200 bytes of body. Will remove once their dev team has the trace they need.
+
 ### 12:07 PM
 
 - **Downtime calculation now excludes lunch/break time even when an event bleeds into a break** — the upstream `in_shift_on` filter only drops downtime events whose START is inside a break window. But if a machine reports "Stopped at 11:25 for 50 min" (event runs 11:25→12:15) and pallets bracket a 30-min lunch within `TRANSFER_GAP`, the active-interval (11:20–12:15) used to span the break and credit the full 50 min as downtime — including the 30 min of lunch. New `_minutes_in_breaks(start_utc, end_utc)` helper in `leaderboard.py` computes the break-overlap minutes, and `_adjusted_downtime` subtracts that off the active-interval overlap before summing. 7 new unit tests pin the behavior, including the bleeds-into-lunch scenario.

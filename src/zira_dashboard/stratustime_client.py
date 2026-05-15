@@ -18,11 +18,14 @@ one process for TOKEN_TTL_SECONDS. Callers can force refresh.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 import urllib.error
 import urllib.request
+
+_log = logging.getLogger(__name__)
 
 BASE_URL = "https://stratustime.centralservers.com/service/ws-json/2.0"
 TIMEOUT_SECONDS = 30
@@ -459,14 +462,41 @@ def get_non_work_shifts(start_d, end_d) -> list[dict]:
     body["AuthToken"] = token
     payload = json.dumps(body).encode()
     url_v1 = "https://stratustime.centralservers.com/service/ws-json/1.0/TimeGetPunchesByEmpIdentifier"
+    # Diagnostic logging — added 2026-05-15 at StratusTime's request to
+    # capture an example of the exact request body we send. AuthToken
+    # redacted from the log; everything else is verbatim.
+    log_body = {k: v for k, v in body.items() if k != "AuthToken"}
+    _log.info(
+        "STRATUSTIME-DIAG POST %s body=%s",
+        url_v1, json.dumps(log_body),
+    )
     req = urllib.request.Request(
         url_v1, data=payload,
         headers={"Content-Type": "application/json"}, method="POST",
     )
+    text = ""
+    status_code = 0
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+            status_code = resp.status
             text = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.HTTPError, urllib.error.URLError, Exception):
+        _log.info(
+            "STRATUSTIME-DIAG response status=%s len=%s first200=%s",
+            status_code, len(text), text[:200],
+        )
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            err_body = str(e)
+        _log.warning(
+            "STRATUSTIME-DIAG HTTPError status=%s body=%s",
+            e.code, err_body[:500],
+        )
+        _cache_set_with_ttl(key, [], TIME_OFF_CACHE_TTL_SECONDS)
+        return []
+    except (urllib.error.URLError, Exception) as e:
+        _log.warning("STRATUSTIME-DIAG network error: %s", e)
         _cache_set_with_ttl(key, [], TIME_OFF_CACHE_TTL_SECONDS)
         return []
 
