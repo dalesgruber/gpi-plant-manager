@@ -18,15 +18,16 @@ router = APIRouter()
 
 
 def _progress_color(pct_of_target: float | None) -> str | None:
-    """HSL color for an actual-vs-goal percentage. White at 100%, ramps to
-    red below and green above; saturation/lightness step in 12 buckets so
+    """HSL color for an actual-vs-goal percentage. Neutral gray at 100%
+    (was pure white, invisible on light-mode backgrounds); ramps to red
+    below and green above. Saturation/lightness step in 12 buckets so
     big misses stand out and small ones are subtle.
     """
     if pct_of_target is None:
         return None
     delta = max(-100.0, min(100.0, pct_of_target - 100.0))
     if abs(delta) < 1.0:
-        return "#ffffff"
+        return "#9ca3af"  # neutral gray — readable on both light + dark
     step = min(12, max(1, round(abs(delta) / 100.0 * 12)))
     sat = 55.0 + step * 2.0
     light = 65.0 - step * 3.5

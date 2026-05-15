@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-15
 
+### 8:40 AM
+
+- **On-goal bar color: white → neutral gray** — `_progress_color()` returned `#ffffff` for bars within 1% of goal. Looked fine on dark TVs but went invisible against the light-mode panel background. Switched to `#9ca3af` (neutral cool gray) which reads well against both light and dark backgrounds. Off-goal bars (anything outside ±1%) keep their HSL-ramped red/green colors unchanged.
+
 ### 8:01 AM
 
 - **Goal info slides left of the people-count pill** — when a widget has both a `.people-count` badge (top-right at `right: 2.5rem`) AND a `.widget-total` (was also `right: ~0`), they overlapped. New CSS: `.grid-stack-item-content:has(.people-count) .widget-total { right: 6.5rem }` slides the goal info to the LEFT of the people-count so they sit side by side. The `h3` padding-right is also bumped via `:has(.people-count):has(.widget-total)` so the title text clears both elements.
