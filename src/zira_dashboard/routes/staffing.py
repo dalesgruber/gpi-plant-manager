@@ -721,6 +721,26 @@ async def staffing_save(
 
     existing = staffing.load_schedule(d)
 
+    # Notes-only update on a published schedule. Lets supervisors edit the
+    # day's notes (or per-WC notes) after publishing without dropping the
+    # schedule back to draft. Preserves assignments, published_snapshot,
+    # testing_day, and custom_hours — only `notes` and `wc_notes` change.
+    if action == "save_notes":
+        staffing.save_schedule(staffing.Schedule(
+            day=d,
+            published=existing.published,
+            assignments={k: list(v) for k, v in existing.assignments.items()},
+            notes=notes,
+            wc_notes=wc_notes,
+            testing_day=existing.testing_day,
+            published_snapshot=existing.published_snapshot,
+            custom_hours=existing.custom_hours,
+        ))
+        _http_cache.invalidate_today_cache()
+        if (request.headers.get("accept") or "").startswith("application/json"):
+            return JSONResponse({"ok": True, "published": existing.published, "notes_only": True})
+        return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
+
     # Discard-draft action: restore the posted snapshot, clear it, and re-publish.
     if action == "discard_draft" and existing.published_snapshot:
         snap = existing.published_snapshot

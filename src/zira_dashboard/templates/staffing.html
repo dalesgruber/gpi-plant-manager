@@ -1400,7 +1400,12 @@
     function fireSave() {
       setState('saving');
       const formData = new FormData(form);
-      formData.set('action', 'save');
+      // On a published-and-still-locked schedule, the only fields the user
+      // can edit are the notes textareas (CSS exempts them from .locked).
+      // Save those through the notes-only path so the schedule stays
+      // Published instead of dropping back to Draft.
+      const notesOnly = __isPublished && !__unlocked;
+      formData.set('action', notesOnly ? 'save_notes' : 'save');
       const url = form.getAttribute('action')
         || (window.location.pathname + window.location.search);
       inFlight = fetch(url, {

@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-15
 
+### 11:01 AM
+
+- **Scheduler: edit notes after publishing without dropping to draft** — supervisors couldn't update the day's notes (or per-WC notes) after publishing because the `.locked` CSS disabled the textareas, and any save while published auto-flipped the schedule to Draft and required a re-publish. Three changes: (1) CSS now exempts `textarea[name="notes"]` and `textarea[name^="wc_note__"]` from the locked-form pointer-events block, so the notes fields stay editable on a published schedule. (2) Autosave JS detects the "published-and-still-locked" state and routes the save through `action=save_notes` (new) instead of plain `action=save`. (3) Backend handles `save_notes` by updating only the `notes` and `wc_notes` fields and preserving assignments, `published_snapshot`, `testing_day`, and `custom_hours` — the schedule stays Published, no snapshot of the prior state is taken, no re-publish needed.
+
 ### 8:40 AM
 
 - **On-goal bar color: white → neutral gray** — `_progress_color()` returned `#ffffff` for bars within 1% of goal. Looked fine on dark TVs but went invisible against the light-mode panel background. Switched to `#9ca3af` (neutral cool gray) which reads well against both light and dark backgrounds. Off-goal bars (anything outside ±1%) keep their HSL-ramped red/green colors unchanged.
