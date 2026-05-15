@@ -434,6 +434,16 @@
   .grid-stack-item-content:has(.widget-total) > h3 {
     padding-right: clamp(80px, 28%, 220px);
   }
+  /* When a widget has BOTH a people-count pill (top-right at 2.5rem)
+     AND a widget-total, slide widget-total leftward so they sit side
+     by side instead of stacking. h3 gets more right-padding to clear
+     both. */
+  .grid-stack-item-content:has(.people-count) .widget-total {
+    right: 6.5rem;
+  }
+  .grid-stack-item-content:has(.people-count):has(.widget-total) > h3 {
+    padding-right: clamp(160px, 45%, 320px);
+  }
 
   .vbar-track { position: relative; }
   .vbar-target-line {
