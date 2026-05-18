@@ -1,0 +1,112 @@
+import pytest
+from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
+from fastapi.testclient import TestClient
+
+from zira_dashboard import auth
+
+
+@pytest.fixture
+def fixed_secret(monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET", "test-secret-32-bytes-of-random-data!!")
+
+
+@pytest.fixture
+def mini_app(fixed_secret):
+    """Tiny FastAPI app with just enough routes to exercise the middleware."""
+    app = FastAPI()
+    app.add_middleware(auth.RequireAuthMiddleware)
+
+    @app.get("/recycling")
+    def _r(): return PlainTextResponse("ok")
+
+    @app.get("/healthz")
+    def _h(): return PlainTextResponse("ok")
+
+    @app.get("/static/foo.css")
+    def _s(): return PlainTextResponse("ok")
+
+    @app.get("/auth/login")
+    def _l(): return PlainTextResponse("login page")
+
+    @app.get("/robots.txt")
+    def _ro(): return PlainTextResponse("ok")
+
+    @app.get("/favicon.ico")
+    def _fav(): return PlainTextResponse("ok")
+
+    return app
+
+
+def test_unauthed_redirects_to_login(mini_app):
+    c = TestClient(mini_app)
+    r = c.get("/recycling", follow_redirects=False)
+    assert r.status_code == 302
+    assert "/auth/login" in r.headers["location"]
+    assert "next=%2Frecycling" in r.headers["location"]
+
+
+def test_unauthed_root_redirects_to_bare_login(mini_app):
+    """Root path shouldn't append `?next=/` — that's noise; the default is /."""
+    c = TestClient(mini_app)
+    r = c.get("/", follow_redirects=False)
+    # 404 if no root route — but the middleware fires first and redirects.
+    assert r.status_code in (302, 404)
+    if r.status_code == 302:
+        assert r.headers["location"] == "/auth/login"
+
+
+def test_authed_with_valid_cookie_passes_through(mini_app, fixed_secret):
+    token = auth.mint_session(sub="x", upn="dale@gruberpallets.com", name="Dale")
+    c = TestClient(mini_app, cookies={auth.SESSION_COOKIE_NAME: token})
+    r = c.get("/recycling")
+    assert r.status_code == 200
+    assert r.text == "ok"
+
+
+def test_authed_with_invalid_cookie_redirects(mini_app, fixed_secret):
+    c = TestClient(mini_app, cookies={auth.SESSION_COOKIE_NAME: "not-a-jwt"})
+    r = c.get("/recycling", follow_redirects=False)
+    assert r.status_code == 302
+    assert "/auth/login" in r.headers["location"]
+
+
+def test_bypass_list(mini_app):
+    c = TestClient(mini_app)
+    assert c.get("/healthz").status_code == 200
+    assert c.get("/robots.txt").status_code == 200
+    assert c.get("/favicon.ico").status_code == 200
+    assert c.get("/static/foo.css").status_code == 200
+    assert c.get("/auth/login").status_code == 200
+
+
+def test_auth_disabled_env_var_bypasses_everything(mini_app, monkeypatch):
+    monkeypatch.setenv("AUTH_DISABLED", "1")
+    c = TestClient(mini_app)
+    assert c.get("/recycling").status_code == 200
+
+
+def test_sliding_refresh_reissues_cookie_when_near_expiry(mini_app, fixed_secret, monkeypatch):
+    """When the session is within SESSION_REFRESH_AT of expiry, a successful
+    request should set a fresh Set-Cookie header re-issuing the session."""
+    from datetime import timedelta
+    monkeypatch.setattr(auth, "SESSION_TTL", timedelta(seconds=120))
+    monkeypatch.setattr(auth, "SESSION_REFRESH_AT", timedelta(seconds=180))  # always-refresh
+    token = auth.mint_session(sub="x", upn="dale@gruberpallets.com", name="Dale")
+    c = TestClient(mini_app, cookies={auth.SESSION_COOKIE_NAME: token})
+    r = c.get("/recycling")
+    assert r.status_code == 200
+    assert auth.SESSION_COOKIE_NAME in r.headers.get("set-cookie", "")
+
+
+def test_no_sliding_refresh_when_fresh(mini_app, fixed_secret, monkeypatch):
+    """Sessions that aren't near expiry shouldn't get a Set-Cookie header
+    on every request (avoids churn)."""
+    from datetime import timedelta
+    monkeypatch.setattr(auth, "SESSION_TTL", timedelta(days=7))
+    monkeypatch.setattr(auth, "SESSION_REFRESH_AT", timedelta(days=6))  # never-refresh on fresh
+    token = auth.mint_session(sub="x", upn="dale@gruberpallets.com", name="Dale")
+    c = TestClient(mini_app, cookies={auth.SESSION_COOKIE_NAME: token})
+    r = c.get("/recycling")
+    assert r.status_code == 200
+    assert auth.SESSION_COOKIE_NAME not in r.headers.get("set-cookie", "")

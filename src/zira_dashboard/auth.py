@@ -141,3 +141,65 @@ def reset_oauth_client_for_tests() -> None:
     call this between tests; production never calls this."""
     global _oauth_singleton
     _oauth_singleton = None
+
+
+# ---------- ASGI middleware ----------
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import RedirectResponse
+
+# Paths (or prefixes) that bypass auth entirely. Keep this list tight —
+# every entry is a potential bypass for an attacker probing for an
+# unauthenticated endpoint.
+_BYPASS_PREFIXES = (
+    "/auth/",      # login + callback + logout
+    "/static/",    # CSS/JS/images
+)
+_BYPASS_EXACT = frozenset({
+    "/healthz",
+    "/robots.txt",
+    "/favicon.ico",
+})
+
+
+def _is_bypass_path(path: str) -> bool:
+    if path in _BYPASS_EXACT:
+        return True
+    return any(path.startswith(p) for p in _BYPASS_PREFIXES)
+
+
+class RequireAuthMiddleware(BaseHTTPMiddleware):
+    """Gate every request behind a valid session cookie.
+
+    Device-token support for /tv/* paths is added in a later task (subclass
+    behavior or extend dispatch). Bypass list + AUTH_DISABLED logic stays
+    the same.
+    """
+
+    async def dispatch(self, request, call_next):
+        if auth_disabled():
+            return await call_next(request)
+
+        path = request.url.path
+        if _is_bypass_path(path):
+            return await call_next(request)
+
+        cookie = request.cookies.get(SESSION_COOKIE_NAME)
+        payload = verify_session(cookie)
+        if payload is None:
+            from urllib.parse import urlencode
+            qs = urlencode({"next": path}) if path != "/" else ""
+            target = "/auth/login" + (("?" + qs) if qs else "")
+            return RedirectResponse(url=target, status_code=302)
+
+        response = await call_next(request)
+
+        # Sliding-window refresh: if cookie is close to expiry, re-issue.
+        if needs_refresh(payload):
+            fresh = mint_session(sub=payload["sub"], upn=payload["upn"], name=payload["name"])
+            response.set_cookie(
+                SESSION_COOKIE_NAME, fresh,
+                max_age=int(SESSION_TTL.total_seconds()),
+                httponly=True, secure=True, samesite="lax", path="/",
+            )
+        return response
