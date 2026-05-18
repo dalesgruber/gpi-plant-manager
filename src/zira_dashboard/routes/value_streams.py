@@ -378,7 +378,11 @@ def _render_recycling(
             agg_category[name] = cat
         for name, obj in p["per_wc_station_obj"].items():
             agg_station_obj[name] = obj
-        if d == today:
+        # Capture this day's who-labels + raw assignments whenever the page
+        # is a single-day view — today OR a past day. The earlier `d == today`
+        # check left past-day views with empty dicts, dropping every "who"
+        # label into "(no assignment)". Range views ignore both anyway.
+        if not is_range:
             agg_who_today = p["per_wc_who"]
             schedule_today_assignments = p["schedule_assignments"]
 

@@ -86,6 +86,32 @@ def test_recycling_bar_row_no_assignment_fallback(monkeypatch):
     assert "Repair-1" in html
 
 
+def test_recycling_past_day_view_shows_assigned_names(monkeypatch):
+    """Regression: viewing a past single day (e.g. Saturday from Monday) was
+    dropping the assigned-name labels because the aggregation loop only
+    captured `agg_who_today` when `d == today`. Past-day views fell through
+    to "(no assignment)" even when the schedule had names published for
+    that day."""
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
+        day=d, published=True,
+        assignments={"Repair-1": ["Alice"]},
+    ))
+    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+        from zira_dashboard.leaderboard import StationTotal
+        from zira_dashboard.stations import Station
+        s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
+        lb.return_value = [
+            StationTotal(s1, units=20, reading_count=1, truncated=False, downtime_minutes=0,
+                         active_minutes=60, last_reading_at=None, last_status=None,
+                         samples=(), active_intervals=()),
+        ]
+        client = TestClient(app)
+        # Pick a past date (clearly before today's date in any reasonable test env).
+        html = client.get("/recycling?start=2024-01-06&end=2024-01-06").text
+    assert "Alice" in html
+    assert "(no assignment)" not in html
+
+
 def test_recycling_downtime_row_renders_person_and_wc_stacked(monkeypatch):
     monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
         day=d, published=True,

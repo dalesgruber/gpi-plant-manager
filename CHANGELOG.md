@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-18
+
+### 8:24 AM
+
+- **Recycling VS: past-day single-day views now show assigned names (and people counts)** — fix for the bug where `/recycling?start=2026-05-16&end=2026-05-16` (or any other single past day) rendered every WC as "(no assignment)" even when the scheduler had names published for that day. Root cause: the aggregation loop in `value_streams.py` only captured `agg_who_today` and `schedule_today_assignments` when `d == today`, so past-day single-day views fell through to empty dicts. Bars (`_bars()`) and downtime rows (`_downtime_rows()`) then read `agg_who_today.get(name)` → `None` and dropped into the "(no assignment)" template branch; the people-count footer also reported 0 for the same reason. Condition is now `not is_range`, which captures the viewed day's who-labels regardless of whether it's today or a past day. Range views still get `who=None` (gated on `is_range` downstream). Regression test added: `test_recycling_past_day_view_shows_assigned_names`.
+
 ## 2026-05-15
 
 ### 2:01 PM
