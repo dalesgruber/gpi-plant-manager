@@ -6,6 +6,14 @@ from fastapi.testclient import TestClient
 from zira_dashboard import auth
 
 
+@pytest.fixture(autouse=True)
+def _enforce_auth_for_this_module(monkeypatch):
+    """tests/conftest.py sets AUTH_DISABLED=1 so the rest of the suite
+    doesn't have to mint sessions. This module *is* the auth-gate test,
+    so unset it for every test here unless a specific test re-sets it."""
+    monkeypatch.delenv("AUTH_DISABLED", raising=False)
+
+
 @pytest.fixture
 def fixed_secret(monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "test-secret-32-bytes-of-random-data!!")
@@ -84,6 +92,21 @@ def test_auth_disabled_env_var_bypasses_everything(mini_app, monkeypatch):
     monkeypatch.setenv("AUTH_DISABLED", "1")
     c = TestClient(mini_app)
     assert c.get("/recycling").status_code == 200
+
+
+def test_auth_disabled_logs_on_first_request(mini_app, monkeypatch, caplog):
+    """Verify the AUTH_DISABLED warning re-fires inside dispatch (not just
+    at boot) so accidental prod bypass is detectable from request logs."""
+    import logging
+    monkeypatch.setenv("AUTH_DISABLED", "1")
+    # Reset the class counter so this test is deterministic regardless of
+    # what other tests in this file ran first.
+    auth.RequireAuthMiddleware._auth_disabled_request_count = 0
+    c = TestClient(mini_app)
+    with caplog.at_level(logging.ERROR, logger="zira_dashboard.auth"):
+        r = c.get("/recycling")
+    assert r.status_code == 200
+    assert any("AUTH_DISABLED is set" in rec.message for rec in caplog.records)
 
 
 def test_sliding_refresh_reissues_cookie_when_near_expiry(mini_app, fixed_secret, monkeypatch):

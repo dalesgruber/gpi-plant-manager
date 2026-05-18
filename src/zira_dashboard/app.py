@@ -22,6 +22,7 @@ from . import db
 from .routes import (
     admin,
     api_layout,
+    auth as auth_routes,
     changelog,
     dashboard,
     goat_watch,
@@ -257,6 +258,20 @@ async def _robots_txt():
     return PlainTextResponse("User-agent: *\nDisallow: /\n")
 
 
+# Auth gate — every request not in the bypass list must have a valid
+# session cookie. Device-token support for /tv/* paths is added in a
+# follow-up task. AUTH_DISABLED=1 env var short-circuits this gate
+# entirely (used in local dev and during the staged production rollout).
+from .auth import RequireAuthMiddleware, auth_disabled
+app.add_middleware(RequireAuthMiddleware)
+if auth_disabled():
+    logging.getLogger(__name__).error(
+        "AUTH_DISABLED is set — every route is unauthenticated. "
+        "Unset this env var to enforce authentication. "
+        "(Repeated every 500 requests by RequireAuthMiddleware.)"
+    )
+
+
 @app.middleware("http")
 async def _static_cache_headers(request, call_next):
     """Set far-future cache headers on /static/ responses. The
@@ -272,6 +287,7 @@ async def _static_cache_headers(request, call_next):
 
 
 # Mount each feature router. URL paths are owned by the routers themselves.
+app.include_router(auth_routes.router)
 app.include_router(dashboard.router)
 app.include_router(value_streams.router)
 app.include_router(wc_dashboard.router)

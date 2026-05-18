@@ -176,8 +176,24 @@ class RequireAuthMiddleware(BaseHTTPMiddleware):
     the same.
     """
 
+    # Class-level counter for the periodic AUTH_DISABLED warning. Logged
+    # every Nth request (not every request, so we don't blow up log storage,
+    # but often enough to surface accidental production bypass after the
+    # boot-time log has scrolled out of the buffer).
+    _AUTH_DISABLED_LOG_INTERVAL = 500
+    _auth_disabled_request_count = 0
+
     async def dispatch(self, request, call_next):
         if auth_disabled():
+            type(self)._auth_disabled_request_count += 1
+            if type(self)._auth_disabled_request_count % type(self)._AUTH_DISABLED_LOG_INTERVAL == 1:
+                import logging
+                logging.getLogger(__name__).error(
+                    "AUTH_DISABLED is set — every route is unauthenticated. "
+                    "Unset this env var to enforce authentication. "
+                    "(Re-logged every %d requests.)",
+                    type(self)._AUTH_DISABLED_LOG_INTERVAL,
+                )
             return await call_next(request)
 
         path = request.url.path
