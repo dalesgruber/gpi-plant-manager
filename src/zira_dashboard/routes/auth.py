@@ -142,4 +142,5 @@ async def auth_logout():
     is untouched, so signing in again is one click."""
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie(auth.SESSION_COOKIE_NAME, path="/")
+    response.delete_cookie(_NEXT_COOKIE, path="/")
     return response

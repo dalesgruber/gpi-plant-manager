@@ -15,4 +15,4 @@ RUN pip install --upgrade pip \
     && playwright install --with-deps chromium \
     && rm -rf /root/.cache/pip /var/lib/apt/lists/*
 
-CMD ["sh", "-c", "uvicorn zira_dashboard.app:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn zira_dashboard.app:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips=\"*\""]

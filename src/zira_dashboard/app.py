@@ -186,7 +186,17 @@ async def lifespan(app: FastAPI):
         db.shutdown_pool()
 
 
-app = FastAPI(title="Zira Station Dashboard", lifespan=lifespan)
+app = FastAPI(
+    title="Zira Station Dashboard",
+    lifespan=lifespan,
+    # No public API docs — this is an internal app; the auto-mounted
+    # /docs, /redoc, /openapi.json would expose the route surface to
+    # unauthenticated probes (they'd 302 to login per the middleware,
+    # but disabling is cleaner than gating).
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 _STATIC_DIR = Path(__file__).parent / "static"
