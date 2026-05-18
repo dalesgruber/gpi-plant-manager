@@ -595,6 +595,21 @@ CREATE TABLE IF NOT EXISTS goat_alerts (
   UNIQUE (achieved_day, group_name, wc_name)
 );
 CREATE INDEX IF NOT EXISTS idx_goat_alerts_day ON goat_alerts (achieved_day);
+
+-- Long-lived signed device tokens for shop-floor TV displays.
+-- Bound to /tv/* paths in middleware. Revocation is instant via
+-- setting `revoked_at` (no blacklist cache needed).
+CREATE TABLE IF NOT EXISTS device_tokens (
+  id           SERIAL PRIMARY KEY,
+  name         TEXT NOT NULL,
+  token        TEXT UNIQUE NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by   TEXT NOT NULL,
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS device_tokens_active_idx
+  ON device_tokens (token) WHERE revoked_at IS NULL;
 """
 
 
