@@ -86,9 +86,24 @@ def test_session_rejects_alg_none_token(monkeypatch):
     assert auth.verify_session(unsigned) is None
 
 
-def test_domain_ok_rejects_multi_at_inputs(monkeypatch):
-    """Regression: domain_ok must reject identities with more than one '@'
-    even if the suffix looks correct."""
-    assert auth.domain_ok("user@evil@gruberpallets.com") is False
-    assert auth.domain_ok("@@gruberpallets.com") is False
-    assert auth.domain_ok("a@b@c@gruberpallets.com") is False
+@pytest.mark.parametrize("upn,expected", [
+    # Happy paths
+    ("dale@gruberpallets.com", True),
+    ("DALE@GRUBERPALLETS.COM", True),  # case-insensitive
+    ("dale.gruber+tag@gruberpallets.com", True),  # plus-addressing
+    ("@gruberpallets.com", True),  # empty local part — Entra IDP gates this separately
+    # Wrong domains
+    ("attacker@evil.com", False),
+    ("dale@gruberpallets.com.evil.com", False),  # suffix attack
+    ("dale@notgruberpallets.com", False),  # near-miss
+    ("dalegruberpallets.com", False),  # no @
+    # Multi-@ pathological
+    ("user@evil@gruberpallets.com", False),
+    ("@@gruberpallets.com", False),
+    ("a@b@c@gruberpallets.com", False),
+    # Empty / None
+    ("", False),
+    (None, False),
+])
+def test_domain_ok(upn, expected):
+    assert auth.domain_ok(upn) is expected
