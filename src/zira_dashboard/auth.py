@@ -92,3 +92,52 @@ def domain_ok(upn_or_email: str | None) -> bool:
         return False
     domain = upn_or_email.split("@", 1)[1].lower()
     return domain == ALLOWED_DOMAIN.lower()
+
+
+# ---------- OIDC client (lazy) ----------
+
+_oauth_singleton: Any = None
+
+
+def oauth_client():
+    """Construct and memoize the Authlib OAuth client for Microsoft Entra ID.
+
+    Lazy because the env vars may not be present at module import time
+    (tests, AUTH_DISABLED=1 dev runs). Raises a clear RuntimeError when
+    called without the required env vars set."""
+    global _oauth_singleton
+    if _oauth_singleton is not None:
+        return _oauth_singleton
+
+    tenant = os.environ.get("MS_TENANT_ID")
+    client_id = os.environ.get("MS_CLIENT_ID")
+    client_secret = os.environ.get("MS_CLIENT_SECRET")
+    missing = [k for k, v in (
+        ("MS_TENANT_ID", tenant),
+        ("MS_CLIENT_ID", client_id),
+        ("MS_CLIENT_SECRET", client_secret),
+    ) if not v]
+    if missing:
+        raise RuntimeError(
+            f"Microsoft Entra ID env vars not set: {', '.join(missing)}. "
+            "See docs/superpowers/specs/2026-05-18-microsoft-auth-design.md for setup."
+        )
+
+    from authlib.integrations.starlette_client import OAuth
+    oauth = OAuth()
+    oauth.register(
+        name="azure",
+        server_metadata_url=f"https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration",
+        client_id=client_id,
+        client_secret=client_secret,
+        client_kwargs={"scope": "openid profile email"},
+    )
+    _oauth_singleton = oauth
+    return oauth
+
+
+def reset_oauth_client_for_tests() -> None:
+    """Reset the memoized client. Tests that monkeypatch env vars should
+    call this between tests; production never calls this."""
+    global _oauth_singleton
+    _oauth_singleton = None

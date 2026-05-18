@@ -107,3 +107,31 @@ def test_session_rejects_alg_none_token(monkeypatch):
 ])
 def test_domain_ok(upn, expected):
     assert auth.domain_ok(upn) is expected
+
+
+def test_oauth_client_requires_env(monkeypatch):
+    monkeypatch.delenv("MS_TENANT_ID", raising=False)
+    monkeypatch.delenv("MS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MS_CLIENT_SECRET", raising=False)
+    auth.reset_oauth_client_for_tests()
+    with pytest.raises(RuntimeError, match="MS_TENANT_ID"):
+        auth.oauth_client()
+
+
+def test_oauth_client_lists_all_missing_vars(monkeypatch):
+    monkeypatch.setenv("MS_TENANT_ID", "ok")
+    monkeypatch.delenv("MS_CLIENT_ID", raising=False)
+    monkeypatch.delenv("MS_CLIENT_SECRET", raising=False)
+    auth.reset_oauth_client_for_tests()
+    with pytest.raises(RuntimeError, match="MS_CLIENT_ID.*MS_CLIENT_SECRET"):
+        auth.oauth_client()
+
+
+def test_oauth_client_memoizes(monkeypatch):
+    monkeypatch.setenv("MS_TENANT_ID", "00000000-0000-0000-0000-000000000000")
+    monkeypatch.setenv("MS_CLIENT_ID", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("MS_CLIENT_SECRET", "fake-secret")
+    auth.reset_oauth_client_for_tests()
+    a = auth.oauth_client()
+    b = auth.oauth_client()
+    assert a is b
