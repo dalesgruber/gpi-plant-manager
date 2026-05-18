@@ -60,6 +60,18 @@ def _render_wc_dashboard(
         return JSONResponse({"error": f"no work center matches slug {slug!r}"}, status_code=404)
 
     today = datetime.now(timezone.utc).date()
+
+    # Server-side HTML response cache — 15s on today's data, same pattern
+    # /recycling uses. TVs auto-refresh every 30-60s so this is the
+    # difference between rebuilding the full page on every refresh vs.
+    # serving cached bytes from RAM. `today` in the key keeps the cache
+    # day-boundary-safe.
+    from .._http_cache import get_cached_response, set_cache_headers, store_cached_response
+    cache_key = ("wc_dashboard", slug, today.isoformat(), tv_mode, tv_theme)
+    cached = get_cached_response(cache_key, includes_today=True)
+    if cached is not None:
+        return cached
+
     wc_name = loc.name
     operators = wc_dashboard_data.assigned_operators_for_wc(wc_name, today)
     operators_display = " · ".join(operators)
@@ -92,7 +104,7 @@ def _render_wc_dashboard(
     today_target = int(pallets.get("target_today") or 0)
     banner_now_pct = (today_target / full_day * 100.0) if full_day > 0 else 0.0
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "wc_dashboard.html",
         {
@@ -127,6 +139,9 @@ def _render_wc_dashboard(
             "tv_theme": tv_theme,
         },
     )
+    set_cache_headers(response, includes_today=True)
+    store_cached_response(cache_key, includes_today=True, response=response)
+    return response
 
 
 @router.get("/wc/{slug}", response_class=HTMLResponse)

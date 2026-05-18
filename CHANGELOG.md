@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-18
 
+### 9:54 AM
+
+- **Perf: server-side HTML response cache extended to `/wc/{slug}`, `/tv/wc/{slug}`, and `/staffing/leaderboards`** — these were the last three heavy GET routes still re-rendering on every request. They now use the same `_http_cache` pattern `/recycling` and `/new-vs` already use: 15 s TTL on data that includes today, 5 min on past-only ranges, invalidated alongside every other today-cache via the existing `invalidate_today_cache()` calls in the staffing/schedule write paths (publish schedule, declare absent, save attribution, etc.). Operator dashboards reload every 30-60 s on the shop-floor TVs — before this, every refresh rebuilt the page from scratch (5 calls to `cached_leaderboard`, schedule load, KPI computation, GOAT race, monthly ribbons, full template render). Now refreshes inside the 15 s window serve cached bytes from RAM. `/staffing/leaderboards` was even heavier on range views — a 22-WC × per-person-day computation loop over the date range — and is now likewise short-circuited inside the TTL. Realistic impact: ~2× on warm/multi-viewer load; cold-path latency unchanged (still need to render once per 15 s per cache key).
+
 ### 9:24 AM
 
 - **Operator dashboard Monthly Ribbons: each ribbon line now shows the date** — was "🥇 Carlos · 47" with no hint of when the medal was earned. Now "🥇 Carlos · May 12 · 47" — same medal/name/units, with the date sitting between name and units in muted gray. Uses `%b ` + `%d`-without-leading-zero so dates render as "May 2" / "May 12" cross-platform (Windows strftime doesn't support `%-d`). Sized one notch smaller than units in operator (TV) mode so long names don't get pushed off-screen on narrow widgets.

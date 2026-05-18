@@ -149,11 +149,26 @@ def staffing_leaderboards(
     from .. import leaderboard_settings_store as lstore
     from .. import production_history
     from .. import work_centers_store
-
-    person_certs = cert_lookup.load_person_certs()
+    from .._http_cache import (
+        get_cached_response, range_includes_today, set_cache_headers,
+        store_cached_response,
+    )
 
     today_d = datetime.now(timezone.utc).date()
     start_d, end_d, custom_range_active = resolve_range(window, start, end, today_d)
+    includes_today = range_includes_today(end_d, today_d)
+
+    # Server-side HTML response cache, same pattern /recycling uses.
+    # Heavy route: 22-WC loop × per-person-day records over the range.
+    cache_key = (
+        "staffing_leaderboards", window, metric,
+        start_d.isoformat(), end_d.isoformat(),
+    )
+    cached = get_cached_response(cache_key, includes_today=includes_today)
+    if cached is not None:
+        return cached
+
+    person_certs = cert_lookup.load_person_certs()
 
     records = production_history.daily_records(start_d, end_d)
 
@@ -357,8 +372,8 @@ def staffing_leaderboards(
             "person_certs": person_certs,
         },
     )
-    from .._http_cache import set_cache_headers, range_includes_today
-    set_cache_headers(response, includes_today=range_includes_today(end_d, today_d))
+    set_cache_headers(response, includes_today=includes_today)
+    store_cached_response(cache_key, includes_today=includes_today, response=response)
     return response
 
 
