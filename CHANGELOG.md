@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-20
+
+### 7:29 AM
+
+- **Late/Absence report: Snooze now auto-closes the modal** — was leaving the modal open with the snoozed person dropped from the list but other late/absent rows still visible. The intent of Snooze is "out of my face for 30 min" so forcing the user to also dismiss the modal defeats the purpose. Other actions (Save reason, Declare Absent) still keep the modal open so you can deal with remaining people in one sitting; only Snooze closes immediately. `doAction()` gained a small `opts.alwaysClose` flag; the Snooze button passes it.
+
 ## 2026-05-18
 
 ### 2:45 PM

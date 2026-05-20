@@ -720,7 +720,11 @@
       });
     });
 
-    // Snooze.
+    // Snooze. Always closes the modal immediately on success — Snooze
+    // means "out of my face for 30 min", and forcing the user to also
+    // dismiss the modal defeats the purpose. Other actions (Save / Declare
+    // Absent) keep the modal open so the user can deal with remaining
+    // people in one sitting.
     body.querySelectorAll('.late-snooze').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var li = btn.closest('.late-item');
@@ -728,7 +732,7 @@
           emp_id: li.dataset.empId,
           name: li.dataset.name,
           minutes: 30,
-        });
+        }, { alwaysClose: true });
       });
     });
 
@@ -772,7 +776,8 @@
     });
   }
 
-  function doAction(li, url, payload) {
+  function doAction(li, url, payload, opts) {
+    opts = opts || {};
     var status = li.querySelector('.late-status');
     if (status) { status.hidden = false; status.textContent = 'Saving…'; }
     fetch(url, {
@@ -782,15 +787,16 @@
     }).then(function (r) { return r.json(); }).then(function (resp) {
       if (resp && resp.ok) {
         // Re-pull the report so the saved row drops out. If nothing's
-        // actionable left, auto-close — otherwise re-render so the user
-        // can keep working without "Saving…" lingering on the saved row.
+        // actionable left OR the caller set `alwaysClose: true` (Snooze),
+        // close the modal — otherwise re-render so the user can keep
+        // working without "Saving…" lingering on the saved row.
         fetch(LATE_ENDPOINT).then(function (r) { return r.json(); }).then(function (d) {
           data = d;
           injectOrUpdateBadge();
           var anyActionable = (d.scheduled_late && d.scheduled_late.length)
               || (d.unscheduled_late && d.unscheduled_late.length)
               || (d.needs_reason && d.needs_reason.length);
-          if (!anyActionable) {
+          if (opts.alwaysClose || !anyActionable) {
             closeModal();
           } else if (modal) {
             renderModal(d);
