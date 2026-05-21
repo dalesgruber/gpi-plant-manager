@@ -864,6 +864,11 @@ def _render_new_vs(
             "refreshed_at": now.strftime("%H:%M:%S UTC"),
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
+            # NEW GOAT alerts surface on every dashboard so a record-breaker
+            # is celebrated plant-wide. Live contenders stay on /recycling
+            # only — they're a per-group projection, not a per-WC stat.
+            "goat_alerts_active": _goat_watch_active_alerts(today),
+            "goat_contenders": [],
         },
     )
     set_cache_headers(response, includes_today=is_today)

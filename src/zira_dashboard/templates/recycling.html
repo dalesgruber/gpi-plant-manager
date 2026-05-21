@@ -7,6 +7,7 @@
 <title>{% if tv_mode %}TV · {% endif %}Value Streams — Recycling — GPI Plant Manager</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
 <link rel="stylesheet" href="/static/recycling.css?v={{ static_v('recycling.css') }}">
+<link rel="stylesheet" href="/static/goat_watch.css?v={{ static_v('goat_watch.css') }}">
 {% if tv_mode %}
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
 <meta http-equiv="refresh" content="60">
@@ -492,25 +493,8 @@
   });
   {% endif %}
 
-  // GOAT Watch banner — dismiss button.
-  document.querySelectorAll('.goat-alert-dismiss').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.alertId;
-      const alertEl = btn.closest('.goat-alert');
-      if (alertEl) alertEl.style.opacity = '0.4';
-      btn.disabled = true;
-      fetch('/api/goat-alerts/' + encodeURIComponent(id) + '/dismiss', {method: 'POST'})
-        .then(r => {
-          if (r.ok && alertEl) alertEl.remove();
-          else if (alertEl) alertEl.style.opacity = '';
-          btn.disabled = false;
-        })
-        .catch(() => {
-          if (alertEl) alertEl.style.opacity = '';
-          btn.disabled = false;
-        });
-    });
-  });
+  // GOAT Watch dismiss handler now lives in _goat_watch_banner.html so it
+  // ships with every dashboard that includes the partial.
 
   // Inline-assign popover for "(no assignment)" bars.
   (function () {

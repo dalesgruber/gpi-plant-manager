@@ -137,11 +137,24 @@ def _render_wc_dashboard(
             "banner_now_pct": banner_now_pct,
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
+            # NEW GOAT alerts surface on every dashboard so a record-breaker
+            # is celebrated plant-wide. Live contenders stay on /recycling
+            # only — they're a per-group projection, not a per-WC stat.
+            "goat_alerts_active": _goat_watch_active_alerts(today),
+            "goat_contenders": [],
         },
     )
     set_cache_headers(response, includes_today=True)
     store_cached_response(cache_key, includes_today=True, response=response)
     return response
+
+
+def _goat_watch_active_alerts(today):
+    try:
+        from .. import goat_watch
+        return goat_watch.active_alerts(today)
+    except Exception:
+        return []
 
 
 @router.get("/wc/{slug}", response_class=HTMLResponse)

@@ -212,6 +212,21 @@ def _ip_allowlisted(request) -> bool:
     return False
 
 
+def _tv_accessible_path(path: str) -> bool:
+    """Paths reachable via TV auth (IP allowlist or device token).
+
+    Beyond the literal `/tv/*` dashboard routes, this also includes the
+    GOAT-alert dismiss endpoint so any TV showing the banner can clear
+    it without a human session. Scope is intentionally narrow: dismiss
+    only flips a boolean on a celebration row — no security implication.
+    """
+    if path.startswith("/tv/"):
+        return True
+    if path.startswith("/api/goat-alerts/") and path.endswith("/dismiss"):
+        return True
+    return False
+
+
 class RequireAuthMiddleware(BaseHTTPMiddleware):
     """Gate every request behind a valid session cookie.
 
@@ -260,8 +275,10 @@ class RequireAuthMiddleware(BaseHTTPMiddleware):
                 )
             return response
 
-        # No session cookie — try a device token, but ONLY on /tv/* paths.
-        if path.startswith("/tv/"):
+        # No session cookie — try a device token, but ONLY on TV-accessible
+        # paths (/tv/* plus the benign GOAT-alert dismiss endpoint, so a
+        # shop-floor TV can clear its own celebration banner).
+        if _tv_accessible_path(path):
             # Path 1: IP allowlist — shop-floor TVs, zero typing.
             if _ip_allowlisted(request):
                 client_ip = request.client.host if request.client else "unknown"

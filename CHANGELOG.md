@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-21
 
+### 4:55 PM
+
+- **NEW GOAT alerts now show on every dashboard (and every TV)** — celebration goes plant-wide. The banner that previously lived only on `/recycling` now also renders on `/new-vs`, `/wc/{slug}`, and their `/tv/*` counterparts (so every operator TV and every TV display lights up when someone breaks a record). Dismiss is global: hitting it on any TV clears the row from every screen. Live contenders (per-group projection) stay on `/recycling` only — they don't fit per-WC displays. Three pieces of plumbing: (1) banner CSS extracted to its own `static/goat_watch.css` so non-Recycling pages don't have to pull in `recycling.css`; (2) dismiss JS moved from `recycling.html` into the partial itself so any template including `_goat_watch_banner.html` gets the click handler for free; (3) auth middleware extended — `_tv_accessible_path()` now allows IP-allowlisted shop-floor TVs and device-token TVs to POST `/api/goat-alerts/{id}/dismiss` without a human session (dismissing a celebration row is benign, no security implication).
+
 ### 4:25 PM
 
 - **GOAT Watch — fix gate timing + flatten NEW GOAT banner** — two fixes to last week's GOAT Watch banner on `/recycling`. (1) **Live contenders now appear after the *real* final break (~13:45), not at end-of-shift.** The previous logic took `max(b.end for b in breaks)` which picked the Cleanup window (15:15–15:30) — and Cleanup ends *at* shift_end (15:30), so the banner was gated until shift was already over. Cleanup is wind-down, not a break operators come back from, so `_final_break_passed()` now ignores breaks whose end equals shift_end. (2) **NEW GOAT alert collapsed to a single horizontal row.** Trophy, "NEW GOAT — GROUP", `Person · Units pallets at WC · Date`, the "Beat 318 (prior holder, date)" subtext, and Dismiss button all sit inline on one line via `display: flex; flex-wrap: wrap`. Was 3 stacked rows eating ~80px of vertical space; now ~24px on a wide viewport. Wraps gracefully on narrow widths.

@@ -15,6 +15,9 @@
      goat_alerts_active  list[dict]  — see goat_watch.active_alerts
      goat_contenders     list[Contender]  — see goat_watch.contenders_for_now
 #}
+{# Renders on /recycling, /new-vs, /wc/{slug} and their /tv variants.
+   The host template must <link> /static/goat_watch.css from its <head>;
+   we don't emit a <style> here so styles stay cached as a normal asset. #}
 {% if (goat_alerts_active and goat_alerts_active|length > 0) or (goat_contenders and goat_contenders|length > 0) %}
 <div class="goat-watch-banner" role="region" aria-label="GOAT watch">
   {% if goat_alerts_active %}
@@ -53,4 +56,29 @@
     </div>
   {% endif %}
 </div>
+<script>
+  // Dismiss handler — wired here so any dashboard including this partial
+  // gets the behavior for free. Dismissal is global (DB-backed), so
+  // hitting Dismiss on any TV clears the alert from every dashboard.
+  (function () {
+    document.querySelectorAll('.goat-alert-dismiss').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.dataset.alertId;
+        var alertEl = btn.closest('.goat-alert');
+        if (alertEl) alertEl.style.opacity = '0.4';
+        btn.disabled = true;
+        fetch('/api/goat-alerts/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' })
+          .then(function (r) {
+            if (r.ok && alertEl) alertEl.remove();
+            else if (alertEl) alertEl.style.opacity = '';
+            btn.disabled = false;
+          })
+          .catch(function () {
+            if (alertEl) alertEl.style.opacity = '';
+            btn.disabled = false;
+          });
+      });
+    });
+  })();
+</script>
 {% endif %}
