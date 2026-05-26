@@ -20,9 +20,13 @@ from datetime import date
 # 15s is short enough that an in-progress shift feels live, long
 # enough that rapid back-and-forth between pages doesn't re-fetch.
 _TODAY_MAX_AGE = 15
-# 1 hour. Past data is immutable in principle but capping at 1h keeps
-# the browser cache from holding stale templates after a code deploy.
-_PAST_MAX_AGE = 3600
+# 5 minutes. Past data is immutable in principle, but a code or data
+# fix that changes how a past day renders (e.g. the Saturday in_shift_on
+# fix) shouldn't take up to an hour to reach a browser that already
+# loaded the page. Matches the server-side _RESPONSE_CACHE_PAST TTL, so
+# the server's still doing the heavy lifting for repeated views; browsers
+# just revalidate every 5 min instead of every hour.
+_PAST_MAX_AGE = 300
 
 
 def set_cache_headers(response, *, includes_today: bool) -> None:
