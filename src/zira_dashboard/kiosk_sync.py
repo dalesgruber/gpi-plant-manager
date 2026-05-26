@@ -101,3 +101,34 @@ def _mark_synced(log_id: int, odoo_attendance_id: int | None) -> None:
         "WHERE id = %s",
         (odoo_attendance_id, log_id),
     )
+
+
+def sync_one_by_id(log_id: int) -> None:
+    """Sync a single log row to Odoo immediately. Called from kiosk route
+    handlers via FastAPI BackgroundTasks right after the local DB write,
+    so the user gets a fast response while the Odoo XML-RPC round-trip
+    happens off the request path.
+
+    On failure, the row stays at synced_to_odoo=FALSE with sync_error set;
+    the periodic 60s sweep worker (`retry_unsynced_punches`) picks it up
+    next tick. So this function is "best-effort fast path" — the safety
+    net always runs."""
+    rows = db.query(
+        "SELECT id, person_odoo_id, action, wc_name, occurred_at "
+        "FROM kiosk_punches_log WHERE id = %s",
+        (log_id,),
+    )
+    if not rows:
+        _log.warning("sync_one_by_id called with unknown log_id=%s", log_id)
+        return
+    try:
+        _retry_one(rows[0])
+    except Exception as e:  # noqa: BLE001
+        db.execute(
+            "UPDATE kiosk_punches_log SET sync_error = %s WHERE id = %s",
+            (str(e)[:500], log_id),
+        )
+        _log.info(
+            "Immediate Odoo sync for kiosk log %s failed (will retry in 60s): %s",
+            log_id, e,
+        )

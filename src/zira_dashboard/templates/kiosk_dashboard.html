@@ -7,20 +7,14 @@
   {% include "_kiosk_brand.html" %}
 </div>
 <div class="k-main" style="align-items: center; justify-content: center;">
-  {% if odoo_error %}
-    <div class="k-warning">
-      Odoo unreachable — your punch will sync when it's back.
-    </div>
-  {% endif %}
-
   {% if is_clocked_in %}
     <h2>You're clocked in{% if current_wc %} on{% endif %}</h2>
     {% if current_wc %}
       <h1 style="font-size: 3rem; color: #ea580c;">{{ current_wc }}</h1>
     {% endif %}
-    {% if current_attendance and current_attendance.check_in %}
+    {% if check_in_display %}
       <p style="font-size: 1.25rem; color: #64748b; margin-bottom: 2rem;">
-        Since {{ current_attendance.check_in }} UTC
+        Since {{ check_in_display }}
       </p>
     {% endif %}
     <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">

@@ -119,9 +119,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-header&quot;&gt;
   &lt;span&gt;Tap your name to clock in or out&lt;/span&gt;
@@ -263,9 +273,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/script&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -278,6 +290,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -384,9 +398,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-header&quot;&gt;
   &lt;a href=&quot;/kiosk&quot; class=&quot;k-back&quot;&gt;‹ Done&lt;/a&gt;
@@ -400,8 +424,6 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 &lt;/div&gt;
 &lt;div class=&quot;k-main&quot; style=&quot;align-items: center; justify-content: center;&quot;&gt;
-  
-
   
     
       &lt;h2&gt;Today you&#x27;re scheduled on&lt;/h2&gt;
@@ -426,9 +448,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -441,6 +465,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -547,9 +573,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-header&quot;&gt;
   &lt;a href=&quot;/kiosk&quot; class=&quot;k-back&quot;&gt;‹ Done&lt;/a&gt;
@@ -563,8 +599,6 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 &lt;/div&gt;
 &lt;div class=&quot;k-main&quot; style=&quot;align-items: center; justify-content: center;&quot;&gt;
-  
-
   
     
       &lt;h2&gt;You&#x27;re not scheduled today&lt;/h2&gt;
@@ -581,9 +615,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -596,6 +632,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -702,9 +740,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-header&quot;&gt;
   &lt;a href=&quot;/kiosk&quot; class=&quot;k-back&quot;&gt;‹ Done&lt;/a&gt;
@@ -719,15 +767,13 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 &lt;div class=&quot;k-main&quot; style=&quot;align-items: center; justify-content: center;&quot;&gt;
   
-
-  
     &lt;h2&gt;You&#x27;re clocked in on&lt;/h2&gt;
     
       &lt;h1 style=&quot;font-size: 3rem; color: #ea580c;&quot;&gt;Repair 1&lt;/h1&gt;
     
     
       &lt;p style=&quot;font-size: 1.25rem; color: #64748b; margin-bottom: 2rem;&quot;&gt;
-        Since 2026-05-21 14:30:00 UTC
+        Since 2:30 PM
       &lt;/p&gt;
     
     &lt;div style=&quot;display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;&quot;&gt;
@@ -743,9 +789,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -758,6 +806,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -864,9 +914,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-header&quot;&gt;
   &lt;a href=&quot;/kiosk/dashboard/1:1234567890:abcdef0123456789&quot; class=&quot;k-back&quot;&gt;‹ Back&lt;/a&gt;
@@ -1224,9 +1284,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/div&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -1239,6 +1301,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -1345,9 +1409,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-main&quot; style=&quot;align-items: center; justify-content: center;&quot;&gt;
   &lt;div style=&quot;font-size: 7rem; color: #16a34a; line-height: 1;&quot;&gt;✓&lt;/div&gt;
@@ -1364,9 +1438,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/script&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -1379,6 +1455,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;
@@ -1485,9 +1563,19 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don&#x27;t strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 &lt;/style&gt;
 &lt;/head&gt;
-&lt;body&gt;
+&lt;body hx-boost=&quot;true&quot;
+      hx-target=&quot;#kiosk-screen&quot;
+      hx-select=&quot;#kiosk-screen&quot;
+      hx-swap=&quot;outerHTML swap:120ms&quot;&gt;
+&lt;div id=&quot;kiosk-screen&quot;&gt;
 
 &lt;div class=&quot;k-main&quot; style=&quot;align-items: center; justify-content: center;&quot;&gt;
   &lt;div style=&quot;font-size: 7rem; color: #16a34a; line-height: 1;&quot;&gt;✓&lt;/div&gt;
@@ -1508,9 +1596,11 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
 &lt;/script&gt;
 
 
+&lt;/div&gt;
 &lt;script&gt;
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn&#x27;t constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don&#x27;t tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -1523,6 +1613,8 @@ renders exactly what FastAPI would serve at the live endpoint.</p>
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener(&#x27;htmx:afterSwap&#x27;, reset);
   })();
 &lt;/script&gt;
 &lt;/body&gt;

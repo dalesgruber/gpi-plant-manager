@@ -99,14 +99,30 @@
     font-size: 1.25rem; margin-bottom: 1.5rem;
     border: 1px solid #fde68a;
   }
+
+  /* htmx fragment swap: subtle fade so screen-to-screen transitions
+     don't strobe. ~120ms is fast enough that the kiosk still feels
+     snappy but smooths the perceived swap. */
+  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+  #kiosk-screen.htmx-swapping { opacity: 0; }
 </style>
+<script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"
+        integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
+        crossorigin="anonymous"
+        defer></script>
 </head>
-<body>
+<body hx-boost="true"
+      hx-target="#kiosk-screen"
+      hx-select="#kiosk-screen"
+      hx-swap="outerHTML swap:120ms">
+<div id="kiosk-screen">
 {% block content %}{% endblock %}
 {% block scripts %}{% endblock %}
+</div>
 <script>
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn't constantly self-reload.
+  // Sits OUTSIDE #kiosk-screen so htmx swaps don't tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;
@@ -119,6 +135,8 @@
       document.addEventListener(evt, reset, { passive: true });
     });
     reset();
+    // Re-arm the timer on every htmx-driven screen change too.
+    document.body.addEventListener('htmx:afterSwap', reset);
   })();
 </script>
 </body>

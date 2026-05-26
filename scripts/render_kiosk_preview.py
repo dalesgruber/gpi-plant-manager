@@ -22,6 +22,9 @@ env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
     autoescape=True,
 )
+# The live app registers static_v() to cache-bust /static URLs by mtime.
+# Stub it to a constant for the standalone preview render.
+env.globals["static_v"] = lambda _filename: "preview"
 
 
 def _logo_data_url() -> str:
@@ -117,7 +120,7 @@ screens = [
             "token": mock_token,
             "is_clocked_in": True,
             "current_wc": "Repair 1",
-            "current_attendance": {"check_in": "2026-05-21 14:30:00"},
+            "check_in_display": "2:30 PM",
             "scheduled_wc": "Repair 1",
         },
     },
@@ -169,6 +172,15 @@ def render_screen(template_name: str, context: dict) -> str:
         "console.log('preview: would navigate to /kiosk')",
     )
     html = html.replace("/static/gpi-logo.png", _LOGO_DATA_URL)
+    # Strip the htmx <script> tag — the static preview iframes don't
+    # navigate, so htmx does nothing useful here and the /static path
+    # isn't served by `python -m http.server` from the repo root.
+    import re
+    html = re.sub(
+        r'<script src="/static/htmx-[^"]+"[^>]*></script>\s*',
+        "",
+        html,
+    )
     return html
 
 

@@ -27,11 +27,17 @@ from KIOSK_SESSION_SECRET; a fresh random one is generated each process
 boot if the env var is unset (all tokens then invalidate on restart,
 which is fine for a pilot).
 
-Sync model: every punch action writes a row to `kiosk_punches_log` with
-synced_to_odoo=FALSE first, then attempts the Odoo write. On success the
-row is flipped to TRUE; on failure the kiosk still shows success and the
-background worker (in app.py) retries unsynced rows every 60s. This
-makes the kiosk usable even when Odoo is briefly unreachable.
+Sync model: every punch writes a row to `kiosk_punches_log` first, then
+the success page is rendered immediately, then a FastAPI BackgroundTask
+fires the Odoo XML-RPC write off the request path. The user never waits
+on Odoo. On failure the row stays at synced_to_odoo=FALSE; the 60s sweep
+worker (in app.py) retries unsynced rows as a safety net.
+
+State reads on the dashboard come from `kiosk_punches_log` too, not
+Odoo — `_current_state()` is a ~5ms local SELECT vs a ~200-500ms XML-RPC
+call. Local DB is safe as the source of truth so long as no one is
+punching via both the kiosk and StratusTime at the same time (revisit
+during plant cutover if there's a transition period).
 """
 
 from __future__ import annotations
@@ -44,10 +50,10 @@ import secrets
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, odoo_client, staffing
+from .. import db, kiosk_sync, staffing
 from ..deps import templates
 
 router = APIRouter()
@@ -98,6 +104,44 @@ def _person_by_id(person_id: int) -> dict | None:
     return rows[0] if rows else None
 
 
+def _current_state(person_odoo_id: int) -> dict:
+    """Return the kiosk's local view of an employee's current attendance
+    state. Sourced from kiosk_punches_log — no Odoo round trip on the
+    read path (was ~200-500ms XML-RPC, now ~5ms local SELECT).
+
+    The most recent punch row determines the state. If the last action
+    was clock_in or transfer_in, they're clocked in at that wc_name; if
+    it was clock_out / transfer_out / no rows, they're clocked out. The
+    Odoo attendance id, when known, lets the background writer close the
+    right row on clock_out / transfer.
+
+    Local DB as source of truth is safe for the Phase 0 pilot (Dale only,
+    all his punches go through this kiosk) and Phase 1 (plant cutover,
+    StratusTime is gone). It is NOT safe during a mixed transition where
+    employees punch via both systems — revisit before mixing them.
+    """
+    rows = db.query(
+        "SELECT action, wc_name, occurred_at, odoo_attendance_id "
+        "FROM kiosk_punches_log WHERE person_odoo_id = %s "
+        "ORDER BY occurred_at DESC, id DESC LIMIT 1",
+        (person_odoo_id,),
+    )
+    if not rows or rows[0]["action"] in ("clock_out", "transfer_out"):
+        return {
+            "is_clocked_in": False,
+            "current_wc": None,
+            "check_in_ts": None,
+            "open_odoo_attendance_id": None,
+        }
+    r = rows[0]
+    return {
+        "is_clocked_in": True,
+        "current_wc": r["wc_name"],
+        "check_in_ts": r["occurred_at"],
+        "open_odoo_attendance_id": r["odoo_attendance_id"],
+    }
+
+
 def _scheduled_wc_for(person_name: str) -> str | None:
     """Today's scheduled WC for `person_name`, or None if unscheduled.
     Returns the first match if scheduled on multiple."""
@@ -127,22 +171,6 @@ def _open_log_row(person_odoo_id: int, action: str, wc_name: str | None) -> int:
         )
         row = cur.fetchone()
         return row["id"]
-
-
-def _mark_log_synced(log_id: int, odoo_attendance_id: int | None) -> None:
-    db.execute(
-        "UPDATE kiosk_punches_log SET synced_to_odoo = TRUE, "
-        "odoo_attendance_id = %s, sync_error = NULL, synced_at = now() "
-        "WHERE id = %s",
-        (odoo_attendance_id, log_id),
-    )
-
-
-def _mark_log_failed(log_id: int, err: str) -> None:
-    db.execute(
-        "UPDATE kiosk_punches_log SET sync_error = %s WHERE id = %s",
-        (err[:500], log_id),
-    )
 
 
 def _log_variance(person_odoo_id: int, scheduled: str | None, actual: str) -> None:
@@ -201,25 +229,8 @@ def kiosk_dashboard(request: Request, token: str):
     if not p:
         return RedirectResponse(url="/kiosk", status_code=303)
 
-    # Pull current attendance from Odoo. If Odoo is unreachable, show as
-    # not-clocked-in but warn the user; they can still act, we'll queue
-    # the punch and the background worker will sync when Odoo comes back.
-    current: dict | None = None
-    current_wc: str | None = None
-    odoo_error: str | None = None
-    try:
-        if p.get("odoo_id"):
-            current = odoo_client.get_current_attendance(p["odoo_id"])
-            field = odoo_client._kiosk_wc_field()
-            if current and field:
-                current_wc = current.get(field)
-    except Exception as e:  # noqa: BLE001 — Odoo outage must not block kiosk
-        odoo_error = str(e)
-        _log.warning(
-            "Kiosk dashboard couldn't fetch Odoo attendance for %s: %s",
-            p["name"], e,
-        )
-
+    # Local-DB read — no Odoo XML-RPC on the hot path. See _current_state.
+    state = _current_state(p["odoo_id"]) if p.get("odoo_id") else _current_state(-1)
     scheduled_wc = _scheduled_wc_for(p["name"])
 
     # Refresh the token so a slow user (reading the scheduled WC, picking
@@ -232,11 +243,10 @@ def kiosk_dashboard(request: Request, token: str):
         {
             "person": p,
             "token": fresh_token,
-            "is_clocked_in": current is not None,
-            "current_attendance": current,
-            "current_wc": current_wc,
+            "is_clocked_in": state["is_clocked_in"],
+            "current_wc": state["current_wc"],
+            "check_in_display": _fmt_time(state["check_in_ts"]) if state["check_in_ts"] else None,
             "scheduled_wc": scheduled_wc,
-            "odoo_error": odoo_error,
         },
     )
 
@@ -275,6 +285,7 @@ def kiosk_pick_wc(
 @router.post("/kiosk/clock-in/{token}", response_class=HTMLResponse)
 def kiosk_clock_in(
     request: Request,
+    background_tasks: BackgroundTasks,
     token: str,
     wc_name: str = Form(...),
     scheduled_wc_name: str = Form(default=""),
@@ -288,17 +299,11 @@ def kiosk_clock_in(
     odoo_id = p["odoo_id"]
     now = datetime.now(timezone.utc)
     log_id = _open_log_row(odoo_id, "clock_in", wc_name)
-    sync_error: str | None = None
-    try:
-        att_id = odoo_client.clock_in(odoo_id, wc_name, now)
-        _mark_log_synced(log_id, att_id)
-    except Exception as e:  # noqa: BLE001
-        sync_error = str(e)
-        _mark_log_failed(log_id, sync_error)
-        _log.warning(
-            "Kiosk clock-in Odoo sync failed for person %s: %s", odoo_id, e
-        )
-    # Override variance: scheduled vs actual WC mismatch
+    # Odoo write runs after the response is sent. FastAPI runs sync `def`
+    # background tasks in a threadpool, so the XML-RPC call doesn't block
+    # the event loop. The 60s sweep worker remains a safety net for
+    # transient failures.
+    background_tasks.add_task(kiosk_sync.sync_one_by_id, log_id)
     if scheduled_wc_name and scheduled_wc_name != wc_name:
         _log_variance(odoo_id, scheduled_wc_name, wc_name)
     return templates.TemplateResponse(
@@ -308,13 +313,16 @@ def kiosk_clock_in(
             "person": p,
             "message": f"Clocked in to {wc_name}",
             "time": _fmt_time(now),
-            "sync_error": sync_error,
         },
     )
 
 
 @router.post("/kiosk/clock-out/{token}", response_class=HTMLResponse)
-def kiosk_clock_out(request: Request, token: str):
+def kiosk_clock_out(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    token: str,
+):
     person_id = _verify_token(token)
     if person_id is None:
         return RedirectResponse(url="/kiosk", status_code=303)
@@ -324,21 +332,7 @@ def kiosk_clock_out(request: Request, token: str):
     odoo_id = p["odoo_id"]
     now = datetime.now(timezone.utc)
     log_id = _open_log_row(odoo_id, "clock_out", None)
-    sync_error: str | None = None
-    try:
-        current = odoo_client.get_current_attendance(odoo_id)
-        if current:
-            odoo_client.clock_out(current["id"], now)
-            _mark_log_synced(log_id, current["id"])
-        else:
-            # Nothing to close — flag as synced (no-op).
-            _mark_log_synced(log_id, None)
-    except Exception as e:  # noqa: BLE001
-        sync_error = str(e)
-        _mark_log_failed(log_id, sync_error)
-        _log.warning(
-            "Kiosk clock-out Odoo sync failed for person %s: %s", odoo_id, e
-        )
+    background_tasks.add_task(kiosk_sync.sync_one_by_id, log_id)
     return templates.TemplateResponse(
         request,
         "kiosk_success.html",
@@ -346,14 +340,16 @@ def kiosk_clock_out(request: Request, token: str):
             "person": p,
             "message": "Clocked out",
             "time": _fmt_time(now),
-            "sync_error": sync_error,
         },
     )
 
 
 @router.post("/kiosk/transfer/{token}", response_class=HTMLResponse)
 def kiosk_transfer(
-    request: Request, token: str, new_wc_name: str = Form(...)
+    request: Request,
+    background_tasks: BackgroundTasks,
+    token: str,
+    new_wc_name: str = Form(...),
 ):
     person_id = _verify_token(token)
     if person_id is None:
@@ -365,18 +361,10 @@ def kiosk_transfer(
     now = datetime.now(timezone.utc)
     out_log = _open_log_row(odoo_id, "transfer_out", None)
     in_log = _open_log_row(odoo_id, "transfer_in", new_wc_name)
-    sync_error: str | None = None
-    try:
-        closed_id, new_id = odoo_client.transfer(odoo_id, new_wc_name, now)
-        _mark_log_synced(out_log, closed_id)
-        _mark_log_synced(in_log, new_id)
-    except Exception as e:  # noqa: BLE001
-        sync_error = str(e)
-        _mark_log_failed(out_log, sync_error)
-        _mark_log_failed(in_log, sync_error)
-        _log.warning(
-            "Kiosk transfer Odoo sync failed for person %s: %s", odoo_id, e
-        )
+    # FastAPI runs BackgroundTasks in the order they're added, so
+    # transfer_out always syncs before transfer_in.
+    background_tasks.add_task(kiosk_sync.sync_one_by_id, out_log)
+    background_tasks.add_task(kiosk_sync.sync_one_by_id, in_log)
     return templates.TemplateResponse(
         request,
         "kiosk_success.html",
@@ -384,6 +372,5 @@ def kiosk_transfer(
             "person": p,
             "message": f"Transferred to {new_wc_name}",
             "time": _fmt_time(now),
-            "sync_error": sync_error,
         },
     )
