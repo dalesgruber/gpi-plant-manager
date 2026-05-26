@@ -1138,6 +1138,42 @@ async def staffing_clear_partial(request: Request):
     return JSONResponse({"ok": True})
 
 
+@router.post("/api/staffing/clear-testing-day")
+async def staffing_clear_testing_day(request: Request):
+    """Flip a schedule's testing_day flag back to False without touching
+    anything else (assignments, notes, published state, custom_hours).
+    Powers the × on the Testing Day pill at the top of the staffing page.
+
+    The regular save path requires Edit mode on a published schedule, and
+    `save_notes` deliberately preserves testing_day so editing notes
+    doesn't accidentally undo a Testing Day override. This endpoint is
+    the explicit clear path — idempotent, JSON-only, no Edit mode needed.
+
+    Body: {day: ISO date}
+    """
+    from datetime import date as _date
+    body = await request.json()
+    try:
+        d = _date.fromisoformat(body["day"])
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": f"bad day: {e}"}, status_code=400)
+    existing = staffing.load_schedule(d)
+    if not existing.testing_day:
+        return JSONResponse({"ok": True, "no_op": True})
+    staffing.save_schedule(staffing.Schedule(
+        day=d,
+        published=existing.published,
+        assignments={k: list(v) for k, v in existing.assignments.items()},
+        notes=existing.notes,
+        wc_notes=dict(existing.wc_notes),
+        testing_day=False,
+        published_snapshot=existing.published_snapshot,
+        custom_hours=existing.custom_hours,
+    ))
+    _bust_after_mutation()
+    return JSONResponse({"ok": True})
+
+
 @router.post("/api/staffing/restore-partial")
 async def staffing_restore_partial(request: Request):
     """Undo clear-partial. Same body shape as clear-partial."""

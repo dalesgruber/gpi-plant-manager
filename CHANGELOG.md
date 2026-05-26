@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-26
 
+### 9:48 AM
+
+- **× on the Testing Day pill — clear the flag without rebuilding the schedule** — once `testing_day` got flipped to `1` (via the "Override (Training + Testing Day)" or "Override (Testing Day)" buttons on overstaffed/understaffed warnings) there was no UI to flip it back. The regular save path on a Posted schedule goes through `save_notes`, which deliberately preserves `testing_day`. Now the pill has a small × inside it that hits a dedicated `POST /api/staffing/clear-testing-day` endpoint — JSON-only, idempotent, doesn't touch assignments, notes, published state, or `custom_hours`. The handler also syncs the hidden form input so the next autosave doesn't re-add the flag.
+
 ### 9:12 AM
 
 - **Time Off section now finds people with compound first names (Jose Luis fix)** — Jose Luis had approved PTO in StratusTime but didn't appear in the Time Off section. Root cause: Odoo's `_short_name` truncates "Jose Luis Hernandez Alvarez" to the roster name "Jose Luis", but StratusTime stores Hispanic compound given names entirely in `FirstName` (`FirstName="Jose Luis"`, `LastName="Hernandez Alvarez"`). `name_to_emp_id_map` split the roster name on whitespace and looked up `by_first["jose"]`, missing the `"jose luis"` key. The lookup failed, the entry fell back to the full StratusTime name ("Jose Luis Hernandez Alvarez"), and the active-roster final filter added by commit `e719b4f` (2026-05-13) silently dropped it because that string isn't in the local roster set. Added a new matching rule between the exact full-name check and the first-name+initial logic: if the whole roster name (lowercased) matches a StratusTime `FirstName` verbatim with a unique active candidate, take that. Existing rules (`Jesus M` → Martinez, `Porfirio Cazares` → `Cazares Herrera` via prefix) are untouched. Two regression tests cover the round-trip and the end-to-end time-off render.

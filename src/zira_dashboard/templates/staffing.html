@@ -87,7 +87,7 @@
     </nav>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center">
-    <span id="testing-pill" class="pub-pill" style="{% if not testing_day %}display:none;{% endif %}background:var(--warn-dim);color:var(--warn)">Testing Day</span>
+    <span id="testing-pill" class="pub-pill" style="{% if not testing_day %}display:none;{% endif %}background:var(--warn-dim);color:var(--warn)">Testing Day<button type="button" id="testing-pill-clear" title="Clear Testing Day flag for this schedule" aria-label="Clear Testing Day" style="background:transparent;border:0;color:inherit;cursor:pointer;font-weight:700;font-size:0.95rem;line-height:1;padding:0;margin-left:0.4rem;opacity:0.75">×</button></span>
     <button type="button" class="undo-btn header-undo-redo" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
     <button type="button" class="redo-btn header-undo-redo" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>
   </div>
@@ -700,6 +700,41 @@
     // Programmatic value mutation doesn't fire change/input on its own.
     kickAutosave();
   }
+
+  // × inside the Testing Day pill: hits the dedicated clear endpoint
+  // (the regular save path can't reach testing_day on a posted schedule
+  // because save_notes deliberately preserves it). Syncs the hidden form
+  // input so subsequent autosaves don't re-add the flag.
+  (function() {
+    const btn = document.getElementById('testing-pill-clear');
+    if (!btn) return;
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm('Clear the Testing Day flag for this schedule? Output for the day will count toward employees again.')) return;
+      btn.style.opacity = '0.4';
+      try {
+        const resp = await fetch('/api/staffing/clear-testing-day', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({day: '{{ day }}'}),
+        });
+        const j = await resp.json();
+        if (j.ok) {
+          const pill = document.getElementById('testing-pill');
+          if (pill) pill.style.display = 'none';
+          const inp = document.getElementById('testing-day-input');
+          if (inp) inp.value = '0';
+        } else {
+          btn.style.opacity = '';
+          alert('Clear failed: ' + (j.error || 'unknown'));
+        }
+      } catch (err) {
+        btn.style.opacity = '';
+        alert('Network error.');
+      }
+    });
+  })();
 
   // ---------- Cross-picker visibility ----------
   // No one should appear in two Scheduled pickers, in a Scheduled picker if they're
