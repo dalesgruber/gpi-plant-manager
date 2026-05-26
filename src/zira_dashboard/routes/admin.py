@@ -83,8 +83,15 @@ def zira_readings_dump(
     pass `in_shift_on`, and how many would-be-downtime rows fall outside
     the published shift window.
     """
-    from ..leaderboard import WORKING_STATUS, _parse_event_date, day_window_utc
-    from ..shift_config import SITE_TZ, in_shift_on
+    from ..leaderboard import (
+        WORKING_STATUS,
+        _active_intervals,
+        _adjusted_downtime,
+        _minutes_in_breaks,
+        _parse_event_date,
+        day_window_utc,
+    )
+    from ..shift_config import SITE_TZ, in_shift_on, shift_end_for
 
     try:
         d = date.fromisoformat(day)
@@ -98,11 +105,16 @@ def zira_readings_dump(
             return JSONResponse({"error": f"no meter matches {meter!r}"}, status_code=404)
 
     start_iso, end_iso = day_window_utc(d)
+    end_of_day_utc = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+    shift_end_local = datetime.combine(d, shift_end_for(d), tzinfo=SITE_TZ)
+    eval_end = min(shift_end_local.astimezone(timezone.utc), end_of_day_utc)
     out: list[dict] = []
     for st in stations:
         prod_in = prod_out = 0
         down_in = down_out_shift = down_no_dur = 0
         sample_down_rows: list[dict] = []
+        captured_samples: list[tuple[datetime, int]] = []
+        captured_down_rows: list[tuple[datetime, float]] = []
         last_value: str | None = None
         page_count = 0
         for _ in range(20):
@@ -129,6 +141,8 @@ def zira_readings_dump(
                 if u_int > 0:
                     if ish:
                         prod_in += 1
+                        if event_dt is not None:
+                            captured_samples.append((event_dt, u_int))
                     else:
                         prod_out += 1
                 if status and status != WORKING_STATUS:
@@ -145,6 +159,8 @@ def zira_readings_dump(
                             })
                     else:
                         down_in += 1
+                        if event_dt is not None:
+                            captured_down_rows.append((event_dt, float(duration)))
                         if len(sample_down_rows) < 10:
                             sample_down_rows.append({
                                 "event_date_local": event_local.isoformat() if event_local else None,
@@ -155,6 +171,32 @@ def zira_readings_dump(
             if not cursor or len(rows) < 500:
                 break
             last_value = cursor
+        # Reproduce what fetch_station_day -> _adjusted_downtime would compute.
+        captured_samples.sort(key=lambda s: s[0])
+        rounded_rows = [(t, int(dur)) for t, dur in captured_down_rows]
+        intervals = _active_intervals(captured_samples, eval_end)
+        active_minutes = int(sum((b - a).total_seconds() / 60.0 for a, b in intervals))
+        # Per-event breakdown so we can see WHICH events get zeroed.
+        per_event: list[dict] = []
+        for event_start, dur in rounded_rows:
+            event_end = event_start + timedelta(minutes=dur)
+            total_window = 0.0
+            total_break = 0.0
+            for ai_s, ai_e in intervals:
+                lo = max(event_start, ai_s)
+                hi = min(event_end, ai_e)
+                if hi > lo:
+                    total_window += (hi - lo).total_seconds() / 60.0
+                    total_break += _minutes_in_breaks(lo, hi)
+            counted = max(0.0, total_window - total_break)
+            per_event.append({
+                "event_start_local": event_start.astimezone(SITE_TZ).isoformat(),
+                "duration": dur,
+                "window_min_in_active_intervals": round(total_window, 2),
+                "break_min_subtracted": round(total_break, 2),
+                "counted_min": round(counted, 2),
+            })
+        adjusted = _adjusted_downtime(rounded_rows, captured_samples, eval_end)
         out.append({
             "meter_id": st.meter_id,
             "name": st.name,
@@ -165,9 +207,18 @@ def zira_readings_dump(
             "downtime_in_shift": down_in,
             "downtime_out_of_shift": down_out_shift,
             "downtime_no_duration": down_no_dur,
+            "active_intervals_count": len(intervals),
+            "active_minutes_total": active_minutes,
+            "adjusted_downtime_minutes": adjusted,
+            "per_in_shift_event": per_event,
             "sample_downtime_rows": sample_down_rows,
         })
-    return JSONResponse({"day": d.isoformat(), "stations": out})
+    return JSONResponse({
+        "day": d.isoformat(),
+        "shift_end_local": shift_end_local.isoformat(),
+        "eval_end_utc": eval_end.isoformat(),
+        "stations": out,
+    })
 
 
 @router.get("/admin/data-status")
