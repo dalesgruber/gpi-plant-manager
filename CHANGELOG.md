@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-26
 
+### 11:41 AM
+
+- **`(N-D4)` side-metric drops to the baseline + fades more** — was vertically centered against the headline number (looked like it was floating), now uses `vertical-align: baseline` so the small "(52.3-D4)" sits flush with the bottom of the big number. Also bumped `opacity: 0.55` to make it more clearly a footnote.
+
 ### 11:32 AM
 
 - **pallets/hr/person KPI tweaks** — three small visual changes to the recycling KPI: (1) the main number now renders in the page's standard text color (`var(--fg)`) instead of green, so it stops fighting the colored progress bars below it; (2) the side-metric shrunk from `0.42em` → `0.32em` so it reads more clearly as a footnote next to the headline; (3) format changed from "(52.3 ex D4)" to the more compact "(52.3-D4)". Tooltip on the side-metric still explains what it means on hover.

@@ -114,13 +114,16 @@
   }
   /* Smaller, dimmer parenthesized side-metric inside a .val (e.g. the
      "(52.3-D4)" next to pallets/hr/person on the recycling dashboard).
-     Sits inline to the right of the main number, ~32% of its size. */
+     Sits inline-flush to the baseline of the main number, ~32% of its
+     size. `baseline` makes the secondary's bottom land on the main
+     number's baseline (instead of floating near its vertical center). */
   .grid-stack-item-content .val .val-secondary {
     font-size: 0.32em;
     font-weight: 500;
     color: var(--muted);
+    opacity: 0.55;
     margin-left: 0.4em;
-    vertical-align: 0.55em;
+    vertical-align: baseline;
     letter-spacing: 0.02em;
   }
   .grid-stack-item-content .label {
