@@ -884,6 +884,16 @@
   // server-rendered from `time_off_names` and stays static for the page life.
   const __timeOffNames = new Set({{ time_off_names | tojson }});
 
+  // Defensive sweep: if the server-rendered Unscheduled or Reserves list
+  // contains anyone whose PTO landed after this page was rendered (rare —
+  // requires the StratusTime cache to refresh between the unassigned and
+  // time_off_entries computations), drop them now. Keeps the left rail
+  // consistent with the Time Off section without a full page reload.
+  __timeOffNames.forEach(n => {
+    removeFromUnscheduled(n);
+    removeFromReserves(n);
+  });
+
   function _insertSorted(ul, name) {
     const li = document.createElement('li');
     li.dataset.name = name;
@@ -901,6 +911,11 @@
 
   function addToUnscheduled(name) {
     if (!name) return;
+    // Belt-and-suspenders: never add a time-off person here, regardless of
+    // which caller decided to add them. The earlier guard in
+    // addBackToCorrectList catches the common path; this catches any
+    // direct caller (current or future) that bypasses it.
+    if (__timeOffNames.has(name)) return;
     const sect = document.querySelector('.section.unscheduled');
     if (!sect) return;
     const ul = sect.querySelector('ul');
@@ -916,6 +931,7 @@
 
   function addToReserves(name) {
     if (!name) return;
+    if (__timeOffNames.has(name)) return;  // same rule as addToUnscheduled
     const sect = document.querySelector('.section.reserves');
     if (!sect) return;
     const ul = sect.querySelector('ul');
