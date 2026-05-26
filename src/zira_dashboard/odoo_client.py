@@ -142,11 +142,16 @@ def fetch_skill_level_buckets() -> dict[int, int]:
 
 
 def fetch_employees() -> list[dict]:
-    """All active hr.employee records with the fields we need."""
+    """All active hr.employee records with the fields we need.
+
+    `wage_type` is an Odoo selection: 'hourly' or 'monthly'. Used by the
+    late/absence report to filter out salaried managers who have
+    flexible start times.
+    """
     return execute(
         "hr.employee", "search_read",
         [("active", "=", True)],
-        fields=["id", "name", "active", "work_email"],
+        fields=["id", "name", "active", "work_email", "wage_type"],
     )
 
 

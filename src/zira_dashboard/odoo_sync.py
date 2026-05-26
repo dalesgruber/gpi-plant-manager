@@ -109,12 +109,15 @@ def sync(force: bool = False) -> SyncResult:
         seen_employee_ids = set()
         for emp in employees:
             seen_employee_ids.add(emp["id"])
+            # Odoo selection fields return False when unset; normalize to None.
+            wage_type = emp.get("wage_type") or None
             cur.execute(
-                "INSERT INTO people (odoo_id, name, active, last_pulled_at) "
-                "VALUES (%s, %s, %s, %s) "
+                "INSERT INTO people (odoo_id, name, active, wage_type, last_pulled_at) "
+                "VALUES (%s, %s, %s, %s, %s) "
                 "ON CONFLICT (odoo_id) DO UPDATE SET name = EXCLUDED.name, "
-                "active = EXCLUDED.active, last_pulled_at = EXCLUDED.last_pulled_at",
-                (emp["id"], _short_name(emp["name"]), bool(emp.get("active", True)), pulled_at),
+                "active = EXCLUDED.active, wage_type = EXCLUDED.wage_type, "
+                "last_pulled_at = EXCLUDED.last_pulled_at",
+                (emp["id"], _short_name(emp["name"]), bool(emp.get("active", True)), wage_type, pulled_at),
             )
         # Deactivate Odoo-mapped people who disappeared from the response —
         # i.e., archived (or deleted) in Odoo. fetch_employees() searches

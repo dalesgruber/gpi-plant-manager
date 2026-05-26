@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-26
+
+### 7:37 AM
+
+- **Late/Absence report: filter to hourly employees only** — was flagging Dale, Wendy, Ian, and other salaried/management folks every morning because they're active non-reserve people who don't have scheduled stations. The report now reads `wage_type` from Odoo `hr.employee` (selection: `hourly` / `monthly`) and only considers `hourly` people across all three sections (scheduled-late, unscheduled-late, needs-reason). Unknown wage_type is treated as non-hourly (safer default — better to miss flagging than to nag salaried folks). Plumbing: new `people.wage_type` column (idempotent ALTER); `odoo_client.fetch_employees` now requests `wage_type`; the Odoo→people sync writes it on every refresh; `staffing.Person` carries it through `load_roster`; the filter is applied at the `late_people_for_day_v2` call site in `routes/staffing.py` (not in `_safe_attendance`) so the rest of the staffing page is unaffected. If a salaried person's wage_type is wrong, fix it in Odoo — there's no per-person UI override.
+
 ## 2026-05-21
 
 ### 4:55 PM

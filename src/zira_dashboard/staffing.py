@@ -102,6 +102,7 @@ class Person:
     reserve: bool = False
     skills: dict[str, int] = field(default_factory=dict)
     employee_id: int | None = None  # Odoo hr.employee.id; None for legacy
+    wage_type: str | None = None    # Odoo hr.employee.wage_type: 'hourly' | 'monthly' | None
 
     def level(self, skill: str) -> int:
         return int(self.skills.get(skill, 0))
@@ -165,7 +166,7 @@ def load_roster() -> list[Person]:
                 return cached
     from . import db
     rows = db.query(
-        "SELECT p.id, p.name, p.active, p.reserve, p.odoo_id, "
+        "SELECT p.id, p.name, p.active, p.reserve, p.odoo_id, p.wage_type, "
         "  COALESCE(json_object_agg(s.name, ps.level) "
         "           FILTER (WHERE s.name IS NOT NULL), '{}'::json)::text AS skills_json "
         "FROM people p "
@@ -183,6 +184,7 @@ def load_roster() -> list[Person]:
             reserve=r["reserve"],
             skills={k: int(v) for k, v in (json.loads(r["skills_json"]) or {}).items()},
             employee_id=r["odoo_id"],
+            wage_type=r["wage_type"],
         ))
     with _ROSTER_CACHE_LOCK:
         _ROSTER_CACHE = (out, _time.time() + _ROSTER_CACHE_TTL_SECONDS)

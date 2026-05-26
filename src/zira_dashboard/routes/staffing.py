@@ -1005,10 +1005,23 @@ def late_report_json():
             snoozed_ids = {s["emp_id"] for s in late_report.active_snoozes(today)}
             already_recorded_late_ids = late_report.late_arrivals_for_day(today)
 
+            # Hourly-only filter: salaried managers (wage_type == 'monthly')
+            # and people with unknown wage_type are dropped from all three
+            # late-report sections. Source of truth is Odoo
+            # hr.employee.wage_type, synced into people.wage_type.
+            name_to_id = attendance_pkg.get("name_to_id") or {}
+            hourly_emp_ids = {
+                name_to_id[p.name]
+                for p in staffing.load_roster()
+                if p.wage_type == "hourly" and p.name in name_to_id
+            }
+            scheduled_ids = [e for e in (attendance_pkg.get("scheduled_ids") or []) if e in hourly_emp_ids]
+            unscheduled_ids = [e for e in (attendance_pkg.get("unscheduled_ids") or []) if e in hourly_emp_ids]
+
             sections = late_report.late_people_for_day_v2(
                 day=today,
-                scheduled_emp_ids=attendance_pkg.get("scheduled_ids") or [],
-                unscheduled_emp_ids=attendance_pkg.get("unscheduled_ids") or [],
+                scheduled_emp_ids=scheduled_ids,
+                unscheduled_emp_ids=unscheduled_ids,
                 attendance=by_id,
                 now_local=now_local,
                 shift_start_local=shift_start_local,
