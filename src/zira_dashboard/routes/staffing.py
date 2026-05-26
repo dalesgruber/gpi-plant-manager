@@ -41,24 +41,41 @@ def _server_timing_header(phases: dict) -> str:
     return ", ".join(f"{name};dur={dur:.1f}" for name, dur in phases.items())
 
 
-def _timeoff_entries_with_fallback(day):
-    """Return today's full time-off entries list via the live cache.
+def _live_or_fallback(day, *, read, refresh, fallback, transform):
+    """Cold-start safety valve for live_cache lookups.
 
-    Same cold-start safety valve as _attendance_with_fallback. Only used
-    for today — historical days bypass this and hit StratusTime directly
-    via _safe_time_off_entries below.
+    Reads `read(day)`; if missing or stale, calls `refresh(day)` and re-reads;
+    if still empty, returns `fallback()` (caller-provided StratusTime call).
+    Otherwise returns `transform(payload)`. The fallback already returns the
+    caller's final shape, so it's not passed through `transform`.
     """
-    from .. import live_cache, stratustime_client
-    payload, refreshed_at = live_cache.read_timeoff(day)
+    from .. import live_cache
+    payload, refreshed_at = read(day)
     if payload is None or live_cache.is_stale(refreshed_at):
         try:
-            live_cache.refresh_timeoff(day)
-            payload, _ = live_cache.read_timeoff(day)
+            refresh(day)
+            payload, _ = read(day)
         except Exception:
             payload = None
         if payload is None:
-            return stratustime_client.time_off_entries_for_day(day)
-    return list(payload)
+            return fallback()
+    return transform(payload)
+
+
+def _timeoff_entries_with_fallback(day):
+    """Return today's full time-off entries list via the live cache.
+
+    Only used for today — historical days bypass this and hit StratusTime
+    directly via _safe_time_off_entries below.
+    """
+    from .. import live_cache, stratustime_client
+    return _live_or_fallback(
+        day,
+        read=live_cache.read_timeoff,
+        refresh=live_cache.refresh_timeoff,
+        fallback=lambda: stratustime_client.time_off_entries_for_day(day),
+        transform=list,
+    )
 
 
 def _safe_time_off_entries(d):
@@ -78,44 +95,32 @@ def _safe_time_off_entries(d):
 def _attendance_with_fallback(day, emp_ids):
     """Return today's per-emp attendance dict, filtered to `emp_ids`.
 
-    Reads from live_cache.today_attendance_cache. If the warmer hasn't
-    refreshed in >3 minutes (cold-start, or warmer crashed), do an
-    inline refresh and re-read. Final fallback: call StratusTime
-    directly so the route never returns a stale-or-empty answer.
-
     The cache holds attendance for ALL known emp_ids; we filter here so
     callers get exactly the subset they asked for.
     """
     from .. import live_cache, stratustime_client
-    payload, refreshed_at = live_cache.read_attendance(day)
-    if payload is None or live_cache.is_stale(refreshed_at):
-        try:
-            live_cache.refresh_attendance(day)
-            payload, _ = live_cache.read_attendance(day)
-        except Exception:
-            payload = None
-        if payload is None:
-            return stratustime_client.attendance_for_day(day, emp_ids)
     wanted = set(emp_ids)
-    return {emp_id: info for emp_id, info in payload.items() if emp_id in wanted}
+    return _live_or_fallback(
+        day,
+        read=live_cache.read_attendance,
+        refresh=live_cache.refresh_attendance,
+        fallback=lambda: stratustime_client.attendance_for_day(day, emp_ids),
+        transform=lambda payload: {
+            emp_id: info for emp_id, info in payload.items() if emp_id in wanted
+        },
+    )
 
 
 def _timeoff_names_with_fallback(day):
-    """Return set of names off today (via the cached time-off entries).
-
-    Same cold-start safety valve as _attendance_with_fallback.
-    """
+    """Return set of names off today (via the cached time-off entries)."""
     from .. import live_cache, stratustime_client
-    payload, refreshed_at = live_cache.read_timeoff(day)
-    if payload is None or live_cache.is_stale(refreshed_at):
-        try:
-            live_cache.refresh_timeoff(day)
-            payload, _ = live_cache.read_timeoff(day)
-        except Exception:
-            payload = None
-        if payload is None:
-            return set(stratustime_client.time_off_names_for_day(day))
-    return {e.get("name") for e in payload if e.get("name")}
+    return _live_or_fallback(
+        day,
+        read=live_cache.read_timeoff,
+        refresh=live_cache.refresh_timeoff,
+        fallback=lambda: set(stratustime_client.time_off_names_for_day(day)),
+        transform=lambda entries: {e.get("name") for e in entries if e.get("name")},
+    )
 
 
 def _safe_attendance(d, sched, today):

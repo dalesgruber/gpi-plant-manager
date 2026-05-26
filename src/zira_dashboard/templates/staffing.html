@@ -14,57 +14,6 @@
   {{ goat_badges_css() }}
   /* Save toast (top-center) — shared with skills + settings. */
   {% include "_save_toast.html" %}
-  .autosave {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-left: 0.5rem;
-    min-width: 1.2rem;
-    height: 1.2rem;
-  }
-  .autosave.clean {
-    display: none;
-  }
-  .autosave.dirty {
-    display: inline-flex;
-    color: #dc2626;
-  }
-  .autosave.dirty::before {
-    content: "";
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #dc2626;
-  }
-  .autosave.dirty::after {
-    content: "Unsaved";
-    font-size: 0.72rem;
-    color: #6b7280;
-  }
-  .autosave.saving {
-    display: inline-flex;
-    color: #6b7280;
-  }
-  .autosave.saving::before {
-    content: "";
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 1.5px solid currentColor;
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: autosave-spin 0.8s linear infinite;
-  }
-  .autosave.saving::after {
-    content: "Saving…";
-    font-size: 0.72rem;
-  }
-  @keyframes autosave-spin {
-    to { transform: rotate(360deg); }
-  }
 </style>
 </head>
 <body>

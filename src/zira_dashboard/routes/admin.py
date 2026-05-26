@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import device_tokens as _dt, shift_config, staffing
 from ..deps import client, templates
-from ..leaderboard import cached_leaderboard, leaderboard
+from ..leaderboard import leaderboard
 from ..stations import Station
 
 router = APIRouter()

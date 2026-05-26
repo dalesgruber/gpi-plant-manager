@@ -26,7 +26,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Iterable
 
 CONTENDER_THRESHOLD = 0.98  # 98 % of GOAT → show in live banner
 
@@ -232,20 +231,14 @@ def finalize_day(day: date) -> list[dict]:
     Returns the list of rows written (or [] when nothing qualified or
     the table is unavailable).
     """
-    from . import awards, db, work_centers_store
+    from . import db, work_centers_store
 
     written: list[dict] = []
     for group_name in _group_names_today():
-        goat = awards.goat(group_name)
-        # `goat()` includes today's data once it lands in production_history.
-        # If today's data is what made the new record, `goat.units` IS the
-        # new value — so for the "prior record" we look at the second-best.
-        # Simpler: compute today's WC totals first, compare each against
-        # `awards.goat()` BEFORE today existed by snapshotting the record
-        # at finalization time. But that requires history slicing. For now
-        # use the simpler rule: a goat_alerts row is written when today's
-        # WC total > the SECOND-best person-day in the group's all-time
-        # history. That's the prior record from today's perspective.
+        # A goat_alerts row is written when today's WC total > the SECOND-best
+        # person-day in the group's all-time history. That's the prior record
+        # from today's perspective — `awards.goat()` would include today's
+        # data so it can't be used directly.
         prior_record = _prior_record_excluding_day(group_name, day)
         prior_units = int(prior_record["units"]) if prior_record else 0
         if prior_units <= 0:
