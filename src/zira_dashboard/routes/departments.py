@@ -1,4 +1,8 @@
-"""Value-stream pages: GET /recycling and GET /new-vs."""
+"""Department dashboard pages: GET /recycling and GET /new.
+
+Legacy URLs /new-vs and /tv/new-vs remain mounted as 301 redirects so
+existing TV bookmarks and external links keep working after the
+2026-05-26 rename."""
 
 from __future__ import annotations
 
@@ -124,7 +128,7 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     for loc in staffing.LOCATIONS:
         # Filter on loc.department (the static "Recycled / New / Supervisor /
         # Maintenance" classification) rather than the user-editable
-        # work_centers_store.value_stream — the latter has Loading/Jockeying,
+        # work_centers_store.department — the latter has Loading/Jockeying,
         # Tablets, and Work Orders set to "Recycled" as a value-stream
         # association, but those are forklift + mechanic support roles, not
         # production-line labor on the recycling line.
@@ -653,12 +657,12 @@ def tv_recycling(request: Request, theme: str | None = Query(default=None)):
     )
 
 
-@router.get("/new-vs", response_class=HTMLResponse)
-def new_vs(request: Request, day: str | None = Query(default=None)):
-    """Value Streams → New subtab. Shows only work centers whose Settings
-    value_stream is "New" and that have a meter ID. Sparse data is the norm
+@router.get("/new", response_class=HTMLResponse)
+def new_dept(request: Request, day: str | None = Query(default=None)):
+    """Departments → New subtab. Shows only work centers whose Settings
+    department is "New" and that have a meter ID. Sparse data is the norm
     here today since most "New" stations aren't metered yet."""
-    return _render_new_vs(
+    return _render_new_dept(
         request,
         day=day,
         tv_mode=False,
@@ -666,14 +670,25 @@ def new_vs(request: Request, day: str | None = Query(default=None)):
     )
 
 
-def _render_new_vs(
+@router.get("/new-vs", include_in_schema=False)
+def new_vs_redirect(request: Request):
+    """Legacy URL — kept as a 301 so existing TV bookmarks and external
+    links don't break after the 2026-05-26 rename to /new. Preserves
+    the original query string (e.g. ?day=2026-05-20)."""
+    from fastapi.responses import RedirectResponse
+    q = request.url.query
+    target = "/new" + (f"?{q}" if q else "")
+    return RedirectResponse(url=target, status_code=301)
+
+
+def _render_new_dept(
     request: Request,
     *,
     day: str | None,
     tv_mode: bool,
     tv_theme: str,
 ):
-    """Shared implementation for /new-vs (screen) and /tv/new-vs (TV).
+    """Shared implementation for /new (screen) and /tv/new (TV).
     Cache key includes tv_mode + tv_theme so screen and TV variants have
     separate cache entries.
     """
@@ -682,7 +697,7 @@ def _render_new_vs(
     is_today = d == today
     # Try cached HTML response.
     from .._http_cache import get_cached_response, set_cache_headers, store_cached_response
-    cache_key = ("new_vs", d.isoformat(), tv_mode, tv_theme)
+    cache_key = ("new_dept", d.isoformat(), tv_mode, tv_theme)
     cached = get_cached_response(cache_key, includes_today=is_today)
     if cached is not None:
         return cached
@@ -690,7 +705,7 @@ def _render_new_vs(
 
     new_locs = [
         loc for loc in staffing.LOCATIONS
-        if work_centers_store.value_stream(loc) == "New" and loc.meter_id
+        if work_centers_store.department(loc) == "New" and loc.meter_id
     ]
     stations = [
         Station(
@@ -771,7 +786,7 @@ def _render_new_vs(
     bars.sort(key=lambda x: -x["units"])
 
     # ---- Per-bucket dismantler / repair progress (cumulative widgets) ----
-    # New VS has sparse metering, so we use a flat target function instead of
+    # The New department has sparse metering, so we use a flat target function instead of
     # the full break-aware machinery the Recycling route uses. Each 15-min
     # bucket gets a target of (sum of group hourly targets) * (bucket_min/60).
     new_dismantlers = [r for r in results if r.station.category == "Dismantler"]
@@ -841,7 +856,7 @@ def _render_new_vs(
 
     response = templates.TemplateResponse(
         request,
-        "new_vs.html",
+        "new_dept.html",
         {
             "active_vs": "new",
             "active_dashboard_key": "vs_new",
@@ -887,15 +902,26 @@ def _render_new_vs(
     return response
 
 
-@router.get("/tv/new-vs", response_class=HTMLResponse)
-def tv_new_vs(request: Request, theme: str | None = Query(default=None)):
-    """Read-only TV variant of /new-vs. See tv_recycling for theme rules."""
+@router.get("/tv/new", response_class=HTMLResponse)
+def tv_new_dept(request: Request, theme: str | None = Query(default=None)):
+    """Read-only TV variant of /new. See tv_recycling for theme rules."""
     tv_theme = "light" if theme == "light" else "dark"
-    return _render_new_vs(
+    return _render_new_dept(
         request,
         day=None,
         tv_mode=True,
         tv_theme=tv_theme,
     )
+
+
+@router.get("/tv/new-vs", include_in_schema=False)
+def tv_new_vs_redirect(request: Request):
+    """Legacy TV URL — 301 to /tv/new, carrying through the optional
+    `?theme=` query so existing TV bookmarks keep their light/dark
+    setting."""
+    from fastapi.responses import RedirectResponse
+    q = request.url.query
+    target = "/tv/new" + (f"?{q}" if q else "")
+    return RedirectResponse(url=target, status_code=301)
 
 

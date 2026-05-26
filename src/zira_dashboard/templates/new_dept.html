@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
 <title>{% if tv_mode %}TV · {% endif %}Departments — New — GPI Plant Manager</title>
-<link rel="stylesheet" href="/static/new_vs.css?v={{ static_v('new_vs.css') }}">
+<link rel="stylesheet" href="/static/new_dept.css?v={{ static_v('new_dept.css') }}">
 <link rel="stylesheet" href="/static/goat_watch.css?v={{ static_v('goat_watch.css') }}">
 {% if tv_mode %}
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
@@ -18,7 +18,7 @@
 <body>
 {% if tv_mode %}
 {% from "_tv_header.html" import tv_header %}
-{{ tv_header("New VS", crumb="DEPARTMENTS · TODAY") }}
+{{ tv_header("New", crumb="DEPARTMENTS · TODAY") }}
 {% endif %}
 {% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
 <header>
@@ -34,7 +34,7 @@
       <a href="/settings">Settings</a>
     </nav>
   </div>
-  <form method="get" action="/new-vs">
+  <form method="get" action="/new">
     <label for="day">Day</label>
     <input id="day" type="date" name="day" value="{{ day }}" max="{{ today }}">
     <button type="submit">Update</button>

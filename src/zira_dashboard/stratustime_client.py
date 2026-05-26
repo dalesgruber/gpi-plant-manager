@@ -1120,7 +1120,7 @@ def full_day_absent_names_for_day(day) -> set[str]:
     `partial_off_intervals_for_day` inside `effective_minutes_worked`,
     which would over-subtract if we also dropped the person here.
 
-    Used by the recycling and new-vs man-hours computations so that
+    Used by the /recycling and /new department man-hours computations so that
     pph/hr/person doesn't count scheduled-but-absent operators as full
     shifts of labor.
     """

@@ -17,7 +17,7 @@ Schema (db._SCHEMA_DDL):
     );
 
 Per-station rows let partial cache hits work across overlapping
-station sets (e.g., recycling vs new-vs may share some stations).
+station sets (e.g., /recycling and /new may share some stations).
 """
 
 from __future__ import annotations

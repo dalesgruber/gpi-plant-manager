@@ -109,8 +109,9 @@ def refresh_timeoff(day: date) -> None:
 def refresh_production(day: date, client) -> None:
     """Refresh today's Zira production AND today's production_daily rows.
 
-    The cache table holds the raw payload (used by the recycling/new-vs
-    pages); production_daily rows are written so MTD / today leaderboards
+    The cache table holds the raw payload (used by the /recycling and
+    /new dashboards); production_daily rows are written so MTD / today
+    leaderboards
     see today's partial-day data without a separate query path.
     """
     try:

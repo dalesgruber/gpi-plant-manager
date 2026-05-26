@@ -23,8 +23,8 @@ def test_recycling_headline_uses_per_person_rate(monkeypatch):
         day=d, published=True,
         assignments={"Repair-1": ["Alice"], "Repair-2": ["Bob"]},
     ))
-    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb, \
-         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+    with patch("zira_dashboard.routes.departments.leaderboard") as lb, \
+         patch("zira_dashboard.routes.departments.shift_elapsed_minutes", return_value=60):
         from zira_dashboard.leaderboard import StationTotal
         from zira_dashboard.stations import Station
         s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
@@ -51,7 +51,7 @@ def test_recycling_bar_row_renders_person_and_wc_stacked(monkeypatch):
         day=d, published=True,
         assignments={"Repair-1": ["Alice"]},
     ))
-    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+    with patch("zira_dashboard.routes.departments.leaderboard") as lb:
         from zira_dashboard.leaderboard import StationTotal
         from zira_dashboard.stations import Station
         s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
@@ -71,7 +71,7 @@ def test_recycling_bar_row_no_assignment_fallback(monkeypatch):
     monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
         day=d, published=True, assignments={},
     ))
-    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+    with patch("zira_dashboard.routes.departments.leaderboard") as lb:
         from zira_dashboard.leaderboard import StationTotal
         from zira_dashboard.stations import Station
         s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
@@ -96,7 +96,7 @@ def test_recycling_past_day_view_shows_assigned_names(monkeypatch):
         day=d, published=True,
         assignments={"Repair-1": ["Alice"]},
     ))
-    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+    with patch("zira_dashboard.routes.departments.leaderboard") as lb:
         from zira_dashboard.leaderboard import StationTotal
         from zira_dashboard.stations import Station
         s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
@@ -117,7 +117,7 @@ def test_recycling_downtime_row_renders_person_and_wc_stacked(monkeypatch):
         day=d, published=True,
         assignments={"Repair-1": ["Alice"]},
     ))
-    with patch("zira_dashboard.routes.value_streams.leaderboard") as lb:
+    with patch("zira_dashboard.routes.departments.leaderboard") as lb:
         from zira_dashboard.leaderboard import StationTotal
         from zira_dashboard.stations import Station
         s1 = Station(meter_id="m1", name="Repair-1", category="Repair", cell="Recycling")
@@ -168,12 +168,12 @@ def test_root_redirects_to_recycling():
 
 def test_all_three_dashboard_pages_render_200():
     client = TestClient(app)
-    for path in ("/work-centers", "/recycling", "/new-vs"):
+    for path in ("/work-centers", "/recycling", "/new"):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} returned {resp.status_code}"
         # subnav is present on all three
-        assert ">Recycling VS<" in resp.text
-        assert ">New VS<" in resp.text
+        assert ">Recycling<" in resp.text
+        assert ">New<" in resp.text
         assert ">Work Centers<" in resp.text
         # top nav rename
         assert ">Dashboards<" in resp.text

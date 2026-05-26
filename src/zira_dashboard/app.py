@@ -39,7 +39,7 @@ from .routes import (
     time_off,
     trophies,
     tv_displays,
-    value_streams,
+    departments,
     wc_dashboard,
 )
 
@@ -326,7 +326,7 @@ async def _static_cache_headers(request, call_next):
 # Mount each feature router. URL paths are owned by the routers themselves.
 app.include_router(auth_routes.router)
 app.include_router(dashboard.router)
-app.include_router(value_streams.router)
+app.include_router(departments.router)
 app.include_router(wc_dashboard.router)
 app.include_router(tv_displays.router)
 app.include_router(staffing.router)

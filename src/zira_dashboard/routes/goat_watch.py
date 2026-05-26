@@ -1,9 +1,9 @@
 """GOAT Watch API — dismiss a NEW GOAT alert.
 
-The Recycling VS template reads alerts from `goat_watch.active_alerts`
-on each render and emits the banner. When the user clicks the
-"Dismiss" button, the banner POSTs to this endpoint to mark the alert
-as dismissed so it stops appearing.
+The Recycling department template reads alerts from
+`goat_watch.active_alerts` on each render and emits the banner. When
+the user clicks the "Dismiss" button, the banner POSTs to this endpoint
+to mark the alert as dismissed so it stops appearing.
 """
 from __future__ import annotations
 

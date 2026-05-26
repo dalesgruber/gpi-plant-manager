@@ -39,14 +39,14 @@ def tv_display(request: Request, slug: str, theme: str | None = Query(default=No
     tv_theme = "light" if theme == "light" else ("dark" if theme == "dark" else row["theme"])
     kind = row["kind"]
     if kind == "vs_recycling":
-        from .value_streams import _render_recycling
+        from .departments import _render_recycling
         return _render_recycling(
             request, window="today", start=None, end=None,
             tv_mode=True, tv_theme=tv_theme,
         )
     if kind == "vs_new":
-        from .value_streams import _render_new_vs
-        return _render_new_vs(
+        from .departments import _render_new_dept
+        return _render_new_dept(
             request, day=None, tv_mode=True, tv_theme=tv_theme,
         )
     if kind == "wc":

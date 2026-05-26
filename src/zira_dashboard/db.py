@@ -134,6 +134,29 @@ def bootstrap_schema() -> None:
 
 
 _SCHEMA_DDL = """
+-- 2026-05-26 migration: legacy "value stream" identifiers were renamed
+-- to "department" everywhere. This DO block does the one-time table +
+-- column rename on existing installs; fresh installs skip it (the
+-- CREATE TABLE statements below already use the new names). The IF
+-- EXISTS / NOT EXISTS guards make it idempotent and safe on every
+-- boot. Must run BEFORE the CREATE TABLE block so the old `value_streams`
+-- table doesn't coexist with a freshly-created `departments` table.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'value_streams')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+                     WHERE table_schema = current_schema() AND table_name = 'departments') THEN
+    ALTER TABLE value_streams RENAME TO departments;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = 'work_centers' AND column_name = 'value_stream')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'work_centers' AND column_name = 'department') THEN
+    ALTER TABLE work_centers RENAME COLUMN value_stream TO department;
+  END IF;
+END $$;
+
 -- HR-mastered entities (mirrored from Odoo via TTL sync) ----------------
 
 CREATE TABLE IF NOT EXISTS people (
@@ -178,7 +201,7 @@ CREATE TABLE IF NOT EXISTS work_centers (
   meter_id        TEXT,
   category        TEXT NOT NULL,
   cell            TEXT,
-  value_stream    TEXT,
+  department      TEXT,
   min_ops         INTEGER NOT NULL DEFAULT 1,
   max_ops         INTEGER,
   goal_per_day_override INTEGER,
@@ -207,7 +230,7 @@ CREATE TABLE IF NOT EXISTS groups (
   goal_per_day_override INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS value_streams (
+CREATE TABLE IF NOT EXISTS departments (
   name            TEXT PRIMARY KEY,
   goal_per_day_override INTEGER
 );
@@ -579,7 +602,7 @@ DELETE FROM widget_customizations WHERE page LIKE 'wc:%';
 
 -- GOAT Watch alerts (2026-05-15): finalized at shift-end whenever a
 -- person-day strictly beats the prior group GOAT record. Banner on the
--- Recycling VS dashboard reads from this table — visible until
+-- Recycling department dashboard reads from this table — visible until
 -- next_business_day(achieved_day) or until manually dismissed.
 CREATE TABLE IF NOT EXISTS goat_alerts (
   id                  SERIAL PRIMARY KEY,

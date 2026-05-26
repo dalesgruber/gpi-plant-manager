@@ -847,5 +847,5 @@
 
 
   /* ---- GOAT Watch banner styles moved to static/goat_watch.css ----
-     so /new-vs and /wc/{slug} can render the banner without pulling in
-     the rest of this Recycling-VS-specific stylesheet. */
+     so /new and /wc/{slug} can render the banner without pulling in
+     the rest of this Recycling-specific stylesheet. */

@@ -598,18 +598,18 @@
               <td class="group-cell">
                 <details class="skills-picker single-picker">
                   <summary>
-                    <span class="dd-summary-text">{% if r.value_stream %}{{ r.value_stream }}{% else %}<span class="empty">—</span>{% endif %}</span>
+                    <span class="dd-summary-text">{% if r.department %}{{ r.department }}{% else %}<span class="empty">—</span>{% endif %}</span>
                     <button type="button" class="dd-clear" title="Clear" aria-label="Clear">×</button>
                     <span class="dd-chev">▾</span>
                   </summary>
                   <div class="skills-list">
                     <label class="dd-item">
-                      <input type="radio" name="{{ p }}value_stream" value="" {% if not r.value_stream %}checked{% endif %}>
+                      <input type="radio" name="{{ p }}department" value="" {% if not r.department %}checked{% endif %}>
                       <span class="dd-item-text"><span class="empty">—</span></span>
                     </label>
-                    {% for v in value_streams %}
+                    {% for v in departments %}
                       <label class="dd-item">
-                        <input type="radio" name="{{ p }}value_stream" value="{{ v }}" {% if r.value_stream == v %}checked{% endif %}>
+                        <input type="radio" name="{{ p }}department" value="{{ v }}" {% if r.department == v %}checked{% endif %}>
                         <span class="dd-item-text">{{ v }}</span>
                       </label>
                     {% endfor %}
@@ -713,12 +713,12 @@
           <table>
             <thead><tr><th>Department</th><th class="num hint">WCs</th><th class="num">Auto</th><th class="num">Override</th></tr></thead>
             <tbody>
-              {% for v in vs_rows %}
+              {% for v in dept_rows %}
               <tr>
                 <td>{{ v.name }}</td>
                 <td class="num hint">{{ v.count }}</td>
                 <td class="num hint">{{ v.auto }}</td>
-                <td class="num"><input type="number" name="group_override__value_stream__{{ v.name }}" min="0" step="1" value="{{ v.override }}" placeholder="{{ v.auto }}"></td>
+                <td class="num"><input type="number" name="group_override__department__{{ v.name }}" min="0" step="1" value="{{ v.override }}" placeholder="{{ v.auto }}"></td>
               </tr>
               {% endfor %}
             </tbody>

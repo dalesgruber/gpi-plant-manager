@@ -11,11 +11,11 @@
       their group's GOAT record. Only fires after the final break
       of the day. One row per group.
 
-   Inputs (set in routes/value_streams.py):
+   Inputs (set in routes/departments.py):
      goat_alerts_active  list[dict]  — see goat_watch.active_alerts
      goat_contenders     list[Contender]  — see goat_watch.contenders_for_now
 #}
-{# Renders on /recycling, /new-vs, /wc/{slug} and their /tv variants.
+{# Renders on /recycling, /new, /wc/{slug} and their /tv variants.
    The host template must <link> /static/goat_watch.css from its <head>;
    we don't emit a <style> here so styles stay cached as a normal asset. #}
 {% if (goat_alerts_active and goat_alerts_active|length > 0) or (goat_contenders and goat_contenders|length > 0) %}

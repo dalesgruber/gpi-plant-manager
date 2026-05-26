@@ -32,8 +32,8 @@ def _stub_data(monkeypatch):
 
 def test_tv_recycling_renders_with_default_dark_theme(monkeypatch):
     _stub_data(monkeypatch)
-    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
-         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+    with patch("zira_dashboard.routes.departments.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.departments.shift_elapsed_minutes", return_value=60):
         c = TestClient(app)
         r = c.get("/tv/recycling")
     assert r.status_code == 200
@@ -49,8 +49,8 @@ def test_tv_recycling_renders_with_default_dark_theme(monkeypatch):
 
 def test_tv_recycling_supports_light_theme_via_query(monkeypatch):
     _stub_data(monkeypatch)
-    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
-         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+    with patch("zira_dashboard.routes.departments.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.departments.shift_elapsed_minutes", return_value=60):
         c = TestClient(app)
         r = c.get("/tv/recycling?theme=light")
     assert r.status_code == 200
@@ -59,22 +59,24 @@ def test_tv_recycling_supports_light_theme_via_query(monkeypatch):
 
 def test_tv_new_vs_renders_with_default_dark_theme(monkeypatch):
     _stub_data(monkeypatch)
-    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
-         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+    with patch("zira_dashboard.routes.departments.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.departments.shift_elapsed_minutes", return_value=60):
         c = TestClient(app)
+        # /tv/new-vs is a legacy URL that 301s to /tv/new; TestClient
+        # follows redirects by default, so this still tests the final page.
         r = c.get("/tv/new-vs")
     assert r.status_code == 200
     assert 'data-tv-theme="dark"' in r.text
     assert "/static/tv-mode.css" in r.text
-    assert "New VS" in r.text
+    assert ">New<" in r.text or "TV · Departments — New" in r.text
 
 
 def test_screen_recycling_unaffected_by_tv_changes(monkeypatch):
     """Regression guard: the screen /recycling route must NOT carry the
     TV attributes after the plumbing changes."""
     _stub_data(monkeypatch)
-    with patch("zira_dashboard.routes.value_streams.leaderboard", return_value=[]), \
-         patch("zira_dashboard.routes.value_streams.shift_elapsed_minutes", return_value=60):
+    with patch("zira_dashboard.routes.departments.leaderboard", return_value=[]), \
+         patch("zira_dashboard.routes.departments.shift_elapsed_minutes", return_value=60):
         c = TestClient(app)
         r = c.get("/recycling")
     assert r.status_code == 200

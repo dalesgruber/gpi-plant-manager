@@ -1,4 +1,4 @@
-/* GOAT Watch banner — shared across /recycling, /new-vs, and /wc/{slug}
+/* GOAT Watch banner — shared across /recycling, /new, and /wc/{slug}
    (and their /tv variants). Self-contained: only depends on the dashboard
    CSS vars (--panel, --border, --accent, --muted, --fg) that every
    dashboard's stylesheet defines.

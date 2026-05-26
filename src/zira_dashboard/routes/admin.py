@@ -167,7 +167,7 @@ def _pph_debug_impl(day: str | None):
     total_recycling_people = 0
     for loc in staffing.LOCATIONS:
         try:
-            vs = work_centers_store.value_stream(loc)
+            vs = work_centers_store.department(loc)
         except Exception as e:
             vs = f"<error: {e}>"
         is_recycled = vs == "Recycled"
@@ -193,7 +193,7 @@ def _pph_debug_impl(day: str | None):
             "name": loc.name,
             "loc_skill": loc.skill,
             "loc_department": loc.department,
-            "wc_store_value_stream": vs,
+            "wc_store_department": vs,
             "counted_as_recycled": is_recycled,
             "assigned": assigned,
             "per_person": per_person,

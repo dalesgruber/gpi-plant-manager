@@ -1,8 +1,8 @@
 """Top-level dashboard routes: GET /work-centers and GET /api/leaderboard.
 
-GET / redirects to /recycling so the home page lands on the Recycling VS
-dashboard. The Work Centers page (formerly served at /) now lives at
-/work-centers and is reachable from the Dashboards subnav.
+GET / redirects to /recycling so the home page lands on the Recycling
+department dashboard. The Work Centers page (formerly served at /) now
+lives at /work-centers and is reachable from the Dashboards subnav.
 """
 
 from __future__ import annotations

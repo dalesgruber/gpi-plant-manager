@@ -21,8 +21,8 @@ _log = logging.getLogger(__name__)
 
 # (name, kind, wc_name) — order matters for sort_order assignment at seed.
 _SEED_LIST = [
-    ("Recycling VS", "vs_recycling", None),
-    ("New VS",       "vs_new",        None),
+    ("Recycling", "vs_recycling", None),
+    ("New",       "vs_new",        None),
     ("Junior 2",     "wc",            "Junior 2"),
     ("Repair 1",     "wc",            "Repair 1"),
     ("Repair 2",     "wc",            "Repair 2"),

@@ -158,17 +158,17 @@ def sync(force: bool = False) -> SyncResult:
                     (level, pulled_at, emp["id"], s["skill_name"]),
                 )
 
-    # Departments: upsert into the value_streams registry table (kept
+    # Departments: upsert into the departments registry table (kept
     # under that name internally for backward compat — UI calls it
     # "Department"). Additive only — never delete existing rows so any
-    # WC.value_stream column value that references a now-archived Odoo
+    # WC.department column value that references a now-archived Odoo
     # department still resolves in the dropdown. Goal-override column
     # is preserved by the ON CONFLICT DO NOTHING.
     if departments:
         with db.cursor() as cur:
             for name in departments:
                 cur.execute(
-                    "INSERT INTO value_streams (name) VALUES (%s) "
+                    "INSERT INTO departments (name) VALUES (%s) "
                     "ON CONFLICT (name) DO NOTHING",
                     (name,),
                 )

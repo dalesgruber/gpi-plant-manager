@@ -99,8 +99,8 @@ def settings_page(
         from .. import tv_displays_store
         tv_displays_rows = tv_displays_store.list_displays()
         all_dashboards_for_picker = [
-            {"kind": "vs_recycling", "ref": "", "name": "Recycling VS"},
-            {"kind": "vs_new", "ref": "", "name": "New VS"},
+            {"kind": "vs_recycling", "ref": "", "name": "Recycling"},
+            {"kind": "vs_new", "ref": "", "name": "New"},
             {"kind": "vs_work_centers", "ref": "", "name": "Work Centers"},
         ]
         for loc in staffing.LOCATIONS:
@@ -147,7 +147,7 @@ def settings_page(
                 "goal": eff["goal_per_day"],
                 "note": eff["note"],
                 "groups": eff["groups"],
-                "value_stream": eff["value_stream"],
+                "department": eff["department"],
                 "default_people": eff["default_people"],
                 "default_pool": default_pool,
             }
@@ -171,7 +171,7 @@ def settings_page(
         return rows
 
     group_rows = _group_summary("group")
-    vs_rows = _group_summary("value_stream")
+    dept_rows = _group_summary("department")
     sched = schedule_store.current()
     schedule_ctx = {
         "shift_start": f"{sched.shift_start.hour:02d}:{sched.shift_start.minute:02d}",
@@ -203,10 +203,10 @@ def settings_page(
         {
             "wc_rows": wc_rows,
             "skills_all": skills_all,
-            "value_streams": work_centers_store.synced_value_streams(),
+            "departments": work_centers_store.synced_departments(),
             "groups_all": work_centers_store.registered_groups(),
             "group_rows": group_rows,
-            "vs_rows": vs_rows,
+            "dept_rows": dept_rows,
             "active_people": active_people,
             "saved": bool(saved),
             "active_section": section,
@@ -308,7 +308,7 @@ async def settings_save_work_centers(request: Request):
         key = loc.meter_id or f"name:{loc.name}"
         prefix = f"wc__{key}__"
         updates: dict = {}
-        for field in ("goal_per_day", "min_ops", "max_ops", "value_stream"):
+        for field in ("goal_per_day", "min_ops", "max_ops", "department"):
             name = prefix + field
             if name in form:
                 updates[field] = form.get(name) or ""

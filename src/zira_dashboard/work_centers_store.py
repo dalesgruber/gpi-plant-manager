@@ -1,7 +1,7 @@
 """Per-work-center configuration backed by Postgres.
 
 Reads/writes the `work_centers`, `work_center_required_skills`,
-`work_center_default_people`, `groups`, and `value_streams` tables.
+`work_center_default_people`, `groups`, and `departments` tables.
 
 Public API is unchanged from the JSON-file era so route handlers don't
 need to migrate. All functions are pure pass-throughs to SQL.
@@ -12,25 +12,25 @@ from __future__ import annotations
 from .shift_config import TARGET_PER_DAY, productive_minutes_per_day
 from .staffing import LOCATIONS, Location, required_skills_for
 
-GROUP_KINDS = ("group", "value_stream")
+GROUP_KINDS = ("group", "department")
 
-# Bootstrap fallback for the value_streams (a.k.a. "departments" in the
-# UI) registry. Used on a fresh deploy before Odoo sync has populated
-# the `value_streams` table for the first time. After sync, the live
-# list comes from the DB via `synced_value_streams()`.
-VALUE_STREAMS: tuple[str, ...] = ("New", "Recycled", "Transportation")
+# Bootstrap fallback for the departments registry. Used on a fresh
+# deploy before Odoo sync has populated the `departments` table for
+# the first time. After sync, the live list comes from the DB via
+# `synced_departments()`.
+DEPARTMENTS_FALLBACK: tuple[str, ...] = ("New", "Recycled", "Transportation")
 
 
-def synced_value_streams() -> list[str]:
-    """Live list of registered value streams (UI: "Departments"). Reads
-    from the `value_streams` table, which `odoo_sync.sync()` populates
-    from `hr.department` (numeric prefixes stripped). Falls back to the
-    hardcoded `VALUE_STREAMS` bootstrap on a fresh DB. Sorted
+def synced_departments() -> list[str]:
+    """Live list of registered departments. Reads from the `departments`
+    table, which `odoo_sync.sync()` populates from `hr.department`
+    (numeric prefixes stripped). Falls back to the hardcoded
+    `DEPARTMENTS_FALLBACK` bootstrap on a fresh DB. Sorted
     case-insensitive."""
     from . import db
-    rows = db.query("SELECT name FROM value_streams ORDER BY lower(name)")
+    rows = db.query("SELECT name FROM departments ORDER BY lower(name)")
     if not rows:
-        return list(VALUE_STREAMS)
+        return list(DEPARTMENTS_FALLBACK)
     return [r["name"] for r in rows]
 
 from ._cache import TTLCache
@@ -64,7 +64,7 @@ def effective(loc: Location) -> dict:
 def _effective_uncached(loc: Location) -> dict:
     from . import db
     rows = db.query(
-        "SELECT goal_per_day_override, min_ops, max_ops, value_stream, "
+        "SELECT goal_per_day_override, min_ops, max_ops, department, "
         "       group_name, note "
         "FROM work_centers WHERE name = %s",
         (loc.name,),
@@ -97,7 +97,7 @@ def _effective_uncached(loc: Location) -> dict:
         "required_skills": req,
         "note": rec.get("note") or "",
         "groups": [rec.get("group_name")] if rec.get("group_name") else [],
-        "value_stream": rec.get("value_stream") or "",
+        "department": rec.get("department") or "",
         "default_people": defaults,
     }
 
@@ -108,7 +108,7 @@ def max_ops(loc: Location):                     return effective(loc)["max_ops"]
 def required_skills(loc: Location):             return list(effective(loc)["required_skills"])
 def note(loc: Location) -> str:                 return effective(loc)["note"]
 def groups(loc: Location) -> list[str]:         return list(effective(loc)["groups"])
-def value_stream(loc: Location) -> str:         return effective(loc)["value_stream"]
+def department(loc: Location) -> str:         return effective(loc)["department"]
 def default_people(loc: Location) -> list[str]: return list(effective(loc)["default_people"])
 
 
@@ -124,7 +124,7 @@ def members(kind: str, name: str) -> list[Location]:
         return []
     if kind == "group":
         return [loc for loc in LOCATIONS if name in groups(loc)]
-    return [loc for loc in LOCATIONS if value_stream(loc) == name]
+    return [loc for loc in LOCATIONS if department(loc) == name]
 
 
 def group_goal_auto(kind: str, name: str) -> int:
@@ -142,7 +142,7 @@ def group_goal_override(kind: str, name: str):
 
 def _group_goal_override_uncached(kind: str, name: str):
     from . import db
-    table = "groups" if kind == "group" else "value_streams"
+    table = "groups" if kind == "group" else "departments"
     rows = db.query(
         f"SELECT goal_per_day_override FROM {table} WHERE name = %s",
         (name,),
@@ -179,13 +179,13 @@ def _all_group_names_uncached(kind: str) -> list[str]:
                 seen.add(r["name"]); out.append(r["name"])
     else:
         for loc in LOCATIONS:
-            v = value_stream(loc)
+            v = department(loc)
             if v and v not in seen:
                 seen.add(v); out.append(v)
-        for v in VALUE_STREAMS:
+        for v in DEPARTMENTS_FALLBACK:
             if v not in seen:
                 seen.add(v); out.append(v)
-        rows = db.query("SELECT name FROM value_streams ORDER BY name")
+        rows = db.query("SELECT name FROM departments ORDER BY name")
         for r in rows:
             if r["name"] not in seen:
                 seen.add(r["name"]); out.append(r["name"])
@@ -224,10 +224,10 @@ def save_one(loc: Location, updates: dict) -> dict:
                 pass
     if "note" in updates and isinstance(updates["note"], str):
         direct["note"] = updates["note"].strip()[:200]
-    if "value_stream" in updates and isinstance(updates["value_stream"], str):
-        v = updates["value_stream"].strip()
-        if v == "" or v in synced_value_streams():
-            direct["value_stream"] = v or None
+    if "department" in updates and isinstance(updates["department"], str):
+        v = updates["department"].strip()
+        if v == "" or v in synced_departments():
+            direct["department"] = v or None
     if "groups" in updates and isinstance(updates["groups"], list):
         direct["group_name"] = next(
             (g for g in updates["groups"] if isinstance(g, str) and g),
@@ -346,7 +346,7 @@ def delete_group(name: str) -> None:
 def save_group_override(kind: str, name: str, value) -> None:
     if kind not in GROUP_KINDS or not name:
         return
-    table = "groups" if kind == "group" else "value_streams"
+    table = "groups" if kind == "group" else "departments"
     if isinstance(value, str):
         value = value.strip()
     from . import db
@@ -373,7 +373,7 @@ def snapshot() -> dict:
     snapshot shape. Used by code that wanted the raw config blob."""
     from . import db
     wc_rows = db.query(
-        "SELECT name, meter_id, value_stream, min_ops, max_ops, "
+        "SELECT name, meter_id, department, min_ops, max_ops, "
         "       goal_per_day_override, group_name, note FROM work_centers"
     )
     wc_dict = {}
@@ -386,8 +386,8 @@ def snapshot() -> dict:
             rec["min_ops"] = int(r["min_ops"])
         if r["max_ops"] is not None:
             rec["max_ops"] = int(r["max_ops"])
-        if r["value_stream"]:
-            rec["value_stream"] = r["value_stream"]
+        if r["department"]:
+            rec["department"] = r["department"]
         if r["group_name"]:
             rec["groups"] = [r["group_name"]]
         if r["note"]:
@@ -395,11 +395,11 @@ def snapshot() -> dict:
         if rec:
             wc_dict[key] = rec
     g_rows = db.query("SELECT name, goal_per_day_override FROM groups WHERE goal_per_day_override IS NOT NULL")
-    vs_rows = db.query("SELECT name, goal_per_day_override FROM value_streams WHERE goal_per_day_override IS NOT NULL")
+    vs_rows = db.query("SELECT name, goal_per_day_override FROM departments WHERE goal_per_day_override IS NOT NULL")
     return {
         "work_centers": wc_dict,
         "group_overrides": {
             "group": {r["name"]: int(r["goal_per_day_override"]) for r in g_rows},
-            "value_stream": {r["name"]: int(r["goal_per_day_override"]) for r in vs_rows},
+            "department": {r["name"]: int(r["goal_per_day_override"]) for r in vs_rows},
         },
     }
