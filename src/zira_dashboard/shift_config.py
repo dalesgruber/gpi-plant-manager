@@ -140,9 +140,21 @@ def productive_minutes_for(day: date) -> int:
 def in_shift_on(local_dt: datetime) -> bool:
     """Day-aware twin of in_shift(): derives the day from local_dt and
     consults per-day custom_hours."""
-    if local_dt.weekday() not in work_weekdays():
-        return False
     day = local_dt.date()
+    if local_dt.weekday() not in work_weekdays():
+        # Same exception as shift_elapsed_minutes(): a published schedule
+        # on a non-standard weekday (e.g. Saturday) is the explicit signal
+        # that the day IS a workday. Without this gate every Saturday
+        # reading gets dropped by the leaderboard — emptying samples,
+        # zeroing downtime_minutes (so every WC reads 100% uptime), and
+        # blanking the progress charts on the recycling VS dashboard.
+        try:
+            from . import staffing
+            sched = staffing.load_schedule(day)
+            if not getattr(sched, "published", False):
+                return False
+        except Exception:
+            return False
     t = local_dt.time()
     if t < shift_start_for(day) or t >= shift_end_for(day):
         return False

@@ -106,3 +106,45 @@ def test_progress_buckets_align_to_standard_sample_at_0720_lands_in_0715_bucket(
     assert "07:15" in by_label
     assert by_label["07:15"]["actual"] == 5
     assert by_label.get("07:00", {"actual": 0})["actual"] == 0
+
+
+def test_progress_buckets_honors_published_schedule_on_saturday(monkeypatch):
+    """Regression: A Saturday with a PUBLISHED schedule must produce
+    progress buckets. Previously the function returned [] for any day
+    outside the standard work_weekdays, blanking out every progress
+    report on the recycling VS dashboard on Saturday."""
+    saturday = date(2026, 5, 23)  # Saturday (weekday 5)
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
+        day=d, published=True,
+        custom_hours={"start": "06:00", "end": "10:00", "breaks": []},
+    ))
+    # Keep the GLOBAL work_weekdays as the default Mon-Fri; only the
+    # published-schedule gate should open the day.
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    monkeypatch.setattr(progress_mod, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    monkeypatch.setattr(progress_mod, "station_target", lambda station: 0)
+    st = _station()
+    samples = [(_utc(saturday, 6, 10), 5), (_utc(saturday, 6, 25), 5)]
+    active = [(_utc(saturday, 6, 0), _utc(saturday, 7, 0))]
+    now = _utc(saturday, 7, 0)
+    buckets = progress_buckets([_stationtotal(st, samples, active)], saturday, now)
+    assert buckets, "expected non-empty buckets on a published Saturday"
+    assert buckets[0]["label"] == "06:00"
+
+
+def test_progress_buckets_returns_empty_on_unpublished_saturday(monkeypatch):
+    """Symmetric check: an unpublished Saturday (no published schedule)
+    still returns []. Only the published-schedule signal opens the gate."""
+    saturday = date(2026, 5, 23)
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: staffing.Schedule(
+        day=d, published=False, assignments={},
+    ))
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    monkeypatch.setattr(progress_mod, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    monkeypatch.setattr(progress_mod, "station_target", lambda station: 0)
+    st = _station()
+    samples = [(_utc(saturday, 6, 10), 5)]
+    active = [(_utc(saturday, 6, 0), _utc(saturday, 7, 0))]
+    now = _utc(saturday, 7, 0)
+    buckets = progress_buckets([_stationtotal(st, samples, active)], saturday, now)
+    assert buckets == []

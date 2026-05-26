@@ -1,5 +1,5 @@
 import os
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 
@@ -163,3 +163,33 @@ def test_shift_elapsed_minutes_returns_zero_on_unpublished_saturday(monkeypatch)
     saturday = date(2026, 5, 16)
     now = datetime(2026, 5, 16, 10, 0, tzinfo=SITE_TZ)
     assert shift_config.shift_elapsed_minutes(saturday, now) == 0
+
+
+def test_in_shift_on_honors_published_schedule_on_saturday(monkeypatch):
+    """Regression: A Saturday with a PUBLISHED schedule must let readings
+    inside the shift window count as in-shift. Without this, the leaderboard
+    drops every Saturday reading (samples + downtime), making progress
+    reports empty and uptime read 100% for every WC."""
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(
+            day=d, published=True,
+            custom_hours={"start": "06:00", "end": "10:00", "breaks": []},
+        ))
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    saturday = date(2026, 5, 16)
+    # 08:00 site-local sits inside the published 06:00–10:00 window.
+    in_window = datetime(2026, 5, 16, 8, 0, tzinfo=SITE_TZ)
+    assert shift_config.in_shift_on(in_window) is True
+    # 05:30 sits before shift start — even on a published day, still not in shift.
+    pre_shift = datetime(2026, 5, 16, 5, 30, tzinfo=SITE_TZ)
+    assert shift_config.in_shift_on(pre_shift) is False
+
+
+def test_in_shift_on_returns_false_on_unpublished_saturday(monkeypatch):
+    """Symmetric check: an unpublished Saturday still rejects every time.
+    Only the published-schedule signal opens the gate."""
+    monkeypatch.setattr(staffing, "load_schedule",
+        lambda d: staffing.Schedule(day=d, published=False, assignments={}))
+    monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
+    saturday_8am = datetime(2026, 5, 16, 8, 0, tzinfo=SITE_TZ)
+    assert shift_config.in_shift_on(saturday_8am) is False

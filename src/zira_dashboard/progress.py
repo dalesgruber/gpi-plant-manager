@@ -62,8 +62,20 @@ def progress_buckets(
     multi-day range mode so all days share a common 15-min grid.
     """
     group = list(group)
-    if not group or day.weekday() not in work_weekdays():
+    if not group:
         return []
+    if day.weekday() not in work_weekdays():
+        # Same exception as shift_elapsed_minutes(): a published schedule on
+        # a non-standard weekday is the explicit signal that the day IS a
+        # workday. Without this gate, the recycling VS dashboard's progress
+        # reports come up empty on every Saturday someone worked.
+        try:
+            from . import staffing
+            sched = staffing.load_schedule(day)
+            if not getattr(sched, "published", False):
+                return []
+        except Exception:
+            return []
 
     # All samples, converted to site-local time.
     samples: list[tuple[datetime, int]] = []
