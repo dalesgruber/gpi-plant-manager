@@ -427,6 +427,86 @@ def test_name_to_emp_id_map_excludes_terminated(env_creds):
     assert m["Bob Smith"] == "222"
 
 
+def test_name_to_emp_id_map_compound_first_name(env_creds):
+    """Hispanic compound given names: roster 'Jose Luis' (Odoo two-token
+    short name from 'Jose Luis Hernandez Alvarez') must map to a
+    StratusTime employee whose FirstName is the full compound 'Jose Luis'.
+
+    HR commonly enters a compound given name entirely into the FirstName
+    field (rather than splitting Jose / Luis across First/Last). Without
+    this rule, the roster name has no token in by_first['jose'] to match
+    against, and the entry never appears in the time-off section because
+    the final active-roster filter drops it (the StratusTime full name
+    'Jose Luis Hernandez' isn't in the local roster set).
+    """
+    employees_payload = {
+        "Report": {},
+        "Results": [
+            {"EmpIdentifier": "500", "FirstName": "Jose Luis",
+             "LastName": "Hernandez Alvarez", "Status": "Active"},
+        ],
+    }
+    import json as _json
+    from types import SimpleNamespace
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    fake_roster = [SimpleNamespace(name="Jose Luis", active=True, reserve=False)]
+    from zira_dashboard import staffing as _s
+    with patch.object(stc, "_post", side_effect=fake_post), \
+         patch.object(_s, "load_roster", return_value=fake_roster):
+        m = stc.name_to_emp_id_map()
+    assert m["Jose Luis"] == "500"
+
+
+def test_time_off_entries_renders_roster_name_for_compound_first(env_creds):
+    """End-to-end: a PTO request for a compound-first-name employee
+    surfaces under the local roster name (so the new active-roster
+    filter doesn't drop the entry).
+
+    Regression for commit e719b4f: that filter compares against
+    roster_names_active which holds the Odoo two-token short name
+    ('Jose Luis'). If name_to_emp_id_map can't round-trip the roster
+    name, the entry falls back to the StratusTime full name and gets
+    silently dropped by the filter.
+    """
+    requests_payload = {
+        "Report": {},
+        "Results": [_fake_request("500", "2026-05-26", "2026-05-26")],
+    }
+    employees_payload = {
+        "Report": {},
+        "Results": [
+            {"EmpIdentifier": "500", "FirstName": "Jose Luis",
+             "LastName": "Hernandez Alvarez", "Status": "Active"},
+        ],
+    }
+    import json as _json
+    from types import SimpleNamespace
+
+    def fake_post(path, body, **k):
+        if path == "CreateToken":
+            return 200, '"tok"'
+        if path == "GetUserTimeOffRequest":
+            return 200, _json.dumps(requests_payload)
+        if path == "GetUserBasic":
+            return 200, _json.dumps(employees_payload)
+        return 404, "not found"
+
+    fake_roster = [SimpleNamespace(name="Jose Luis", active=True, reserve=False)]
+    from zira_dashboard import staffing as _s
+    with patch.object(stc, "_post", side_effect=fake_post), \
+         patch.object(_s, "load_roster", return_value=fake_roster):
+        entries = stc.time_off_entries_for_day(date(2026, 5, 26))
+    assert len(entries) == 1, f"expected 1 entry, got {entries}"
+    assert entries[0]["name"] == "Jose Luis"
+
+
 def test_time_off_entries_skips_cleared_request(env_creds):
     """A request_id present in cleared_time_off should be filtered out."""
     requests_payload = {

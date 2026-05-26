@@ -309,13 +309,16 @@ def _employee_id_to_name_map() -> dict[str, str]:
 def name_to_emp_id_map() -> dict[str, str]:
     """Roster name → EmpIdentifier.
 
-    The app's roster uses short names ("Lauro", "Jesus M") while StratusTime
-    stores them as "FirstName LastName" ("Lauro Lopez", "Jesus Martinez").
-    Walks the roster + StratusTime employees and matches them with these
-    rules in order:
+    The app's roster uses short names ("Lauro", "Jesus M", "Jose Luis")
+    while StratusTime stores them as "FirstName LastName" ("Lauro Lopez",
+    "Jesus Martinez", "Jose Luis Hernandez Alvarez"). Walks the roster +
+    StratusTime employees and matches them with these rules in order:
       1. Exact full-name match.
-      2. Roster name = "First L" where L is the last-name initial.
-      3. Roster name = first name only — take the unique candidate.
+      2. Compound-first-name match — roster name matches a StratusTime
+         FirstName verbatim (handles Hispanic given names like "Jose Luis"
+         where HR put the full compound given name into FirstName).
+      3. Roster name = "First L" where L is the last-name initial.
+      4. Roster name = first name only — take the unique candidate.
     """
     cached = _cache_get(("name_to_id_map",))
     if cached is not None:
@@ -357,6 +360,20 @@ def name_to_emp_id_map() -> dict[str, str]:
         if rname in full_name_map:
             out[rname] = full_name_map[rname]
             continue
+        # Compound-first-name match: the whole roster name matches a
+        # StratusTime FirstName verbatim. Handles Hispanic compound given
+        # names where Odoo's _short_name truncation ("Jose Luis Hernandez
+        # Alvarez" → "Jose Luis") happens to equal the StratusTime
+        # FirstName ("Jose Luis"). Without this, the next rule splits the
+        # roster name on whitespace and looks up by_first[parts[0]],
+        # which misses because the by_first key is the full "jose luis".
+        whole_candidates = by_first.get(rname.lower(), [])
+        if whole_candidates:
+            active_whole = [c for c in whole_candidates if c[3] == "active"]
+            pick_list = active_whole if active_whole else whole_candidates
+            if len(pick_list) == 1:
+                out[rname] = pick_list[0][0]
+                continue
         parts = rname.split()
         first = parts[0]
         candidates = by_first.get(first.lower(), [])
