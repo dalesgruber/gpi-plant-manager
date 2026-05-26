@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .. import layout_store, widget_customizer
+from .. import _http_cache, layout_store, widget_customizer
 
 router = APIRouter()
 
@@ -50,12 +50,18 @@ async def save_widget(page: str, widget_id: str, request: Request):
     if not isinstance(data, dict):
         return JSONResponse({"ok": False, "error": "expected object"}, status_code=400)
     saved = widget_customizer.save_one(page, widget_id, data)
+    # Customs apply to every rendered page regardless of date range, so we
+    # drop BOTH cache buckets — otherwise the JS reload after saving a title
+    # serves the still-cached old HTML until the TTL (15s today / 5min past)
+    # expires, and the edit looks like it didn't take.
+    _http_cache.invalidate_all_cache()
     return JSONResponse({"ok": True, "config": saved})
 
 
 @router.delete("/api/widget/{page}/{widget_id}")
 def reset_widget(page: str, widget_id: str):
     widget_customizer.reset_one(page, widget_id)
+    _http_cache.invalidate_all_cache()
     return JSONResponse({"ok": True})
 
 

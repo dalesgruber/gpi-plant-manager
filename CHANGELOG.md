@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-26
 
+### 11:18 AM
+
+- **Widget title edits actually take effect on save** — editing a KPI/bar/progress widget's title (or color / alignment / etc.) wrote to Postgres correctly, but the reload that fires right after saving was getting served from the HTTP response cache (15s TTL on today, 5min on past ranges). The page came back with the old title and looked like the edit had been swallowed. `widget_customizer.save_one` invalidates its own per-page cache but didn't know about the response-bytes cache one layer up. New `_http_cache.invalidate_all_cache()` clears both today and past response buckets in one shot, and the `/api/widget/{page}/{widget_id}` save + delete handlers call it. Title/color/alignment edits and Resets now reflect immediately on the next reload.
+
 ### 11:05 AM
 
 - **`pallets/hr/person` now shows an "ex D4" side-metric** — Dale's ERP-derived pph/person ran ~30% below the dashboard because Dismantler 4 reprocesses reject material that the ERP doesn't count as new throughput. The recycling dashboard's KPI now renders the standard number plus a smaller, dimmer "(52.3 ex D4)" beside it — same denominator (operator labor is still real) but the numerator drops Dismantler 4's pallets. Tooltip on the side-metric explains the rationale. Works across all ranges (today, week, month, custom) and on both `/recycling` and `/tv/recycling`.

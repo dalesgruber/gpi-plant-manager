@@ -81,6 +81,16 @@ def invalidate_today_cache() -> None:
     _RESPONSE_CACHE_TODAY.invalidate()
 
 
+def invalidate_all_cache() -> None:
+    """Drop every cached response in BOTH today and past buckets. Use this
+    for writes that affect rendering regardless of date range — e.g., widget
+    customizations (title, color, alignment) apply to every cached page of
+    the same type, so a save on today must also invalidate the cached week,
+    month, and custom-range views."""
+    _RESPONSE_CACHE_TODAY.invalidate()
+    _RESPONSE_CACHE_PAST.invalidate()
+
+
 def store_cached_response(cache_key, *, includes_today: bool, response: Response) -> None:
     """Cache a response's body bytes + content_type for future serve.
 
