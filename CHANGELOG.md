@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-26
 
+### 11:05 AM
+
+- **`pallets/hr/person` now shows an "ex D4" side-metric** — Dale's ERP-derived pph/person ran ~30% below the dashboard because Dismantler 4 reprocesses reject material that the ERP doesn't count as new throughput. The recycling dashboard's KPI now renders the standard number plus a smaller, dimmer "(52.3 ex D4)" beside it — same denominator (operator labor is still real) but the numerator drops Dismantler 4's pallets. Tooltip on the side-metric explains the rationale. Works across all ranges (today, week, month, custom) and on both `/recycling` and `/tv/recycling`.
+
 ### 10:38 AM
 
 - **Time-off flash in Unscheduled — kill it at the deepest layer + sweep on load** — even after the prior fix, a brief flash of the unchecked name in Unscheduled could still happen if the page was loaded against stale data (the StratusTime cache hadn't picked up the new PTO yet at render time, so `time_off_names` came back without that person, but the Time Off section caught up before the next uncheck). Two more belts: (1) the `__timeOffNames.has(name)` guard moved one layer deeper — `addToUnscheduled` and `addToReserves` themselves now bail out for time-off people, so no caller can sneak past (current or future). (2) On page load, sweep the server-rendered Unscheduled and Reserves lists and remove anyone whose name appears in `__timeOffNames` — keeps the left rail consistent with the Time Off section without forcing a full reload when caches diverge.

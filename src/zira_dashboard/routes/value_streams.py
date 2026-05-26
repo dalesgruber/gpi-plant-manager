@@ -411,6 +411,16 @@ def _render_recycling(
             agg_who_today = p["per_wc_who"]
             schedule_today_assignments = p["schedule_assignments"]
 
+    # Dismantler 4 secondary metric: same denominator (we still pay for the
+    # operator labor) but the numerator drops D4's pallets. D4 reprocesses
+    # reject material that's already been counted upstream by the ERP, so the
+    # all-stations pph/person reads ~30% high vs. Dale's ERP-derived number.
+    # Keeping this as a smaller side-by-side helps spot when D4's share of
+    # total volume drifts (good = repair quality up, bad = D4 idle).
+    d4_units = agg_units.get("Dismantler 4", 0)
+    units_ex_d4 = max(0, total_units - d4_units)
+    pph_per_person_ex_d4 = (units_ex_d4 / total_man_hours) if total_man_hours > 0 else 0.0
+
     # Buckets aggregated by time-of-day label.
     def _aggregate_buckets(per_day_buckets: list[list[dict]]) -> list[dict]:
         agg: dict[str, dict] = {}
@@ -577,6 +587,7 @@ def _render_recycling(
             "uptime_pct": round(uptime_pct, 1),
             "pallets_per_hour": round(pallets_per_hour, 1),
             "pph_per_person": round(pph_per_person, 1),
+            "pph_per_person_ex_d4": round(pph_per_person_ex_d4, 1),
             "elapsed_minutes": total_elapsed,
             "dismantler_bars": _sorted_bars(_bars("Dismantler"), "dismantler-bars"),
             "repair_bars": _sorted_bars(_bars("Repair"), "repair-bars"),
