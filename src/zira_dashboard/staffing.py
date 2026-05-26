@@ -78,6 +78,8 @@ LOCATIONS: tuple[Location, ...] = (
     Location("Tablets", "Forklift: Tablets", "Forklift", "Supervisor", None, min_ops=1, max_ops=None),
     # Maint.
     Location("Work Orders", "Mechanic", "Maint.", "Maintenance", None, min_ops=1, max_ops=None),
+    # Transportation
+    Location("Truck Driver", "Truck Driver", "Transportation", "Transportation", None, min_ops=1, max_ops=None),
 )
 
 
@@ -86,7 +88,7 @@ def required_skills_for(loc: Location) -> tuple[str, ...]:
     `skill` field when `required_skills` is unset, for backward compatibility."""
     return loc.required_skills if loc.required_skills else (loc.skill,)
 
-DEPARTMENT_ORDER = ("Recycled", "New", "Supervisor", "Maintenance")
+DEPARTMENT_ORDER = ("Recycled", "New", "Supervisor", "Maintenance", "Transportation")
 
 BAY_SUBTITLES: dict[str, str] = {
     "Bay 5": "Complete yesterdays trailers",
