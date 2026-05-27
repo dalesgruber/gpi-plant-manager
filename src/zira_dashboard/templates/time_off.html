@@ -86,7 +86,7 @@
     <a href="https://stratustime.centralservers.com/" target="_blank" rel="noopener" class="ts-deeplink-btn" style="background:var(--accent);color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↗ Open StratusTime</a>
     <a href="/api/stratustime/refresh?back={{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" class="ts-refresh-btn" style="background:var(--panel-2);color:var(--fg);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↻ Refresh</a>
   {% endif %}
-  <span class="ts-note" style="color:var(--muted);font-size:0.78rem;font-style:italic;margin-left:auto">Toggle overlay in <a href="/staffing/settings#settings-time-off" style="color:var(--muted)">Settings → Time Off</a></span>
+  <span class="ts-note" style="color:var(--muted);font-size:0.78rem;font-style:italic;margin-left:auto">Toggle overlay in <a href="/settings?section=time_off" style="color:var(--muted)">Settings → Time Off</a></span>
 </div>
 
 <div class="cal-header">
@@ -243,9 +243,9 @@
 <p class="hint" style="margin-top:1rem">
   Primary source is the Odoo time-off mirror (state = <em>approved</em>).
   {% if show_stratustime_overlay %}
-    StratusTime entries are shown faded with a <span class="src-badge">ST</span> badge during the parallel-run window so you can compare both systems. Toggle the overlay off in <a href="/staffing/settings#settings-time-off">Settings → Time Off</a> once Odoo is the system of record.
+    StratusTime entries are shown faded with a <span class="src-badge">ST</span> badge during the parallel-run window so you can compare both systems. Toggle the overlay off in <a href="/settings?section=time_off">Settings → Time Off</a> once Odoo is the system of record.
   {% else %}
-    StratusTime overlay is off — turn it back on in <a href="/staffing/settings#settings-time-off">Settings → Time Off</a> if you still need to compare against the old system.
+    StratusTime overlay is off — turn it back on in <a href="/settings?section=time_off">Settings → Time Off</a> if you still need to compare against the old system.
   {% endif %}
 </p>
 {% endblock %}

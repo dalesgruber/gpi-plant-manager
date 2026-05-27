@@ -47,6 +47,10 @@
        class="settings-nav-item {% if active_section == 'kiosk' %}active{% endif %}">
       Timeclock
     </a>
+    <a href="?section=time_off"
+       class="settings-nav-item {% if active_section == 'time_off' %}active{% endif %}">
+      Time Off
+    </a>
   </aside>
 
   <div class="settings-content">
@@ -497,6 +501,110 @@
         </tbody>
       </table>
     {% endif %}
+  </section>
+
+  <!-- Time Off -->
+  <section class="panel" id="time-off-panel"
+           {% if active_section != 'time_off' %}style="display:none"{% endif %}>
+    <h2>Time Off</h2>
+    <p style="color:var(--muted);margin:0 0 0.8rem 0">
+      Kiosk time-off requests + admin calendar. Writes to Odoo
+      <code>hr.leave</code>. Toggle the StratusTime overlay during
+      parallel run; turn it off once Odoo is the system of record.
+    </p>
+
+    {% if time_off_settings and not time_off_settings.odoo_configured %}
+      <p style="background:#fef3c7;border:1px solid #f59e0b;padding:0.6rem 0.8rem;
+                border-radius:0.4rem;font-size:0.88rem;color:#78350f">
+        Odoo isn't configured in this environment (missing
+        <code>ODOO_URL</code>/<code>ODOO_DB</code>/<code>ODOO_LOGIN</code>/<code>ODOO_API_KEY</code>),
+        so the leave-types checklist is empty. Other toggles still work.
+      </p>
+    {% endif %}
+
+    <form method="post" action="/api/settings/time-off/hidden-types"
+          data-section="time_off_hidden">
+      <h3 style="margin-top:1rem">Leave types visible in the kiosk</h3>
+      <p class="note" style="color:var(--muted);font-size:0.85rem;margin:0 0 0.6rem 0">
+        Check a type to <strong>hide</strong> it from the kiosk picker.
+        Hidden types are unaffected on the admin calendar.
+      </p>
+      {% if time_off_settings and time_off_settings.leave_types %}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:0.4rem 1rem;margin:0.4rem 0 0.8rem 0">
+          {% for t in time_off_settings.leave_types %}
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.92rem">
+              <input type="checkbox" name="ids" value="{{ t.id }}"
+                {% if t.id in time_off_settings.hidden_ids %}checked{% endif %}>
+              Hide &ldquo;{{ t.name }}&rdquo;
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="color:var(--muted);font-style:italic;margin:0.4rem 0 0.8rem 0">
+          No leave types loaded from Odoo yet — click
+          &ldquo;Refresh from Odoo now&rdquo; below.
+        </p>
+      {% endif %}
+      <div style="display:flex;gap:0.6rem;align-items:center">
+        <button type="submit">Save hidden types</button>
+      </div>
+    </form>
+
+    <form method="post" action="/api/settings/time-off/overlay"
+          data-section="time_off_overlay" style="margin-top:1.6rem">
+      <h3 style="margin-top:0">StratusTime overlay</h3>
+      <label style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0 0.8rem 0">
+        <input type="checkbox" name="enabled" value="on"
+          {% if time_off_settings and time_off_settings.show_stratustime_overlay %}checked{% endif %}>
+        Show StratusTime overlay on the admin calendar
+      </label>
+      <div style="display:flex;gap:0.6rem;align-items:center">
+        <button type="submit">Save overlay</button>
+      </div>
+    </form>
+
+    <form method="post" action="/api/settings/time-off/default-shift"
+          data-section="time_off_shift" style="margin-top:1.6rem">
+      <h3 style="margin-top:0">Default shift window</h3>
+      <p class="note" style="color:var(--muted);font-size:0.85rem;margin:0 0 0.6rem 0">
+        Used as a fallback for late-arrival / early-leave / midday-gap
+        requests when the employee has no resource calendar configured
+        on Odoo. Decimal hours (e.g. <code>6.0</code> = 6 AM,
+        <code>14.5</code> = 2:30 PM).
+      </p>
+      <div style="display:flex;gap:1.2rem;flex-wrap:wrap;align-items:center;margin:0.4rem 0 0.8rem 0">
+        <label style="display:flex;align-items:center;gap:0.4rem">
+          Start
+          <input type="number" step="0.25" min="0" max="24" name="start"
+                 value="{% if time_off_settings %}{{ time_off_settings.default_shift_start }}{% else %}6.0{% endif %}"
+                 style="width:6rem">
+        </label>
+        <label style="display:flex;align-items:center;gap:0.4rem">
+          End
+          <input type="number" step="0.25" min="0" max="24" name="end"
+                 value="{% if time_off_settings %}{{ time_off_settings.default_shift_end }}{% else %}14.5{% endif %}"
+                 style="width:6rem">
+        </label>
+      </div>
+      <div style="display:flex;gap:0.6rem;align-items:center">
+        <button type="submit">Save default shift</button>
+      </div>
+    </form>
+
+    <form method="post" action="/api/settings/time-off/refresh-now"
+          style="margin-top:1.6rem">
+      <h3 style="margin-top:0">Refresh from Odoo</h3>
+      <p class="note" style="color:var(--muted);font-size:0.85rem;margin:0 0 0.6rem 0">
+        The background poller runs every 60s. Click this to force an
+        immediate pull (leave types + leaves in the visible window).
+      </p>
+      <div style="display:flex;gap:0.6rem;align-items:center">
+        <button type="submit">Refresh from Odoo now</button>
+        {% if saved and active_section == 'time_off' %}
+          <span class="saved-flash">Saved.</span>
+        {% endif %}
+      </div>
+    </form>
   </section>
   </div>
 </div>

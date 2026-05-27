@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import time as _time
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import schedule_store, settings_store, shift_config, staffing, work_centers_store
@@ -19,6 +19,15 @@ from ..deps import templates
 from ..stations import CATEGORIES, STATIONS
 
 router = APIRouter()
+
+
+def _odoo_configured() -> bool:
+    """True when the four Odoo env vars are set so XML-RPC calls won't
+    raise OdooConfigError. Used to gate the Time Off settings panel's
+    leave-types fetch when running on a dev box without Odoo wiring."""
+    import os
+    return all(os.environ.get(k) for k in
+               ("ODOO_URL", "ODOO_DB", "ODOO_LOGIN", "ODOO_API_KEY"))
 
 
 def _parse_hhmm(raw: str | None) -> _time | None:
@@ -47,7 +56,7 @@ def settings_page(
     saved: int = Query(default=0),
     section: str = Query(default="work_centers"),
 ):
-    if section not in ("work_centers", "integrations", "roster_filter", "tvs", "kiosk"):
+    if section not in ("work_centers", "integrations", "roster_filter", "tvs", "kiosk", "time_off"):
         section = "work_centers"
     roster_filter_rows: list[dict] = []
     if section == "roster_filter":
@@ -93,6 +102,26 @@ def settings_page(
             "WHERE occurred_at > now() - interval '7 days'"
         )
         kiosk_sync_status = status_rows[0] if status_rows else None
+    time_off_settings: dict | None = None
+    if section == "time_off":
+        from .. import odoo_client
+        leave_types: list[dict] = []
+        if _odoo_configured():
+            try:
+                leave_types = odoo_client.fetch_leave_types()
+            except Exception:
+                # Odoo unreachable / misconfigured — render the panel
+                # without the leave-types checklist rather than 500ing.
+                leave_types = []
+        default_start, default_end = settings_store.get_default_shift_hours()
+        time_off_settings = {
+            "leave_types": leave_types,
+            "hidden_ids": settings_store.get_hidden_leave_type_ids(),
+            "show_stratustime_overlay": settings_store.get_show_stratustime_overlay(),
+            "default_shift_start": default_start,
+            "default_shift_end": default_end,
+            "odoo_configured": _odoo_configured(),
+        }
     tv_displays_rows: list[dict] = []
     all_dashboards_for_picker: list[dict] = []
     if section == "tvs":
@@ -230,6 +259,7 @@ def settings_page(
             "kiosk_recent_punches": kiosk_recent_punches,
             "kiosk_recent_variances": kiosk_recent_variances,
             "kiosk_sync_status": kiosk_sync_status,
+            "time_off_settings": time_off_settings,
         },
     )
 
@@ -436,3 +466,78 @@ async def roster_filter_toggle(request: Request):
     )
     staffing._invalidate_roster_cache()
     return JSONResponse({"ok": True})
+
+
+# ---------- Time Off settings (2026-05-27) ----------
+
+
+def _wants_json(request: Request) -> bool:
+    return (request.headers.get("accept") or "").startswith("application/json")
+
+
+@router.post("/api/settings/time-off/hidden-types")
+async def time_off_set_hidden_types(request: Request):
+    """Persist the list of leave-type ids that should be hidden from the
+    kiosk picker. Posted as a multi-valued `ids` field (one per checked
+    checkbox); absent => all visible."""
+    form = await request.form()
+    raw = form.getlist("ids")
+    ids: list[int] = []
+    for v in raw:
+        try:
+            ids.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    settings_store.set_hidden_leave_type_ids(ids)
+    if _wants_json(request):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=time_off",
+                            status_code=303)
+
+
+@router.post("/api/settings/time-off/overlay")
+async def time_off_set_overlay(request: Request,
+                               enabled: str = Form(default="off")):
+    """Toggle the StratusTime overlay on the admin calendar. Checkbox
+    posts `enabled=on` when checked and omits the field entirely when
+    unchecked, which Form(default='off') turns into off."""
+    settings_store.set_show_stratustime_overlay(enabled == "on")
+    if _wants_json(request):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=time_off",
+                            status_code=303)
+
+
+@router.post("/api/settings/time-off/default-shift")
+async def time_off_set_default_shift(
+    request: Request,
+    start: float = Form(...),
+    end: float = Form(...),
+):
+    """Default shift window in decimal hours used to seed late-arrival /
+    early-leave / midday-gap requests when the employee has no
+    resource calendar on Odoo. Clamps to a valid 0-24 range and
+    requires end > start; on validation failure, keeps the existing
+    values."""
+    if 0.0 <= start <= 24.0 and 0.0 <= end <= 24.0 and end > start:
+        settings_store.set_default_shift_hours(start, end)
+    if _wants_json(request):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=time_off",
+                            status_code=303)
+
+
+@router.post("/api/settings/time-off/refresh-now")
+def time_off_refresh_now(request: Request):
+    """One-shot admin action — runs the Odoo leaves poller synchronously
+    so the next page render sees a fresh local mirror. Swallows
+    exceptions so the redirect still works when Odoo is down."""
+    from .. import time_off_sync
+    try:
+        time_off_sync.poll_odoo_leaves()
+    except Exception:
+        pass
+    if _wants_json(request):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=time_off",
+                            status_code=303)
