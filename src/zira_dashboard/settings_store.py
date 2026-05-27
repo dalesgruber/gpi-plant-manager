@@ -1,8 +1,15 @@
-"""User-editable per-station + per-group target overrides, in Postgres.
+"""User-editable settings in Postgres.
 
-Storage is pallets-per-day, kept in app_settings under two keys:
-  - 'station_targets' → {meter_id: pallets_per_day, ...}
-  - 'group_targets'   → {category: pallets_per_day, ...}
+Two concerns stored here:
+  - Legacy: per-station + per-group production target overrides
+    (dict[str, int]-shaped via the ``_read`` / ``_write`` + ``station_target*`` /
+    ``group_target*`` helpers). Storage is pallets-per-day, kept in
+    app_settings under two keys:
+      - 'station_targets' → {meter_id: pallets_per_day, ...}
+      - 'group_targets'   → {category: pallets_per_day, ...}
+  - Time-off feature toggles and defaults (arbitrary JSON shapes via the
+    newer ``_read_raw`` / ``_write_raw`` + typed ``get_*`` / ``set_*``
+    getters at the bottom of this file).
 
 Per-day station targets come primarily from work_centers_store; this
 module exists for legacy callers that still reach for category-level
@@ -109,7 +116,7 @@ def snapshot() -> dict:
 
 # ---- Time-off settings (2026-05-27) ----
 
-import json as _json
+_DEFAULT_SHIFT_HOURS: tuple[float, float] = (6.0, 14.5)
 
 
 def _read_raw(key: str):
@@ -126,8 +133,8 @@ def _read_raw(key: str):
     raw = rows[0]["value"]
     if isinstance(raw, str):
         try:
-            return _json.loads(raw)
-        except _json.JSONDecodeError:
+            return json.loads(raw)
+        except json.JSONDecodeError:
             return None
     return raw
 
@@ -143,7 +150,7 @@ def _write_raw(key: str, value) -> None:
         "INSERT INTO app_settings (key, value, updated_at) "
         "VALUES (%s, %s::jsonb, now()) "
         "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
-        (key, _json.dumps(value)),
+        (key, json.dumps(value)),
     )
 
 
@@ -175,11 +182,14 @@ def set_show_stratustime_overlay(on: bool) -> None:
 def get_default_shift_hours() -> tuple[float, float]:
     v = _read_raw("time_off.default_shift_hours")
     if not isinstance(v, dict):
-        return (6.0, 14.5)
+        return _DEFAULT_SHIFT_HOURS
     try:
-        return (float(v.get("start", 6.0)), float(v.get("end", 14.5)))
+        return (
+            float(v.get("start", _DEFAULT_SHIFT_HOURS[0])),
+            float(v.get("end", _DEFAULT_SHIFT_HOURS[1])),
+        )
     except (TypeError, ValueError):
-        return (6.0, 14.5)
+        return _DEFAULT_SHIFT_HOURS
 
 
 def set_default_shift_hours(start: float, end: float) -> None:
