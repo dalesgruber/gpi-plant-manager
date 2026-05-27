@@ -4,6 +4,11 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-27
 
+### 8:54 AM
+
+- fix(sync): treat Odoo Certifications as binary — single-level cert types in Odoo were bucketing to 0 and getting dropped by the sync, so cert lookups returned nothing. DOT mechanics now get the wrench badge; CDL drivers scheduled to Truck Driver now color green.
+- fix(work-centers): allow a work center to have a blank required-skill list. Settings → uncheck all skills → save now persists empty, and the staffing page renders people there at a neutral pill (lvl-2) instead of red. Useful for WCs where skill matters less than presence.
+
 ### 8:30 AM
 
 - **Timeclock rename — remaining files** — yesterday's 7:15 PM entry announced the Plant Kiosk → Timeclock rename, but only `settings.html` got pushed at the time (it rode along with the CSS-extraction commit). The other user-visible spots — the kiosk's browser tab title (`kiosk_base.html`), the "your punches haven't synced" warning pointer on the kiosk dashboard (`kiosk_dashboard.html`), the module docstring in `routes/kiosk.py`, the schema comment in `db.py`, and the standalone `kiosk_preview.html` + its generator script — are now in HEAD too. Pure label change, no behavior. Internal naming (`/kiosk` route, `kiosk_punches_log` table, `kiosk_*.html` templates) still untouched on purpose.
