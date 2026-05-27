@@ -19,6 +19,7 @@ Never log or echo these values.
 from __future__ import annotations
 
 import os
+import time
 import xmlrpc.client
 from datetime import datetime, timezone
 from typing import Any
@@ -368,8 +369,6 @@ def transfer(
 
 # ---------- Time-off reads (2026-05-27) ----------
 
-import time as _time
-
 _LEAVE_TYPES_TTL_SECONDS = 10 * 60
 # (types_list, expires_at_epoch). Module-level so a process restart clears it.
 _leave_types_cache: tuple[list[dict], float] | None = None
@@ -381,7 +380,7 @@ def fetch_leave_types() -> list[dict]:
     Returns [{id, name, request_unit, requires_allocation, color, active}, ...].
     """
     global _leave_types_cache
-    now = _time.time()
+    now = time.time()
     if _leave_types_cache and _leave_types_cache[1] > now:
         return _leave_types_cache[0]
     rows = execute(
