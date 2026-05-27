@@ -254,3 +254,45 @@ def test_cancel_handler_marks_row_for_cancel_and_queues(monkeypatch):
     assert r.status_code in (200, 303)
     assert (42, "draft_cancel") in updates
     assert queued == [42]
+
+
+def test_edit_post_updates_row_and_queues_sync(monkeypatch):
+    """POST /kiosk/time-off/mine/{token}/{rid}/edit on an existing row
+    UPDATEs the row (via ``_update_request_row``) and queues a background
+    push that will route through ``time_off_sync._push_edit`` to write
+    the changed fields to the same ``hr.leave`` record on Odoo."""
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._verify_token",
+                        lambda t: 1)
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._person_by_id",
+                        lambda pid: {"id": 1, "name": "T", "odoo_id": 5})
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._load_request",
+                        lambda rid, pid: {
+                            "id": rid, "person_odoo_id": pid,
+                            "shape": "full_day", "state": "confirm",
+                            "odoo_leave_id": 999,
+                            "holiday_status_id": 1,
+                        })
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._shift_window_for",
+                        lambda pid: (6.0, 14.5))
+    updates = []
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._update_request_row",
+                        lambda **kw: updates.append(kw))
+    queued = []
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._queue_push",
+                        lambda rid: queued.append(rid))
+
+    client = TestClient(app)
+    r = client.post(
+        "/kiosk/time-off/mine/anytoken/42/edit",
+        data={
+            "shape": "full_day",
+            "holiday_status_id": "1",
+            "date_from": "2026-06-10",
+            "date_to": "2026-06-12",
+            "note": "Updated dates",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code in (200, 303)
+    assert updates and updates[0]["date_from"].isoformat() == "2026-06-10"
+    assert queued == [42]

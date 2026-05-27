@@ -19,6 +19,13 @@
        data-shift-to="{{ shift_to }}"
        style="width: 100%; max-width: 720px;">
 
+    {% if edit_mode %}
+      <div class="k-warning" style="background: #e0f2fe; color: #075985;
+                                    border-color: #bae6fd;">
+        Editing existing request
+      </div>
+    {% endif %}
+
     {% if error %}
       <div class="k-error">{{ error }}</div>
     {% endif %}
@@ -33,7 +40,7 @@
     {% endif %}
 
     <form method="post"
-          action="/kiosk/time-off/request/{{ token }}/submit"
+          action="{% if edit_mode %}/kiosk/time-off/mine/{{ token }}/{{ edit_rid }}/edit{% else %}/kiosk/time-off/request/{{ token }}/submit{% endif %}"
           style="display: flex; flex-direction: column; gap: 1.25rem;
                  background: #ffffff; border: 1px solid #e2e8f0;
                  border-radius: 0.75rem; padding: 1.5rem;
@@ -52,7 +59,8 @@
           {% for t in leave_types %}
             <option value="{{ t.id }}"
                     data-unit="{{ t.request_unit }}"
-                    data-requires-alloc="{{ t.requires_allocation }}">
+                    data-requires-alloc="{{ t.requires_allocation }}"
+                    {% if edit_mode and prefill and t.id == prefill.holiday_status_id %}selected{% endif %}>
               {{ t.name }}
             </option>
           {% endfor %}
@@ -84,7 +92,9 @@
             Start date
           </span>
           <input type="date" name="date_from" id="date-from"
-                 min="{{ today_iso }}" value="{{ today_iso }}" required
+                 min="{{ today_iso }}"
+                 value="{{ (prefill.date_from if edit_mode and prefill else '') or today_iso }}"
+                 required
                  style="padding: 0.85rem 1rem; font-size: 1.25rem;
                         border: 1px solid #cbd5e1; border-radius: 0.5rem;
                         background: #f8fafc; min-height: 56px;
@@ -95,7 +105,9 @@
             End date
           </span>
           <input type="date" name="date_to" id="date-to"
-                 min="{{ today_iso }}" value="{{ today_iso }}" required
+                 min="{{ today_iso }}"
+                 value="{{ (prefill.date_to if edit_mode and prefill else '') or today_iso }}"
+                 required
                  style="padding: 0.85rem 1rem; font-size: 1.25rem;
                         border: 1px solid #cbd5e1; border-radius: 0.5rem;
                         background: #f8fafc; min-height: 56px;
@@ -107,13 +119,15 @@
             Date
           </span>
           <input type="date" name="date_from" id="date-from"
-                 min="{{ today_iso }}" value="{{ today_iso }}" required
+                 min="{{ today_iso }}"
+                 value="{{ (prefill.date_from if edit_mode and prefill else '') or today_iso }}"
+                 required
                  style="padding: 0.85rem 1rem; font-size: 1.25rem;
                         border: 1px solid #cbd5e1; border-radius: 0.5rem;
                         background: #f8fafc; min-height: 56px;
                         font-family: inherit;">
           <input type="hidden" name="date_to" id="date-to-hidden"
-                 value="{{ today_iso }}">
+                 value="{{ (prefill.date_from if edit_mode and prefill else '') or today_iso }}">
         </label>
 
         {% if shape == "late_arrival" %}
@@ -122,6 +136,7 @@
               I'll arrive at
             </span>
             <input type="time" name="time_b" id="time-b" required step="900"
+                   value="{% if edit_mode and prefill and prefill.hour_to is not none %}{{ '%02d:%02d'|format(prefill.hour_to|int, ((prefill.hour_to - (prefill.hour_to|int)) * 60)|round|int) }}{% endif %}"
                    style="padding: 0.85rem 1rem; font-size: 1.25rem;
                           border: 1px solid #cbd5e1; border-radius: 0.5rem;
                           background: #f8fafc; min-height: 56px;
@@ -134,6 +149,7 @@
               I'll leave at
             </span>
             <input type="time" name="time_a" id="time-a" required step="900"
+                   value="{% if edit_mode and prefill and prefill.hour_from is not none %}{{ '%02d:%02d'|format(prefill.hour_from|int, ((prefill.hour_from - (prefill.hour_from|int)) * 60)|round|int) }}{% endif %}"
                    style="padding: 0.85rem 1rem; font-size: 1.25rem;
                           border: 1px solid #cbd5e1; border-radius: 0.5rem;
                           background: #f8fafc; min-height: 56px;
@@ -146,6 +162,7 @@
               Gone from
             </span>
             <input type="time" name="time_a" id="time-a" required step="900"
+                   value="{% if edit_mode and prefill and prefill.hour_from is not none %}{{ '%02d:%02d'|format(prefill.hour_from|int, ((prefill.hour_from - (prefill.hour_from|int)) * 60)|round|int) }}{% endif %}"
                    style="padding: 0.85rem 1rem; font-size: 1.25rem;
                           border: 1px solid #cbd5e1; border-radius: 0.5rem;
                           background: #f8fafc; min-height: 56px;
@@ -156,6 +173,7 @@
               To
             </span>
             <input type="time" name="time_b" id="time-b" required step="900"
+                   value="{% if edit_mode and prefill and prefill.hour_to is not none %}{{ '%02d:%02d'|format(prefill.hour_to|int, ((prefill.hour_to - (prefill.hour_to|int)) * 60)|round|int) }}{% endif %}"
                    style="padding: 0.85rem 1rem; font-size: 1.25rem;
                           border: 1px solid #cbd5e1; border-radius: 0.5rem;
                           background: #f8fafc; min-height: 56px;
@@ -169,6 +187,7 @@
           Note (optional)
         </span>
         <input type="text" name="note" maxlength="200"
+               value="{{ (prefill.note if edit_mode and prefill else '') }}"
                style="padding: 0.85rem 1rem; font-size: 1.25rem;
                       border: 1px solid #cbd5e1; border-radius: 0.5rem;
                       background: #f8fafc; min-height: 56px;
@@ -179,7 +198,7 @@
               style="width: 100%; font-size: 1.5rem; padding: 1.25rem;
                      min-height: 80px;"
               {% if not leave_types %}disabled{% endif %}>
-        Submit Request
+        {% if edit_mode %}Save Changes{% else %}Submit Request{% endif %}
       </button>
     </form>
   </div>

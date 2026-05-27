@@ -74,9 +74,15 @@
 
     {% if request_row.originating_kiosk_user
           and request_row.state not in ("cancel", "refuse", "draft_cancel") %}
+      <a href="/kiosk/time-off/mine/{{ token }}/{{ request_row.id }}/edit"
+         class="k-btn"
+         style="display: block; text-align: center; margin-top: 2rem;
+                min-width: 280px; width: 100%; text-decoration: none;">
+        Edit Request
+      </a>
       <form method="post"
             action="/kiosk/time-off/mine/{{ token }}/{{ request_row.id }}/cancel"
-            style="margin-top: 2rem;">
+            style="margin-top: 1rem;">
         {% if request_row.state == "validate" %}
           <div class="k-warning" style="margin-bottom: 1.25rem;">
             Canceling an approved request will need approval again

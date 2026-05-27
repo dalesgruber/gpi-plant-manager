@@ -27,6 +27,8 @@ Routes:
   GET  /kiosk/time-off/mine/{token}                         My Requests list
   GET  /kiosk/time-off/mine/{token}/{rid}                   My Requests detail (with Cancel)
   POST /kiosk/time-off/mine/{token}/{rid}/cancel            Cancel a pending or approved request
+  GET  /kiosk/time-off/mine/{token}/{rid}/edit              Edit form pre-filled with current values
+  POST /kiosk/time-off/mine/{token}/{rid}/edit              Persist edits + queue Odoo write
 """
 
 from __future__ import annotations
@@ -728,6 +730,241 @@ def mine_cancel(
         background_tasks.add_task(_queue_push, rid)
     return RedirectResponse(
         url=f"/kiosk/time-off/mine/{_mint_token(person_id)}",
+        status_code=303,
+    )
+
+
+# ----- Edit handler — re-open the wizard for an existing request (Task 28) -----
+
+
+def _update_request_row(
+    *,
+    rid: int,
+    person_odoo_id: int,
+    shape: str,
+    holiday_status_id: int,
+    date_from: _date,
+    date_to: _date,
+    hour_from: float | None,
+    hour_to: float | None,
+    working_hours_json: list[dict] | None,
+    note: str | None,
+) -> None:
+    """Update an existing ``time_off_requests`` row to the new field
+    values and flip it to ``state='draft_edit'`` so the sync sweep picks
+    it up as a write back to the same Odoo ``hr.leave`` record.
+
+    Scoped by ``person_odoo_id`` so a leaked rid can't be used to mutate
+    another employee's row. Mirrors ``_insert_request_row`` for shape;
+    keeps ``odoo_leave_id`` untouched so the push routes through
+    ``time_off_sync._push_edit`` (write) instead of ``_push_new``."""
+    db.execute(
+        "UPDATE time_off_requests SET shape = %s, holiday_status_id = %s, "
+        "date_from = %s, date_to = %s, hour_from = %s, hour_to = %s, "
+        "working_hours_json = %s, note = %s, "
+        "state = 'draft_edit', synced_to_odoo = FALSE, "
+        "updated_at = now() "
+        "WHERE id = %s AND person_odoo_id = %s",
+        (
+            shape, holiday_status_id, date_from, date_to,
+            hour_from, hour_to,
+            _json.dumps(working_hours_json) if working_hours_json else None,
+            note, rid, person_odoo_id,
+        ),
+    )
+
+
+@router.get("/kiosk/time-off/mine/{token}/{rid}/edit",
+            response_class=HTMLResponse)
+def mine_edit(request: Request, token: str, rid: int):
+    """Re-open the details form pre-filled with this row's current values.
+
+    Same HMAC gate + row-ownership scope as the rest of the /mine routes;
+    a stale id (or one for a different employee) bounces to the list. The
+    template branches on ``edit_mode`` so the form ``action`` posts to the
+    edit submit handler instead of the new-request submit handler.
+
+    Re-uses ``_fetch_visible_leave_types(row["shape"])`` so the visible
+    type list stays consistent with the row's existing shape — an edit
+    keeps the same shape (changing shape mid-edit would mean a different
+    request entirely; the user can cancel and re-submit if they need a
+    different shape)."""
+    person_id = _verify_token(token)
+    if person_id is None:
+        return RedirectResponse(url="/kiosk", status_code=303)
+    p = _person_by_id(person_id)
+    if not p or not p.get("odoo_id"):
+        return RedirectResponse(url="/kiosk", status_code=303)
+    row = _load_request(rid, p["odoo_id"])
+    if not row:
+        return RedirectResponse(
+            url=f"/kiosk/time-off/mine/{_mint_token(person_id)}",
+            status_code=303,
+        )
+    fresh = _mint_token(person_id)
+    types = _fetch_visible_leave_types(row["shape"])
+    balances = _refresh_and_load_balances(p["odoo_id"])
+    # Cast Decimals to floats so the JSON-embedded JS payload in the
+    # template gets plain numbers, matching the new-request branch.
+    balances_by_type = {
+        b["holiday_status_id"]: {
+            "unit": b["unit"],
+            "available": float(b["available"]),
+            "available_practical": float(b["available_practical"]),
+            "pending": float(b["pending"]),
+        }
+        for b in balances
+    }
+    shift_from, shift_to = _shift_window_for(p["odoo_id"])
+
+    return templates.TemplateResponse(
+        request,
+        "kiosk_time_off_request_details.html",
+        {
+            "person": p,
+            "token": fresh,
+            "shape": row["shape"],
+            "leave_types": types,
+            "balances_by_type": balances_by_type,
+            "shift_from": shift_from,
+            "shift_to": shift_to,
+            "today_iso": _date.today().isoformat(),
+            "edit_mode": True,
+            "edit_rid": rid,
+            "prefill": {
+                "holiday_status_id": row["holiday_status_id"],
+                "date_from": (
+                    row["date_from"].isoformat() if row["date_from"] else ""
+                ),
+                "date_to": (
+                    row["date_to"].isoformat() if row["date_to"] else ""
+                ),
+                "hour_from": (
+                    float(row["hour_from"])
+                    if row["hour_from"] is not None else None
+                ),
+                "hour_to": (
+                    float(row["hour_to"])
+                    if row["hour_to"] is not None else None
+                ),
+                "note": row["note"] or "",
+            },
+        },
+    )
+
+
+@router.post("/kiosk/time-off/mine/{token}/{rid}/edit",
+             response_class=HTMLResponse)
+def mine_edit_submit(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    token: str,
+    rid: int,
+    shape: str = Form(...),
+    holiday_status_id: int = Form(...),
+    date_from: str = Form(...),
+    date_to: str = Form(...),
+    time_a: str = Form(default=""),
+    time_b: str = Form(default=""),
+    note: str = Form(default=""),
+):
+    """Persist edits to an existing request + queue the Odoo write.
+
+    Validation cascade mirrors ``request_submit`` (Task 18) exactly — bad
+    token → /kiosk, bad row → list, bad shape/date → back to the detail
+    page, bad time → re-render the form in edit_mode with the error. On
+    success we UPDATE the row to ``draft_edit`` (not ``draft`` — the row
+    already exists on Odoo) and schedule a background ``push_one`` that
+    routes through ``time_off_sync._push_edit`` to write the changed
+    fields back to the same ``hr.leave`` record.
+
+    The 60s sweep in ``time_off_sync.retry_unsynced_requests`` will keep
+    retrying if the immediate push fails, same as the new-request flow."""
+    person_id = _verify_token(token)
+    if person_id is None:
+        return RedirectResponse(url="/kiosk", status_code=303)
+    p = _person_by_id(person_id)
+    if not p or not p.get("odoo_id"):
+        return RedirectResponse(url="/kiosk", status_code=303)
+    row = _load_request(rid, p["odoo_id"])
+    if not row:
+        return RedirectResponse(
+            url=f"/kiosk/time-off/mine/{_mint_token(person_id)}",
+            status_code=303,
+        )
+    if shape not in _VALID_SHAPES:
+        return RedirectResponse(
+            url=f"/kiosk/time-off/mine/{_mint_token(person_id)}/{rid}",
+            status_code=303,
+        )
+    try:
+        df = _date.fromisoformat(date_from)
+        dt = _date.fromisoformat(date_to)
+    except ValueError:
+        return RedirectResponse(
+            url=f"/kiosk/time-off/mine/{_mint_token(person_id)}/{rid}",
+            status_code=303,
+        )
+    if dt < df:
+        df, dt = dt, df
+
+    shift_from, shift_to = _shift_window_for(p["odoo_id"])
+    hour_from, hour_to, err = _shape_to_hour_bounds(
+        shape, time_a, time_b, shift_from, shift_to,
+    )
+    if err:
+        # Re-render the form in edit mode with the error so the user can
+        # fix it without bouncing back to the detail page and losing
+        # their inputs. balances_by_type matches the shape that the GET
+        # branch builds so the form's JS payload stays valid.
+        types = _fetch_visible_leave_types(shape)
+        balances = _refresh_and_load_balances(p["odoo_id"])
+        balances_by_type = {
+            b["holiday_status_id"]: {
+                "unit": b["unit"],
+                "available": float(b["available"]),
+                "available_practical": float(b["available_practical"]),
+                "pending": float(b["pending"]),
+            }
+            for b in balances
+        }
+        return templates.TemplateResponse(
+            request,
+            "kiosk_time_off_request_details.html",
+            {
+                "person": p,
+                "token": _mint_token(person_id),
+                "shape": shape,
+                "leave_types": types,
+                "balances_by_type": balances_by_type,
+                "shift_from": shift_from,
+                "shift_to": shift_to,
+                "today_iso": _date.today().isoformat(),
+                "edit_mode": True,
+                "edit_rid": rid,
+                "error": err,
+            },
+            status_code=422,
+        )
+
+    working_hours = _compute_working_hours_json(
+        shape, hour_from, hour_to, shift_from, shift_to,
+    )
+    _update_request_row(
+        rid=rid,
+        person_odoo_id=p["odoo_id"],
+        shape=shape,
+        holiday_status_id=holiday_status_id,
+        date_from=df,
+        date_to=dt,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        working_hours_json=working_hours,
+        note=note.strip() or None,
+    )
+    background_tasks.add_task(_queue_push, rid)
+    return RedirectResponse(
+        url=f"/kiosk/time-off/mine/{_mint_token(person_id)}/{rid}",
         status_code=303,
     )
 
