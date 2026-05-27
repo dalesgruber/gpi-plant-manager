@@ -121,7 +121,9 @@ def _current_state(person_odoo_id: int) -> dict:
     employees punch via both systems — revisit before mixing them.
     """
     rows = db.query(
-        "SELECT action, wc_name, occurred_at, odoo_attendance_id "
+        "SELECT action, wc_name, "
+        "COALESCE(rounded_at, occurred_at) AS occurred_at, "
+        "odoo_attendance_id "
         "FROM kiosk_punches_log WHERE person_odoo_id = %s "
         "ORDER BY occurred_at DESC, id DESC LIMIT 1",
         (person_odoo_id,),
