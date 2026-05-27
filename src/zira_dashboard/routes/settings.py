@@ -280,6 +280,38 @@ async def settings_save_schedule(request: Request):
     return RedirectResponse(url="/settings?saved=1&section=schedule", status_code=303)
 
 
+@router.post("/settings/rounding")
+async def settings_save_rounding(request: Request):
+    """Save the four rounding-window values. Each must be 0 <= v <= 60.
+    Out-of-range or unparseable values fall back to 0 (no rounding on
+    that side) rather than rejecting the whole submission."""
+    from .. import rounding_store
+    from ..rounding import RoundingSettings
+    form = await request.form()
+
+    def _clamp(raw) -> int:
+        try:
+            v = int(raw)
+        except (TypeError, ValueError):
+            return 0
+        if v < 0:
+            return 0
+        if v > 60:
+            return 60
+        return v
+
+    settings = RoundingSettings(
+        in_before_min=_clamp(form.get("in_before_min")),
+        in_after_min=_clamp(form.get("in_after_min")),
+        out_before_min=_clamp(form.get("out_before_min")),
+        out_after_min=_clamp(form.get("out_after_min")),
+    )
+    rounding_store.save(settings)
+    if (request.headers.get("accept") or "").startswith("application/json"):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=rounding", status_code=303)
+
+
 @router.post("/settings/groups/add")
 async def settings_add_group(request: Request):
     """Quick-add endpoint for the Groups section's Enter-to-add UX. Saves
