@@ -188,3 +188,53 @@ def test_bootstrap_drops_legacy_wc_layouts_and_customizations():
     customs = db.query("SELECT page FROM widget_customizations WHERE page LIKE 'wc:%'")
     assert layouts == [], f"legacy widget_layouts rows still present: {layouts}"
     assert customs == [], f"legacy widget_customizations rows still present: {customs}"
+
+
+def test_time_off_requests_table_bootstraps(monkeypatch):
+    """Schema bootstrap must include time_off_requests with expected columns."""
+    from zira_dashboard import db
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set")
+    db.bootstrap_schema()
+    rows = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'time_off_requests' ORDER BY column_name"
+    )
+    names = {r["column_name"] for r in rows}
+    expected = {
+        "id", "person_odoo_id", "originating_kiosk_user", "shape",
+        "holiday_status_id", "date_from", "date_to", "hour_from", "hour_to",
+        "working_hours_json", "note", "state", "odoo_leave_id",
+        "synced_to_odoo", "sync_error", "last_pulled_at", "last_pushed_at",
+        "created_at", "updated_at",
+    }
+    assert expected.issubset(names), f"missing: {expected - names}"
+
+
+def test_time_off_balances_table_bootstraps():
+    from zira_dashboard import db
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set")
+    db.bootstrap_schema()
+    rows = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'time_off_balances'"
+    )
+    names = {r["column_name"] for r in rows}
+    assert {"person_odoo_id", "holiday_status_id", "unit",
+            "allocated_total", "taken", "pending", "available",
+            "available_practical", "last_pulled_at"}.issubset(names)
+
+
+def test_scheduler_moves_table_bootstraps():
+    from zira_dashboard import db
+    if not os.environ.get("DATABASE_URL"):
+        pytest.skip("DATABASE_URL not set")
+    db.bootstrap_schema()
+    rows = db.query(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'scheduler_moves'"
+    )
+    names = {r["column_name"] for r in rows}
+    assert {"id", "person_odoo_id", "occurred_at", "from_bucket",
+            "to_bucket", "reason", "schedule_date"}.issubset(names)
