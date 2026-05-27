@@ -37,7 +37,28 @@
   .off-pill.full { background: #dbeafe; color: #1d4ed8; }
   .off-pill.partial { background: var(--warn-dim); color: var(--warn); border: 1px solid var(--warn); }
   .off-pill.absent { background: #fee2e2; color: #991b1b; border: 1px solid #b91c1c; font-weight: 700; }
+  .off-pill.odoo { background: #dcfce7; color: #166534; border: 1px solid #16a34a; }
+  /* StratusTime overlay entries: fade and add a badge so admins can
+     compare against Odoo. Toggle this overlay off in Settings -> Time Off
+     once the StratusTime parallel-run is over. */
+  .off-pill.src-stratustime { opacity: 0.55; }
+  .src-badge {
+    display: inline-block; margin-left: 0.3rem; padding: 0 0.35rem;
+    border-radius: 4px; background: var(--panel-2); color: var(--muted);
+    font-size: 0.6rem; font-weight: 600; letter-spacing: 0.4px;
+    text-transform: uppercase; vertical-align: middle;
+  }
   .off-none { color: var(--muted); font-size: 0.7rem; font-style: italic; }
+  .time-off-source-indicator {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    color: var(--muted); font-size: 0.78rem; font-style: italic;
+  }
+  .time-off-source-indicator .pill {
+    display: inline-block; padding: 0.05rem 0.4rem; border-radius: 4px;
+    font-size: 0.7rem; font-style: normal; font-weight: 600;
+  }
+  .time-off-source-indicator .pill.odoo { background: #dcfce7; color: #166534; }
+  .time-off-source-indicator .pill.st { background: var(--panel-2); color: var(--muted); }
 
   /* day view */
   .day-view-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
@@ -53,9 +74,19 @@
 
 {% block content %}
 <div class="ts-header" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;padding:0.5rem 0.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px">
-  <a href="https://stratustime.centralservers.com/" target="_blank" rel="noopener" class="ts-deeplink-btn" style="background:var(--accent);color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↗ Open StratusTime</a>
-  <a href="/api/stratustime/refresh?back={{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" class="ts-refresh-btn" style="background:var(--panel-2);color:var(--fg);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↻ Refresh</a>
-  <span class="ts-note" style="color:var(--muted);font-size:0.78rem;font-style:italic">All time-off entries are live from StratusTime · cached 5 min</span>
+  <div class="time-off-source-indicator">
+    Showing:
+    <span class="pill odoo">Odoo</span>
+    {% if show_stratustime_overlay %}
+      <span>+</span>
+      <span class="pill st">StratusTime overlay</span>
+    {% endif %}
+  </div>
+  {% if show_stratustime_overlay %}
+    <a href="https://stratustime.centralservers.com/" target="_blank" rel="noopener" class="ts-deeplink-btn" style="background:var(--accent);color:#fff;text-decoration:none;border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↗ Open StratusTime</a>
+    <a href="/api/stratustime/refresh?back={{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" class="ts-refresh-btn" style="background:var(--panel-2);color:var(--fg);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:0.3rem 0.7rem;font-size:0.82rem;font-weight:600">↻ Refresh</a>
+  {% endif %}
+  <span class="ts-note" style="color:var(--muted);font-size:0.78rem;font-style:italic;margin-left:auto">Toggle overlay in <a href="/staffing/settings#settings-time-off" style="color:var(--muted)">Settings → Time Off</a></span>
 </div>
 
 <div class="cal-header">
@@ -79,12 +110,19 @@
     {% if day_names %}
       <div class="day-view-list">
         {% for e in day_names %}
-          {% set is_partial = e.hours is not none and e.hours < 8 %}
-          {% set is_absent = e.derived or e.manual_absent %}
-          {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-          <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">
-            {{ e.name }}{% if e.pay_type %} <span style="opacity:0.75;font-weight:400">· {{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}</span>{% endif %}
-          </span>
+          {% if e.source == 'odoo' %}
+            <span class="off-pill odoo src-odoo" title="{{ e.label }}">
+              {{ e.name }}{% if e.label %} <span style="opacity:0.75;font-weight:400">· {{ e.label }}</span>{% endif %}
+            </span>
+          {% else %}
+            {% set is_partial = e.hours is not none and e.hours < 8 %}
+            {% set is_absent = e.derived or e.manual_absent %}
+            {% set partial_label = e.time_range or (e.hours ~ 'h') %}
+            <span class="off-pill src-stratustime {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">
+              {{ e.name }}{% if e.pay_type %} <span style="opacity:0.75;font-weight:400">· {{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}</span>{% endif %}
+              <span class="src-badge">StratusTime</span>
+            </span>
+          {% endif %}
         {% endfor %}
       </div>
     {% else %}
@@ -103,10 +141,14 @@
           {% if d.names %}
             <div class="off-pills">
               {% for e in d.names %}
-                {% set is_partial = e.hours is not none and e.hours < 8 %}
-                {% set is_absent = e.derived or e.manual_absent %}
-                {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-                <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
+                {% if e.source == 'odoo' %}
+                  <span class="off-pill odoo src-odoo" title="{{ e.label }}">{{ e.name }}{% if e.label and e.label != 'full day' %} · {{ e.label }}{% endif %}</span>
+                {% else %}
+                  {% set is_partial = e.hours is not none and e.hours < 8 %}
+                  {% set is_absent = e.derived or e.manual_absent %}
+                  {% set partial_label = e.time_range or (e.hours ~ 'h') %}
+                  <span class="off-pill src-stratustime {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}<span class="src-badge">ST</span></span>
+                {% endif %}
               {% endfor %}
             </div>
           {% else %}
@@ -131,10 +173,14 @@
               {% if d.names %}
                 <div class="off-pills">
                   {% for e in d.names %}
-                    {% set is_partial = e.hours is not none and e.hours < 8 %}
-                    {% set is_absent = e.derived or e.manual_absent %}
-                    {% set partial_label = e.time_range or (e.hours ~ 'h') %}
-                    <span class="off-pill {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}</span>
+                    {% if e.source == 'odoo' %}
+                      <span class="off-pill odoo src-odoo" title="{{ e.label }}">{{ e.name }}{% if e.label and e.label != 'full day' %} · {{ e.label }}{% endif %}</span>
+                    {% else %}
+                      {% set is_partial = e.hours is not none and e.hours < 8 %}
+                      {% set is_absent = e.derived or e.manual_absent %}
+                      {% set partial_label = e.time_range or (e.hours ~ 'h') %}
+                      <span class="off-pill src-stratustime {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}" title="{{ e.pay_type }}{% if is_partial %} · off {{ partial_label }}{% endif %}">{{ e.name }}{% if is_partial %} · {{ partial_label }}{% endif %}<span class="src-badge">ST</span></span>
+                    {% endif %}
                   {% endfor %}
                 </div>
               {% endif %}
@@ -195,6 +241,11 @@
 {% endif %}
 
 <p class="hint" style="margin-top:1rem">
-  Time-off data is sourced live from StratusTime (cached 5 minutes). To add or edit a time-off request, click <em>↗ Open StratusTime</em> above. Click <em>↻ Refresh</em> to bust the cache and re-fetch.
+  Primary source is the Odoo time-off mirror (state = <em>approved</em>).
+  {% if show_stratustime_overlay %}
+    StratusTime entries are shown faded with a <span class="src-badge">ST</span> badge during the parallel-run window so you can compare both systems. Toggle the overlay off in <a href="/staffing/settings#settings-time-off">Settings → Time Off</a> once Odoo is the system of record.
+  {% else %}
+    StratusTime overlay is off — turn it back on in <a href="/staffing/settings#settings-time-off">Settings → Time Off</a> if you still need to compare against the old system.
+  {% endif %}
 </p>
 {% endblock %}
