@@ -39,10 +39,6 @@
        class="settings-nav-item {% if active_section == 'schedule' %}active{% endif %}">
       Company Schedule
     </a>
-    <a href="?section=rounding"
-       class="settings-nav-item {% if active_section == 'rounding' %}active{% endif %}">
-      Rounding
-    </a>
     <a href="?section=integrations"
        class="settings-nav-item {% if active_section == 'integrations' %}active{% endif %}">
       Integrations
@@ -96,67 +92,6 @@
         <button type="button" class="add-break-btn" id="add-break">+ Add break</button>
       </div>
 
-    </section>
-  </form>
-
-  <!-- Rounding -->
-  <form method="post" action="/settings/rounding" id="rounding-form"
-        {% if active_section != 'rounding' %}style="display:none"{% endif %}>
-    <section class="panel">
-      <h2>Rounding</h2>
-      <p class="note">
-        Note: Some jurisdictions may limit or prohibit rounding.
-      </p>
-
-      <h3 class="rounding-subhead">Round To Schedule</h3>
-      <p class="rounding-blurb">
-        When clocking in or out, the employee's time can be rounded to the
-        plant shift if the entry falls within an acceptable
-        &ldquo;window&rdquo;. Enter the values for the window:
-      </p>
-
-      <div class="rounding-grid">
-        <div class="rounding-col">
-          <h4>IN</h4>
-          <label>
-            Up to
-            <input type="number" name="in_before_min"
-                   min="0" max="60" value="{{ rounding.in_before_min }}">
-            minute(s) before the schedule clock-in time.
-          </label>
-          <label>
-            Up to
-            <input type="number" name="in_after_min"
-                   min="0" max="60" value="{{ rounding.in_after_min }}">
-            minute(s) after the schedule clock-in time.
-          </label>
-        </div>
-        <div class="rounding-col">
-          <h4>OUT</h4>
-          <label>
-            Up to
-            <input type="number" name="out_before_min"
-                   min="0" max="60" value="{{ rounding.out_before_min }}">
-            minute(s) before the schedule clock-out time.
-          </label>
-          <label>
-            Up to
-            <input type="number" name="out_after_min"
-                   min="0" max="60" value="{{ rounding.out_after_min }}">
-            minute(s) after the schedule clock-out time.
-          </label>
-        </div>
-      </div>
-      <p class="effective-note">
-        Effective immediately &mdash; punches from this point forward use
-        these values. Historical punches are unchanged.
-      </p>
-      <div class="rounding-actions">
-        {% if saved and active_section == 'rounding' %}
-          <span class="saved-flash">Saved.</span>
-        {% endif %}
-        <button type="submit">Save Rounding</button>
-      </div>
     </section>
   </form>
 
@@ -428,7 +363,64 @@
       </a>
     </div>
 
-    <h3 style="margin-top:1rem">Sync status (last 7 days)</h3>
+    <form method="post" action="/settings/rounding" id="rounding-form">
+      <h3 style="margin-top:1rem">Rounding</h3>
+      <p class="note">
+        Note: Some jurisdictions may limit or prohibit rounding.
+      </p>
+
+      <h4 class="rounding-subhead">Round To Schedule</h4>
+      <p class="rounding-blurb">
+        When clocking in or out, the employee's time can be rounded to the
+        plant shift if the entry falls within an acceptable
+        &ldquo;window&rdquo;. Enter the values for the window:
+      </p>
+
+      <div class="rounding-grid">
+        <div class="rounding-col">
+          <h4>IN</h4>
+          <label>
+            Up to
+            <input type="number" name="in_before_min"
+                   min="0" max="60" value="{{ rounding.in_before_min }}">
+            minute(s) before the schedule clock-in time.
+          </label>
+          <label>
+            Up to
+            <input type="number" name="in_after_min"
+                   min="0" max="60" value="{{ rounding.in_after_min }}">
+            minute(s) after the schedule clock-in time.
+          </label>
+        </div>
+        <div class="rounding-col">
+          <h4>OUT</h4>
+          <label>
+            Up to
+            <input type="number" name="out_before_min"
+                   min="0" max="60" value="{{ rounding.out_before_min }}">
+            minute(s) before the schedule clock-out time.
+          </label>
+          <label>
+            Up to
+            <input type="number" name="out_after_min"
+                   min="0" max="60" value="{{ rounding.out_after_min }}">
+            minute(s) after the schedule clock-out time.
+          </label>
+        </div>
+      </div>
+      <p class="effective-note">
+        Effective immediately &mdash; punches from this point forward use
+        these values. Historical punches are unchanged.
+      </p>
+      <div class="rounding-actions">
+        {% if saved and active_section == 'kiosk' %}
+          <span class="saved-flash">Saved.</span>
+        {% endif %}
+        <button type="submit">Save Rounding</button>
+      </div>
+    </form>
+
+    <h3 style="margin-top:1.6rem">Sync status (last 7 days)</h3>
     {% if kiosk_sync_status is none or kiosk_sync_status.total_7d == 0 %}
       <p style="color:var(--muted);font-style:italic">No punches in the last 7 days.</p>
     {% else %}
