@@ -312,10 +312,13 @@ async def settings_save_work_centers(request: Request):
             name = prefix + field
             if name in form:
                 updates[field] = form.get(name) or ""
-        # Multi-valued: required_skills (checkbox list).
-        picked_skills = form.getlist(prefix + "required_skills")
-        if picked_skills:
-            updates["required_skills"] = picked_skills
+        # Multi-valued: required_skills (checkbox list). The hidden
+        # required_skills_present marker (settings.html) lets us
+        # distinguish "no checkboxes posted" (form didn't include this
+        # section — leave DB alone) from "explicitly cleared" (form
+        # did include it but no skills checked — save the empty list).
+        if (prefix + "required_skills_present") in form:
+            updates["required_skills"] = form.getlist(prefix + "required_skills")
         # Single-value Group select (stored internally as a 1-element list in `groups`).
         group_field = prefix + "group"
         if group_field in form:

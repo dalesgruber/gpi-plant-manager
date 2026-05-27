@@ -167,6 +167,7 @@
                 </details>
               </td>
               <td class="skills-cell">
+                <input type="hidden" name="{{ p }}required_skills_present" value="1">
                 <details class="skills-picker req-skills-picker">
                   <summary>
                     <span class="dd-summary-text">{% if r.required_skills %}{{ r.required_skills | join(', ') }}{% else %}<span class="empty">—</span>{% endif %}</span>
