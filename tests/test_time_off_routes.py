@@ -50,3 +50,89 @@ def test_request_shape_picker_redirects_on_bad_token():
     client = TestClient(app)
     r = client.get("/kiosk/time-off/request/bogus", follow_redirects=False)
     assert r.status_code in (302, 303, 307)
+
+
+def test_request_details_redirects_on_bad_token():
+    """Bad token on the details page bounces back to /kiosk before any
+    of the helper paths run — same auth gate as everything else."""
+    client = TestClient(app)
+    r = client.get(
+        "/kiosk/time-off/request/bogus/details?shape=full_day",
+        follow_redirects=False,
+    )
+    assert r.status_code in (302, 303, 307)
+
+
+def test_request_details_redirects_on_bad_shape(monkeypatch):
+    """Unknown shape value should bounce back to the shape picker — never
+    crash, never render the form with no leave types."""
+    # Stub past the auth + person check so we exercise the shape branch.
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._verify_token",
+        lambda t: 1,
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._person_by_id",
+        lambda pid: {"id": 1, "name": "Test", "odoo_id": 5},
+    )
+    # These shouldn't be called when shape is invalid, but stub defensively
+    # so a regression doesn't pull from the real DB / Odoo.
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._fetch_visible_leave_types",
+        lambda shape: [],
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._refresh_and_load_balances",
+        lambda pid: [],
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._shift_window_for",
+        lambda pid: (6.0, 14.5),
+    )
+    client = TestClient(app)
+    r = client.get(
+        "/kiosk/time-off/request/anytoken/details?shape=bogus",
+        follow_redirects=False,
+    )
+    assert r.status_code in (302, 303, 307)
+
+
+def test_request_details_renders_when_token_and_shape_valid(monkeypatch):
+    """Happy path: valid token + valid shape + stubbed helpers → 200 with
+    the form rendered. Doesn't need a DB because every helper is stubbed."""
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._verify_token",
+        lambda t: 1,
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._person_by_id",
+        lambda pid: {"id": 1, "name": "Test", "odoo_id": 5},
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._fetch_visible_leave_types",
+        lambda shape: [
+            {"id": 1, "name": "PTO", "request_unit": "day",
+             "requires_allocation": "yes"},
+        ],
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._refresh_and_load_balances",
+        lambda pid: [
+            {"holiday_status_id": 1, "unit": "days",
+             "allocated_total": 15.0, "taken": 3.0, "pending": 2.0,
+             "available": 12.0, "available_practical": 10.0},
+        ],
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off._shift_window_for",
+        lambda pid: (6.0, 14.5),
+    )
+    client = TestClient(app)
+    r = client.get(
+        "/kiosk/time-off/request/anytoken/details?shape=full_day",
+        follow_redirects=False,
+    )
+    assert r.status_code == 200
+    # Form points at submit; the type picker has the stubbed option.
+    assert "submit" in r.text.lower()
+    assert "PTO" in r.text

@@ -20,8 +20,9 @@ dashboard for stuck punches — so an employee whose request hasn't made
 it to Odoo isn't left wondering why HR hasn't seen it.
 
 Routes:
-  GET /kiosk/time-off/{token}              Landing with 3 buttons
-  GET /kiosk/time-off/request/{token}      Wizard step 1 — shape picker
+  GET /kiosk/time-off/{token}                              Landing with 3 buttons
+  GET /kiosk/time-off/request/{token}                      Wizard step 1 — shape picker
+  GET /kiosk/time-off/request/{token}/details?shape=…      Wizard step 2 — details form
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db
+from .. import db, odoo_client, settings_store, time_off_balances
 from ..deps import templates
 from .kiosk import _mint_token, _person_by_id, _verify_token
 
@@ -137,4 +138,145 @@ def request_shape(request: Request, token: str):
         request,
         "kiosk_time_off_request_shape.html",
         {"person": p, "token": fresh},
+    )
+
+
+# ----- Wizard step 2 — details form (Task 17) -----
+
+_VALID_SHAPES = {"full_day", "late_arrival", "early_leave", "midday_gap"}
+
+
+def _fetch_visible_leave_types(shape: str) -> list[dict]:
+    """All hr.leave.type from local cache minus hidden ones, filtered to
+    the unit matching the shape.
+
+    The shape picker decides which time-off shape the user wants
+    (full day vs partial day); the leave-type unit must agree — day-unit
+    types only fit a full-day shape, hour-unit types only fit the three
+    partial-day shapes. Half-day-unit types behave like day-unit for our
+    purposes (kept in the full-day bucket).
+
+    Reads from `leave_types_cache`, which is populated by the 10-min
+    poller (Task 10/23). Empty until the poller has run at least once —
+    in that case this returns an empty list and the template will render
+    an empty `<select>`, which is correct: the user can't pick a type if
+    none have synced from Odoo yet.
+    """
+    hidden = set(settings_store.get_hidden_leave_type_ids())
+    rows = db.query(
+        "SELECT holiday_status_id, name, request_unit, requires_allocation "
+        "FROM leave_types_cache WHERE active = TRUE "
+        "ORDER BY name"
+    )
+    out: list[dict] = []
+    for r in rows:
+        if r["holiday_status_id"] in hidden:
+            continue
+        if shape == "full_day":
+            if r["request_unit"] not in ("day", "half_day"):
+                continue
+        else:
+            if r["request_unit"] != "hour":
+                continue
+        out.append({
+            "id": r["holiday_status_id"],
+            "name": r["name"],
+            "request_unit": r["request_unit"],
+            "requires_allocation": r["requires_allocation"],
+        })
+    return out
+
+
+def _refresh_and_load_balances(person_odoo_id: int) -> list[dict]:
+    """Synchronous balance refresh before render (~200-500ms blocking).
+
+    The wizard needs a fresh balance number to show in the panel and feed
+    into the live-calc — a stale number would mean the JS would happily
+    let the user submit something they no longer have allocation for.
+    `time_off_balances.refresh_for_employee` already swallows Odoo errors
+    so the worst case is a render with the previous cached balance, which
+    is still better than crashing the request."""
+    try:
+        time_off_balances.refresh_for_employee(person_odoo_id)
+    except Exception:  # noqa: BLE001 — never let a refresh error block the wizard
+        pass
+    return time_off_balances.get_for_employee(person_odoo_id)
+
+
+def _shift_window_for(person_odoo_id: int) -> tuple[float, float]:
+    """Return (hour_from, hour_to) for the employee's shift.
+
+    Tries Odoo `resource.calendar` first (a per-employee shift); falls
+    back to the company-wide default in `app_settings`
+    (`time_off.default_shift_hours`). The three partial-day shapes
+    (late_arrival, early_leave, midday_gap) need these bounds to
+    validate the user's chosen time(s) and to drive the live-calc
+    request-size math in the JS."""
+    try:
+        cal = odoo_client.fetch_resource_calendar(person_odoo_id)
+    except Exception:  # noqa: BLE001 — fall back to default rather than crash
+        cal = None
+    if (cal
+            and cal.get("hour_from") is not None
+            and cal.get("hour_to") is not None):
+        return (float(cal["hour_from"]), float(cal["hour_to"]))
+    return settings_store.get_default_shift_hours()
+
+
+@router.get("/kiosk/time-off/request/{token}/details",
+            response_class=HTMLResponse)
+def request_details(request: Request, token: str, shape: str = "full_day"):
+    """Wizard step 2 — the details form.
+
+    Branches by ``shape`` to ask for the right inputs:
+      - full_day → start date + end date
+      - late_arrival → date + arrival time (shift_from..shift_to)
+      - early_leave → date + leave time (shift_from..shift_to)
+      - midday_gap → date + leave/return times within shift
+
+    Shows a balance panel that the client-side JS keeps up to date as
+    the user changes inputs; the JS lives in `static/kiosk_time_off.js`.
+    Bad token → /kiosk; bad shape → back to the shape picker (never
+    render the form with an invalid shape value)."""
+    person_id = _verify_token(token)
+    if person_id is None:
+        return RedirectResponse(url="/kiosk", status_code=303)
+    p = _person_by_id(person_id)
+    if not p or not p.get("odoo_id"):
+        return RedirectResponse(url="/kiosk", status_code=303)
+    if shape not in _VALID_SHAPES:
+        return RedirectResponse(
+            url=f"/kiosk/time-off/request/{_mint_token(person_id)}",
+            status_code=303,
+        )
+    from datetime import date as _date
+    fresh = _mint_token(person_id)
+    types = _fetch_visible_leave_types(shape)
+    balances = _refresh_and_load_balances(p["odoo_id"])
+    # Cast numeric Decimals to floats so the JSON-embedded JS payload
+    # in the template gets plain numbers instead of "Decimal('15.00')"
+    # repr (Jinja's `{{ x }}` would print the Decimal verbatim).
+    balances_by_type = {
+        b["holiday_status_id"]: {
+            "unit": b["unit"],
+            "available": float(b["available"]),
+            "available_practical": float(b["available_practical"]),
+            "pending": float(b["pending"]),
+        }
+        for b in balances
+    }
+    shift_from, shift_to = _shift_window_for(p["odoo_id"])
+    return templates.TemplateResponse(
+        request,
+        "kiosk_time_off_request_details.html",
+        {
+            "person": p,
+            "token": fresh,
+            "shape": shape,
+            "leave_types": types,
+            "balances_by_type": balances_by_type,
+            "shift_from": shift_from,
+            "shift_to": shift_to,
+            "today_iso": _date.today().isoformat(),
+        },
     )
