@@ -194,17 +194,36 @@ def _fmt_time(dt: datetime) -> str:
     return dt.astimezone().strftime(fmt)
 
 
-def _open_log_row(person_odoo_id: int, action: str, wc_name: str | None) -> int:
-    """Insert a kiosk_punches_log row (synced=FALSE) and return its id."""
+def _open_log_row(
+    person_odoo_id: int, action: str, wc_name: str | None
+) -> tuple[int, datetime]:
+    """Insert a kiosk_punches_log row (synced=FALSE), compute the rounded
+    timestamp using current rounding settings, write it back to the row,
+    and return (id, rounded_at). Both occurred_at (raw) and rounded_at
+    are persisted; everything downstream reads COALESCE(rounded_at,
+    occurred_at)."""
+    from .. import rounding, rounding_store, shift_config
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO kiosk_punches_log "
             "(person_odoo_id, action, wc_name) VALUES (%s, %s, %s) "
-            "RETURNING id",
+            "RETURNING id, occurred_at",
             (person_odoo_id, action, wc_name),
         )
         row = cur.fetchone()
-        return row["id"]
+        local_date = row["occurred_at"].astimezone(shift_config.SITE_TZ).date()
+        rounded = rounding.apply_rounding(
+            action,
+            row["occurred_at"],
+            shift_config.shift_start_for(local_date),
+            shift_config.shift_end_for(local_date),
+            rounding_store.current(),
+        )
+        cur.execute(
+            "UPDATE kiosk_punches_log SET rounded_at = %s WHERE id = %s",
+            (rounded, row["id"]),
+        )
+        return row["id"], rounded
 
 
 def _log_variance(person_odoo_id: int, scheduled: str | None, actual: str) -> None:
@@ -334,7 +353,7 @@ def kiosk_clock_in(
         return RedirectResponse(url="/kiosk", status_code=303)
     odoo_id = p["odoo_id"]
     now = datetime.now(timezone.utc)
-    log_id = _open_log_row(odoo_id, "clock_in", wc_name)
+    log_id, rounded_at = _open_log_row(odoo_id, "clock_in", wc_name)
     # Odoo write runs after the response is sent. FastAPI runs sync `def`
     # background tasks in a threadpool, so the XML-RPC call doesn't block
     # the event loop. The 60s sweep worker remains a safety net for
@@ -348,7 +367,7 @@ def kiosk_clock_in(
         {
             "person": p,
             "message": f"Clocked in to {wc_name}",
-            "time": _fmt_time(now),
+            "time": _fmt_time(rounded_at),
         },
     )
 
@@ -367,7 +386,7 @@ def kiosk_clock_out(
         return RedirectResponse(url="/kiosk", status_code=303)
     odoo_id = p["odoo_id"]
     now = datetime.now(timezone.utc)
-    log_id = _open_log_row(odoo_id, "clock_out", None)
+    log_id, rounded_at = _open_log_row(odoo_id, "clock_out", None)
     background_tasks.add_task(kiosk_sync.sync_one_by_id, log_id)
     return templates.TemplateResponse(
         request,
@@ -375,7 +394,7 @@ def kiosk_clock_out(
         {
             "person": p,
             "message": "Clocked out",
-            "time": _fmt_time(now),
+            "time": _fmt_time(rounded_at),
         },
     )
 
@@ -395,8 +414,8 @@ def kiosk_transfer(
         return RedirectResponse(url="/kiosk", status_code=303)
     odoo_id = p["odoo_id"]
     now = datetime.now(timezone.utc)
-    out_log = _open_log_row(odoo_id, "transfer_out", None)
-    in_log = _open_log_row(odoo_id, "transfer_in", new_wc_name)
+    out_log, _ = _open_log_row(odoo_id, "transfer_out", None)
+    in_log, in_rounded = _open_log_row(odoo_id, "transfer_in", new_wc_name)
     # FastAPI runs BackgroundTasks in the order they're added, so
     # transfer_out always syncs before transfer_in.
     background_tasks.add_task(kiosk_sync.sync_one_by_id, out_log)
@@ -407,6 +426,6 @@ def kiosk_transfer(
         {
             "person": p,
             "message": f"Transferred to {new_wc_name}",
-            "time": _fmt_time(now),
+            "time": _fmt_time(in_rounded),
         },
     )
