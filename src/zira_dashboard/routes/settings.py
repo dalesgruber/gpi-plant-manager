@@ -47,7 +47,7 @@ def settings_page(
     saved: int = Query(default=0),
     section: str = Query(default="work_centers"),
 ):
-    if section not in ("work_centers", "schedule", "integrations", "roster_filter", "tvs", "kiosk"):
+    if section not in ("work_centers", "schedule", "integrations", "roster_filter", "tvs", "kiosk", "rounding"):
         section = "work_centers"
     roster_filter_rows: list[dict] = []
     if section == "roster_filter":
@@ -188,6 +188,14 @@ def settings_page(
             for b in sched.breaks
         ],
     }
+    from .. import rounding_store
+    rounding_settings = rounding_store.current()
+    rounding_ctx = {
+        "in_before_min": rounding_settings.in_before_min,
+        "in_after_min": rounding_settings.in_after_min,
+        "out_before_min": rounding_settings.out_before_min,
+        "out_after_min": rounding_settings.out_after_min,
+    }
     # Skill list comes directly from the `skills` table — Odoo's
     # Production + Supervisor skill types. Production first (alphabetical),
     # then Supervisor.
@@ -214,6 +222,7 @@ def settings_page(
             "roster_filter_rows": roster_filter_rows,
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
+            "rounding": rounding_ctx,
             "integration_status": integration_status,
             "tv_displays_rows": tv_displays_rows,
             "all_dashboards_for_picker": all_dashboards_for_picker,
