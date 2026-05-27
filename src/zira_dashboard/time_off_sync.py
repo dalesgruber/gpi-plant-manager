@@ -55,6 +55,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from . import db, odoo_client
+from .staffing import TIME_OFF_KEY
 
 _log = logging.getLogger(__name__)
 
@@ -369,11 +370,12 @@ _REVERSED_STATES = {"refuse", "cancel"}
 
 # scheduler_moves audit-log vocabulary. The DDL declares
 # `to_bucket TEXT NOT NULL`, so reverse-direction rows can't leave it null;
-# we use the sentinel "unassigned" to signal "no longer in time-off, back to
+# we use the sentinel "__unassigned" to signal "no longer in time-off, back to
 # the regular scheduler pool". Read paths that consume scheduler_moves can
-# treat "unassigned" symmetrically with "null from_bucket".
-_BUCKET_TIME_OFF = "time_off"
-_BUCKET_UNASSIGNED = "unassigned"
+# treat "__unassigned" symmetrically with "null from_bucket". Both sentinels
+# use the double-underscore prefix convention from staffing.TIME_OFF_KEY to
+# mark them as pseudo-buckets rather than real work-center names.
+_BUCKET_UNASSIGNED = "__unassigned"
 
 
 def cascade_on_state_change(old: dict[str, Any], new: dict[str, Any]) -> None:
@@ -388,10 +390,11 @@ def cascade_on_state_change(old: dict[str, Any], new: dict[str, Any]) -> None:
 
       - **Forward** (anything → ``validate``): logs one row to
         ``scheduler_moves`` per affected date with
-        ``to_bucket='time_off'`` and ``reason='time_off_approved'``.
+        ``to_bucket=TIME_OFF_KEY`` ("__time_off") and
+        ``reason='time_off_approved'``.
       - **Reverse** (``validate`` → ``refuse``/``cancel``): logs one row
-        per date with ``from_bucket='time_off'``,
-        ``to_bucket='unassigned'`` (sentinel — column is NOT NULL), and
+        per date with ``from_bucket=TIME_OFF_KEY``,
+        ``to_bucket='__unassigned'`` (sentinel — column is NOT NULL), and
         ``reason='time_off_canceled'``.
 
     Both directions also invalidate the person's row in
@@ -418,14 +421,14 @@ def cascade_on_state_change(old: dict[str, Any], new: dict[str, Any]) -> None:
         for d in days:
             _log_scheduler_move(
                 person_odoo_id, d,
-                from_bucket=None, to_bucket=_BUCKET_TIME_OFF,
+                from_bucket=None, to_bucket=TIME_OFF_KEY,
                 reason="time_off_approved",
             )
     else:
         for d in days:
             _log_scheduler_move(
                 person_odoo_id, d,
-                from_bucket=_BUCKET_TIME_OFF, to_bucket=_BUCKET_UNASSIGNED,
+                from_bucket=TIME_OFF_KEY, to_bucket=_BUCKET_UNASSIGNED,
                 reason="time_off_canceled",
             )
 
@@ -440,17 +443,6 @@ def _date_range(start: date, end: date) -> list[date]:
         out.append(cursor)
         cursor = cursor + timedelta(days=1)
     return out
-
-
-def _person_name(person_odoo_id: int) -> str:
-    """Look up the local people-table name for an Odoo employee id.
-    Falls back to a synthetic placeholder if the person isn't mirrored
-    yet (avoids crashing the cascade during a partial sync)."""
-    rows = db.query(
-        "SELECT name FROM people WHERE odoo_id = %s",
-        (person_odoo_id,),
-    )
-    return rows[0]["name"] if rows else f"Employee #{person_odoo_id}"
 
 
 def _log_scheduler_move(

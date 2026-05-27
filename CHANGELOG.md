@@ -4,10 +4,6 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-27
 
-### 9:48 AM
-
-- **Timeclock time-off: cascade audit log + balance invalidation (Task 11)** — when an Odoo `hr.leave` state transitions (forward: anything → `validate`; reverse: `validate` → `refuse`/`cancel`), `cascade_on_state_change` now writes one row per affected date to `scheduler_moves` (forward: `to_bucket='time_off'`, `reason='time_off_approved'`; reverse: `from_bucket='time_off'`, `to_bucket='unassigned'`, `reason='time_off_canceled'`) and drops the person's cached row from `time_off_balances` so the next kiosk wizard refetches from Odoo. Diverges from the plan in one place: the plan assumed a `schedule_store` module and a `custom_day_hours` table that don't actually exist in this codebase, so the cascade is now an audit-layer side-effect only — scheduler/calendar read paths will surface approved leaves directly from `time_off_requests` in Tasks 19/20/21. `to_bucket` is `TEXT NOT NULL` in the DDL so the reverse direction uses the sentinel `'unassigned'`. Balance invalidation is wrapped in try/except so a missing `time_off_balances` table during Phase 1 deploy ordering doesn't crash the cascade. 11 new tests; no XML-RPC or heavy I/O on the cascade path.
-
 ### 9:31 AM
 
 - **Settings: Company Schedule folded into Timeclock too** — same move as the rounding regroup five minutes ago, now for the schedule form. Shift start/end, work days, breaks/cleanup all live inside the Timeclock section, between the "Open Kiosk Portal" buttons and the Rounding inputs. Sidebar no longer has a separate "Company Schedule" item. Autosave still works (the form keeps its `data-section="schedule"` attribute so it saves on every edit without a button). Save endpoint redirects to `?section=kiosk` for the no-JS fallback. Roster Filter and Integrations stay in the sidebar — they're used by other features too, not just the timeclock.

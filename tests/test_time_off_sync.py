@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from zira_dashboard import time_off_sync
+from zira_dashboard.staffing import TIME_OFF_KEY
 
 
 @pytest.fixture
@@ -176,8 +177,7 @@ def test_poll_updates_state_on_existing_row(monkeypatch, fake_db):
 
 def test_cascade_logs_scheduler_moves_on_approve(monkeypatch, fake_db):
     """When state transitions to 'validate', each date in range gets a
-    scheduler_moves row with to_bucket='time_off'."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    scheduler_moves row with from_bucket=NULL and to_bucket=TIME_OFF_KEY."""
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "confirm"}
@@ -190,12 +190,18 @@ def test_cascade_logs_scheduler_moves_on_approve(monkeypatch, fake_db):
     inserts = [e for e in fake_db["executes"]
                if "INSERT INTO scheduler_moves" in e[0]]
     assert len(inserts) == 3  # 3 days in range
+    # Each insert's params is (person_odoo_id, schedule_date, from_bucket,
+    # to_bucket, reason). Forward direction: from_bucket=NULL,
+    # to_bucket=TIME_OFF_KEY, reason='time_off_approved'.
+    for _sql, params in inserts:
+        assert params[2] is None  # from_bucket
+        assert params[3] == TIME_OFF_KEY  # to_bucket
+        assert params[4] == "time_off_approved"  # reason
 
 
 def test_cascade_logs_reverse_moves_on_refuse(monkeypatch, fake_db):
     """validate → refuse: each date gets a scheduler_moves row with
-    from_bucket='time_off' (reverse-direction audit)."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    from_bucket=TIME_OFF_KEY (reverse-direction audit)."""
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "validate"}
@@ -208,13 +214,17 @@ def test_cascade_logs_reverse_moves_on_refuse(monkeypatch, fake_db):
     inserts = [e for e in fake_db["executes"]
                if "INSERT INTO scheduler_moves" in e[0]]
     assert len(inserts) == 3
-    # The reverse direction should have from_bucket='time_off'
-    assert any("time_off" in str(i[1]) for i in inserts)
+    # Each insert's params is (person_odoo_id, schedule_date, from_bucket,
+    # to_bucket, reason). Reverse direction: from_bucket=TIME_OFF_KEY,
+    # to_bucket='__unassigned', reason='time_off_canceled'.
+    for _sql, params in inserts:
+        assert params[2] == TIME_OFF_KEY  # from_bucket
+        assert params[3] == "__unassigned"  # to_bucket
+        assert params[4] == "time_off_canceled"  # reason
 
 
 def test_cascade_logs_reverse_moves_on_cancel(monkeypatch, fake_db):
     """validate → cancel: same reverse path as refuse."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "validate"}
@@ -227,12 +237,14 @@ def test_cascade_logs_reverse_moves_on_cancel(monkeypatch, fake_db):
     inserts = [e for e in fake_db["executes"]
                if "INSERT INTO scheduler_moves" in e[0]]
     assert len(inserts) == 1
-    assert any("time_off" in str(i[1]) for i in inserts)
+    for _sql, params in inserts:
+        assert params[2] == TIME_OFF_KEY  # from_bucket
+        assert params[3] == "__unassigned"  # to_bucket
+        assert params[4] == "time_off_canceled"  # reason
 
 
 def test_cascade_noop_for_pending_transition(monkeypatch, fake_db):
     """confirm → validate1 is a pending-to-pending transition — no cascade."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "confirm"}
@@ -249,7 +261,6 @@ def test_cascade_noop_for_pending_transition(monkeypatch, fake_db):
 
 def test_cascade_noop_for_draft_to_confirm(monkeypatch, fake_db):
     """Initial submission (draft → confirm) is not yet approved — no cascade."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "draft"}
@@ -268,7 +279,6 @@ def test_cascade_invalidates_balance_on_approve(monkeypatch, fake_db):
     """Forward transition drops the person's balance cache so the next
     kiosk render refetches fresh allocations from Odoo."""
     invalidated = []
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: invalidated.append(pid))
     old = {"state": "confirm"}
@@ -284,7 +294,6 @@ def test_cascade_invalidates_balance_on_approve(monkeypatch, fake_db):
 def test_cascade_invalidates_balance_on_reverse(monkeypatch, fake_db):
     """Reverse transition also invalidates: pending bucket changes."""
     invalidated = []
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: invalidated.append(pid))
     old = {"state": "validate"}
@@ -299,10 +308,9 @@ def test_cascade_invalidates_balance_on_reverse(monkeypatch, fake_db):
 
 def test_cascade_logs_moves_for_partial_day_shape(monkeypatch, fake_db):
     """Partial-day shapes (early_leave, late_arrival, midday_gap) still
-    log scheduler_moves — the to_bucket='time_off' tag captures that the
+    log scheduler_moves — the to_bucket=TIME_OFF_KEY tag captures that the
     person is partially out for the day; read paths interpret the row
     detail via working_hours_json."""
-    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
     monkeypatch.setattr(time_off_sync, "_invalidate_balance",
                         lambda pid: None)
     old = {"state": "confirm"}
