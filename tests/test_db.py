@@ -190,11 +190,9 @@ def test_bootstrap_drops_legacy_wc_layouts_and_customizations():
     assert customs == [], f"legacy widget_customizations rows still present: {customs}"
 
 
-def test_time_off_requests_table_bootstraps(monkeypatch):
+def test_time_off_requests_table_bootstraps():
     """Schema bootstrap must include time_off_requests with expected columns."""
-    from zira_dashboard import db
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set")
+    db.init_pool()
     db.bootstrap_schema()
     rows = db.query(
         "SELECT column_name FROM information_schema.columns "
@@ -212,9 +210,7 @@ def test_time_off_requests_table_bootstraps(monkeypatch):
 
 
 def test_time_off_balances_table_bootstraps():
-    from zira_dashboard import db
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set")
+    db.init_pool()
     db.bootstrap_schema()
     rows = db.query(
         "SELECT column_name FROM information_schema.columns "
@@ -227,9 +223,7 @@ def test_time_off_balances_table_bootstraps():
 
 
 def test_scheduler_moves_table_bootstraps():
-    from zira_dashboard import db
-    if not os.environ.get("DATABASE_URL"):
-        pytest.skip("DATABASE_URL not set")
+    db.init_pool()
     db.bootstrap_schema()
     rows = db.query(
         "SELECT column_name FROM information_schema.columns "

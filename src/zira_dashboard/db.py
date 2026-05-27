@@ -699,11 +699,17 @@ ALTER TABLE kiosk_punches_log
   ADD COLUMN IF NOT EXISTS rounded_at TIMESTAMPTZ;
 
 -- Time-off requests (2026-05-27): local mirror of Odoo hr.leave + sync state.
+-- `originating_kiosk_user` = TRUE for rows submitted via the kiosk (we own
+-- the lifecycle and push to Odoo); FALSE for rows pulled in by the poller
+-- because HR entered them directly in Odoo (Odoo owns the lifecycle, we
+-- only mirror). `shape` carries the partial-day intent (full_day vs.
+-- late_arrival / early_leave / midday_gap) so the scheduler can render
+-- partials without re-deriving from hour_from/hour_to.
 CREATE TABLE IF NOT EXISTS time_off_requests (
   id                       BIGSERIAL PRIMARY KEY,
   person_odoo_id           INTEGER NOT NULL,
   originating_kiosk_user   BOOLEAN NOT NULL DEFAULT TRUE,
-  shape                    TEXT NOT NULL,
+  shape                    TEXT NOT NULL CHECK (shape IN ('full_day','late_arrival','early_leave','midday_gap')),
   holiday_status_id        INTEGER NOT NULL,
   date_from                DATE NOT NULL,
   date_to                  DATE NOT NULL,
@@ -711,7 +717,8 @@ CREATE TABLE IF NOT EXISTS time_off_requests (
   hour_to                  NUMERIC(4,2),
   working_hours_json       JSONB,
   note                     TEXT,
-  state                    TEXT NOT NULL DEFAULT 'draft',
+  state                    TEXT NOT NULL DEFAULT 'draft'
+                           CHECK (state IN ('draft','draft_edit','draft_cancel','confirm','validate1','validate','refuse','cancel')),
   odoo_leave_id            INTEGER,
   synced_to_odoo           BOOLEAN NOT NULL DEFAULT FALSE,
   sync_error               TEXT,
@@ -731,11 +738,15 @@ CREATE INDEX IF NOT EXISTS time_off_requests_state_idx
 CREATE UNIQUE INDEX IF NOT EXISTS time_off_requests_odoo_leave_id_uniq
   ON time_off_requests (odoo_leave_id) WHERE odoo_leave_id IS NOT NULL;
 
--- Per-(person, leave_type) balance cache.
+-- Per-(person, leave_type) balance cache. Refreshed by the poller from
+-- Odoo `hr.leave.allocation` + tallied `hr.leave` rows so the kiosk can
+-- show "X days available" without an Odoo round-trip per render.
+-- `available_practical` is the manager's safe-to-spend number (subtracts
+-- pending requests from `available`).
 CREATE TABLE IF NOT EXISTS time_off_balances (
   person_odoo_id       INTEGER NOT NULL,
   holiday_status_id    INTEGER NOT NULL,
-  unit                 TEXT NOT NULL,
+  unit                 TEXT NOT NULL CHECK (unit IN ('days','hours')),
   allocated_total      NUMERIC(8,2) NOT NULL,
   taken                NUMERIC(8,2) NOT NULL,
   pending              NUMERIC(8,2) NOT NULL DEFAULT 0,
@@ -745,7 +756,12 @@ CREATE TABLE IF NOT EXISTS time_off_balances (
   PRIMARY KEY (person_odoo_id, holiday_status_id)
 );
 
--- Audit log of scheduler reassignments caused by time-off cascade.
+-- Audit log of scheduler reassignments caused by time-off cascade. Bucket
+-- vocabulary: `from_bucket` / `to_bucket` are either a WC name from
+-- `staffing.LOCATIONS`, the special `TIME_OFF_KEY` constant `'__time_off'`
+-- (meaning the unscheduled / time-off pool), or NULL (only valid for
+-- `from_bucket`, indicating the person wasn't assigned anywhere before
+-- the move). `reason` is a short human-readable tag (e.g. 'time_off_added').
 CREATE TABLE IF NOT EXISTS scheduler_moves (
   id              BIGSERIAL PRIMARY KEY,
   person_odoo_id  INTEGER NOT NULL,
@@ -758,12 +774,16 @@ CREATE TABLE IF NOT EXISTS scheduler_moves (
 CREATE INDEX IF NOT EXISTS scheduler_moves_person_date_idx
   ON scheduler_moves (person_odoo_id, schedule_date);
 
--- Cached hr.leave.type list, refreshed every ~10min by poller.
+-- Cached hr.leave.type list, refreshed every ~10min by poller. The kiosk
+-- picker reads from here so the leave-type dropdown renders instantly and
+-- still survives an Odoo outage. `request_unit` and `requires_allocation`
+-- mirror the Odoo field names/values verbatim (Odoo stores them as plain
+-- text, not enums) so we can pass them straight back when creating leaves.
 CREATE TABLE IF NOT EXISTS leave_types_cache (
   holiday_status_id    INTEGER PRIMARY KEY,
   name                 TEXT NOT NULL,
-  request_unit         TEXT NOT NULL,        -- 'day' | 'half_day' | 'hour'
-  requires_allocation  TEXT NOT NULL,        -- 'yes' | 'no'
+  request_unit         TEXT NOT NULL CHECK (request_unit IN ('day','half_day','hour')),
+  requires_allocation  TEXT NOT NULL CHECK (requires_allocation IN ('yes','no')),
   color                INTEGER,
   active               BOOLEAN NOT NULL DEFAULT TRUE,
   last_pulled_at       TIMESTAMPTZ NOT NULL DEFAULT now()
