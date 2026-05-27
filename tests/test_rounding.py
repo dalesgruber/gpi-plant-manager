@@ -118,3 +118,26 @@ def test_custom_shift_times_round_to_those():
     settings = RoundingSettings(20, 0, 0, 0)
     rounded = apply_rounding("clock_in", occurred, custom_start, custom_end, settings)
     assert rounded == _local(2026, 5, 30, 8, 0)
+
+
+def test_naive_datetime_raises():
+    """occurred_at without tzinfo raises ValueError — the function is
+    documented as requiring aware datetimes; silent treatment as local
+    system time would hide integration bugs."""
+    naive = datetime(2026, 5, 27, 6, 50)  # no tzinfo
+    settings = RoundingSettings(20, 0, 0, 0)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        apply_rounding("clock_in", naive, SHIFT_START, SHIFT_END, settings)
+
+
+def test_rounds_correctly_across_dst_spring_forward():
+    """Locks in correct rounding behavior across the spring-forward
+    DST transition. On 2026-03-08, US Central time jumps from CST to
+    CDT at 2:00 AM. A 6:50 AM punch is comfortably past the transition;
+    we verify it rounds to 7:00 AM CDT, NOT to 7:00 AM CST (which would
+    be 8:00 AM CDT and an hour wrong).
+    """
+    occurred = _local(2026, 3, 8, 6, 50)  # CDT, 6:50 wall clock
+    settings = RoundingSettings(20, 0, 0, 0)
+    rounded = apply_rounding("clock_in", occurred, SHIFT_START, SHIFT_END, settings)
+    assert rounded == _local(2026, 3, 8, 7, 0)  # CDT, 7:00 wall clock

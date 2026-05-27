@@ -43,6 +43,8 @@ def apply_rounding(
     rounding applies. occurred_at must be timezone-aware."""
     if action in ("transfer_in", "transfer_out"):
         return occurred_at
+    if occurred_at.tzinfo is None:
+        raise ValueError("occurred_at must be timezone-aware")
 
     local = occurred_at.astimezone(SITE_TZ)
     local_date = local.date()
