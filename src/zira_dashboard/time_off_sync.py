@@ -360,7 +360,134 @@ def _parse_date(value: Any) -> date | None:
     return None
 
 
+# State transitions that drive the cascade. "validate" is Odoo's
+# fully-approved state; the validate1 intermediate (manager-approved but not
+# HR-approved) is intentionally NOT treated as approved here so we don't
+# audit the staffing side until the request is truly green-lit.
+_APPROVED_STATES = {"validate"}
+_REVERSED_STATES = {"refuse", "cancel"}
+
+# scheduler_moves audit-log vocabulary. The DDL declares
+# `to_bucket TEXT NOT NULL`, so reverse-direction rows can't leave it null;
+# we use the sentinel "unassigned" to signal "no longer in time-off, back to
+# the regular scheduler pool". Read paths that consume scheduler_moves can
+# treat "unassigned" symmetrically with "null from_bucket".
+_BUCKET_TIME_OFF = "time_off"
+_BUCKET_UNASSIGNED = "unassigned"
+
+
 def cascade_on_state_change(old: dict[str, Any], new: dict[str, Any]) -> None:
-    """Stub — implemented in next task. For now just no-op so the test
-    monkeypatching mechanism works."""
-    return None
+    """Drive scheduler-side audit + balance invalidation when a request's
+    state transitions.
+
+    The local ``time_off_requests`` table is the source of truth for what
+    counts as approved on the scheduler — read paths in
+    ``routes/staffing.py`` and ``routes/time_off.py`` surface approved
+    rows directly (Tasks 19/20/21). This cascade is the side-effect /
+    audit layer:
+
+      - **Forward** (anything → ``validate``): logs one row to
+        ``scheduler_moves`` per affected date with
+        ``to_bucket='time_off'`` and ``reason='time_off_approved'``.
+      - **Reverse** (``validate`` → ``refuse``/``cancel``): logs one row
+        per date with ``from_bucket='time_off'``,
+        ``to_bucket='unassigned'`` (sentinel — column is NOT NULL), and
+        ``reason='time_off_canceled'``.
+
+    Both directions also invalidate the person's row in
+    ``time_off_balances`` so the next kiosk wizard open re-fetches fresh
+    allocations from Odoo.
+
+    No-op for any other transition (e.g. ``draft → confirm`` or
+    ``confirm → validate1``). Multiple invocations on the same
+    transition are safe: the resulting audit rows are append-only and
+    the balance DELETE is idempotent. No XML-RPC or heavy I/O — the
+    cascade runs inline on the poller's transaction path.
+    """
+    old_state = old.get("state")
+    new_state = new.get("state")
+    forward = old_state not in _APPROVED_STATES and new_state in _APPROVED_STATES
+    reverse = old_state in _APPROVED_STATES and new_state in _REVERSED_STATES
+    if not forward and not reverse:
+        return
+
+    person_odoo_id = new["person_odoo_id"]
+    days = _date_range(new["date_from"], new["date_to"])
+
+    if forward:
+        for d in days:
+            _log_scheduler_move(
+                person_odoo_id, d,
+                from_bucket=None, to_bucket=_BUCKET_TIME_OFF,
+                reason="time_off_approved",
+            )
+    else:
+        for d in days:
+            _log_scheduler_move(
+                person_odoo_id, d,
+                from_bucket=_BUCKET_TIME_OFF, to_bucket=_BUCKET_UNASSIGNED,
+                reason="time_off_canceled",
+            )
+
+    _invalidate_balance(person_odoo_id)
+
+
+def _date_range(start: date, end: date) -> list[date]:
+    """Inclusive list of dates from ``start`` to ``end``."""
+    out: list[date] = []
+    cursor = start
+    while cursor <= end:
+        out.append(cursor)
+        cursor = cursor + timedelta(days=1)
+    return out
+
+
+def _person_name(person_odoo_id: int) -> str:
+    """Look up the local people-table name for an Odoo employee id.
+    Falls back to a synthetic placeholder if the person isn't mirrored
+    yet (avoids crashing the cascade during a partial sync)."""
+    rows = db.query(
+        "SELECT name FROM people WHERE odoo_id = %s",
+        (person_odoo_id,),
+    )
+    return rows[0]["name"] if rows else f"Employee #{person_odoo_id}"
+
+
+def _log_scheduler_move(
+    person_odoo_id: int,
+    schedule_date: date,
+    from_bucket: str | None,
+    to_bucket: str,
+    reason: str,
+) -> None:
+    """Append one audit row to ``scheduler_moves``. ``to_bucket`` is
+    required by the DDL; ``from_bucket`` may be NULL."""
+    db.execute(
+        "INSERT INTO scheduler_moves "
+        "(person_odoo_id, schedule_date, from_bucket, to_bucket, reason) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        (person_odoo_id, schedule_date, from_bucket, to_bucket, reason),
+    )
+
+
+def _invalidate_balance(person_odoo_id: int) -> None:
+    """Drop cached balance rows for this person so the next kiosk
+    wizard refetches from Odoo.
+
+    Wrapped in try/except so the cascade doesn't fail if the
+    ``time_off_balances`` table hasn't been provisioned yet (Phase 1
+    deployment ordering: cascade is wired before the balance refresher
+    in some environments). A swallowed error here is acceptable — the
+    worst case is a stale cached balance, which the periodic refresh
+    will correct.
+    """
+    try:
+        db.execute(
+            "DELETE FROM time_off_balances WHERE person_odoo_id = %s",
+            (person_odoo_id,),
+        )
+    except Exception as e:  # noqa: BLE001
+        _log.info(
+            "balance cache invalidation skipped for person %s: %s",
+            person_odoo_id, e,
+        )

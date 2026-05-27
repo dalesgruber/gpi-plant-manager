@@ -163,3 +163,178 @@ def test_poll_updates_state_on_existing_row(monkeypatch, fake_db):
                         lambda old, new: cascades.append((old["state"], new["state"])))
     time_off_sync.poll_odoo_leaves()
     assert ("confirm", "validate") in cascades
+
+
+# --------------------------------------------------------------------------
+# Task 11: cascade_on_state_change — scheduler_moves audit + balance cache
+# invalidation. The local time_off_requests table is the source of truth for
+# what counts as approved on the scheduler; read paths in routes/staffing.py
+# and routes/time_off.py surface approved rows directly (Tasks 19/20/21).
+# This cascade is the side-effect/audit layer.
+# --------------------------------------------------------------------------
+
+
+def test_cascade_logs_scheduler_moves_on_approve(monkeypatch, fake_db):
+    """When state transitions to 'validate', each date in range gets a
+    scheduler_moves row with to_bucket='time_off'."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "confirm"}
+    new = {
+        "state": "validate", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 3),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 3  # 3 days in range
+
+
+def test_cascade_logs_reverse_moves_on_refuse(monkeypatch, fake_db):
+    """validate → refuse: each date gets a scheduler_moves row with
+    from_bucket='time_off' (reverse-direction audit)."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "validate"}
+    new = {
+        "state": "refuse", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 3),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 3
+    # The reverse direction should have from_bucket='time_off'
+    assert any("time_off" in str(i[1]) for i in inserts)
+
+
+def test_cascade_logs_reverse_moves_on_cancel(monkeypatch, fake_db):
+    """validate → cancel: same reverse path as refuse."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "validate"}
+    new = {
+        "state": "cancel", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 1
+    assert any("time_off" in str(i[1]) for i in inserts)
+
+
+def test_cascade_noop_for_pending_transition(monkeypatch, fake_db):
+    """confirm → validate1 is a pending-to-pending transition — no cascade."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "confirm"}
+    new = {
+        "state": "validate1", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 0
+
+
+def test_cascade_noop_for_draft_to_confirm(monkeypatch, fake_db):
+    """Initial submission (draft → confirm) is not yet approved — no cascade."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "draft"}
+    new = {
+        "state": "confirm", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 0
+
+
+def test_cascade_invalidates_balance_on_approve(monkeypatch, fake_db):
+    """Forward transition drops the person's balance cache so the next
+    kiosk render refetches fresh allocations from Odoo."""
+    invalidated = []
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: invalidated.append(pid))
+    old = {"state": "confirm"}
+    new = {
+        "state": "validate", "person_odoo_id": 5, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    assert invalidated == [5]
+
+
+def test_cascade_invalidates_balance_on_reverse(monkeypatch, fake_db):
+    """Reverse transition also invalidates: pending bucket changes."""
+    invalidated = []
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: invalidated.append(pid))
+    old = {"state": "validate"}
+    new = {
+        "state": "refuse", "person_odoo_id": 7, "shape": "full_day",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": None,
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    assert invalidated == [7]
+
+
+def test_cascade_logs_moves_for_partial_day_shape(monkeypatch, fake_db):
+    """Partial-day shapes (early_leave, late_arrival, midday_gap) still
+    log scheduler_moves — the to_bucket='time_off' tag captures that the
+    person is partially out for the day; read paths interpret the row
+    detail via working_hours_json."""
+    monkeypatch.setattr(time_off_sync, "_person_name", lambda pid: "Bob")
+    monkeypatch.setattr(time_off_sync, "_invalidate_balance",
+                        lambda pid: None)
+    old = {"state": "confirm"}
+    new = {
+        "state": "validate", "person_odoo_id": 5, "shape": "early_leave",
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 1),
+        "working_hours_json": [{"from": 6.0, "to": 14.0}],
+    }
+    time_off_sync.cascade_on_state_change(old, new)
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO scheduler_moves" in e[0]]
+    assert len(inserts) == 1
+
+
+def test_date_range_inclusive():
+    """Helper: _date_range yields both endpoints."""
+    days = time_off_sync._date_range(date(2026, 6, 1), date(2026, 6, 3))
+    assert days == [date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3)]
+
+
+def test_date_range_single_day():
+    days = time_off_sync._date_range(date(2026, 6, 1), date(2026, 6, 1))
+    assert days == [date(2026, 6, 1)]
+
+
+def test_invalidate_balance_swallows_missing_table(monkeypatch, fake_db):
+    """During Phase 1 deploy ordering the time_off_balances table may
+    not exist yet — the cascade must not crash on the cleanup DELETE."""
+
+    def boom(sql, params=None):
+        raise RuntimeError("relation \"time_off_balances\" does not exist")
+
+    monkeypatch.setattr(time_off_sync.db, "execute", boom)
+    # Should not raise.
+    time_off_sync._invalidate_balance(5)
