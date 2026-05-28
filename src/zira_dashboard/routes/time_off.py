@@ -31,16 +31,23 @@ def _odoo_time_off_by_day(
     start_d: date, end_d: date,
 ) -> dict[date, list[dict]]:
     """Return ``{date: [{name, label, source}, ...]}`` for approved
-    leaves in the local mirror overlapping ``[start_d, end_d]``.
+    leaves AND company-wide public holidays in the local mirror
+    overlapping ``[start_d, end_d]``.
 
     Wraps ``kiosk_time_off._approved_by_day`` so this route doesn't have
-    to duplicate the SQL or the date-fan-out logic. Tagging each entry
-    with ``source='odoo'`` lets the template render it distinctly from
-    a StratusTime overlay entry on the same day."""
+    to duplicate the SQL or the date-fan-out logic. Default tags entries
+    with ``source='odoo'`` so the template can render them distinctly
+    from a StratusTime overlay entry on the same day; ``_approved_by_day``
+    pre-tags public-holiday entries with ``source='holiday'`` which we
+    preserve here so they get the distinct red styling in the template."""
     raw = _approved_by_day(start_d, end_d)
     return {
         d: [
-            {"name": e["name"], "label": e["label"], "source": "odoo"}
+            {
+                "name": e["name"],
+                "label": e["label"],
+                "source": e.get("source") or "odoo",
+            }
             for e in entries
         ]
         for d, entries in raw.items()

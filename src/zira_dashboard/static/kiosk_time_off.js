@@ -7,6 +7,13 @@
 // server into window.__TIME_OFF_BALANCES__; this file only does math
 // and DOM updates — no network calls.
 //
+// Also raises a non-blocking yellow warning when the user picks a date
+// outside the global plant schedule (e.g., Saturday for a Mon-Fri
+// plant). Workdays come from window.__WORK_WEEKDAYS__ (server-rendered
+// from schedule_store.current().work_weekdays). Not a hard block — an
+// employee scheduled for weekend OT may legitimately need to request
+// Saturday off — but the warning catches accidental weekend picks.
+//
 // Shape semantics (matches routes/kiosk_time_off.py):
 //   full_day      → request size = business days in [date_from, date_to]
 //   late_arrival  → request size = arrival_time - shift_from (hours)
@@ -30,8 +37,12 @@
   var sizeEl = document.getElementById("request-size");
   var remainEl = document.getElementById("balance-remaining");
   var submitBtn = document.getElementById("submit-btn");
+  var warningEl = document.getElementById("schedule-warning");
 
-  if (!typeSel || !availEl || !sizeEl || !remainEl || !submitBtn) return;
+  if (!typeSel || !submitBtn) return;
+  // availEl/sizeEl/remainEl only exist for full_day; partial-day shapes
+  // drop the balance panel entirely (see template guard). The schedule
+  // warning still needs to run in both branches.
 
   function timeStrToFloat(s) {
     if (!s) return null;
@@ -53,7 +64,47 @@
     return count;
   }
 
+  function dateIsWorkday(isoDate) {
+    if (!isoDate) return true; // empty input = no warning yet
+    var workdays = window.__WORK_WEEKDAYS__ || [0, 1, 2, 3, 4];
+    var d = new Date(isoDate + "T00:00:00");
+    // JS Date.getDay(): 0=Sun..6=Sat. Convert to 0=Mon..6=Sun.
+    var dow = (d.getDay() + 6) % 7;
+    return workdays.indexOf(dow) !== -1;
+  }
+
+  function checkSchedule() {
+    if (!warningEl) return;
+    var msgs = [];
+    if (shape === "full_day") {
+      if (dateFrom && dateFrom.value && !dateIsWorkday(dateFrom.value)) {
+        msgs.push("Start date (" + dateFrom.value + ") falls outside the standard schedule.");
+      }
+      if (dateTo && dateTo.value && dateTo.value !== (dateFrom && dateFrom.value)
+          && !dateIsWorkday(dateTo.value)) {
+        msgs.push("End date (" + dateTo.value + ") falls outside the standard schedule.");
+      }
+    } else {
+      if (dateFrom && dateFrom.value && !dateIsWorkday(dateFrom.value)) {
+        msgs.push(dateFrom.value + " falls outside the standard schedule.");
+      }
+    }
+    if (msgs.length > 0) {
+      warningEl.innerHTML =
+        "<strong>Heads up — </strong>" + msgs.join(" ") +
+        " Submit anyway only if you're sure (e.g. weekend overtime day).";
+      warningEl.style.display = "block";
+    } else {
+      warningEl.style.display = "none";
+    }
+  }
+
   function recalc() {
+    // Balance panel only renders for full_day. Skip the panel-related
+    // math entirely on partial-day shapes so we don't crash on missing
+    // DOM elements.
+    var hasBalancePanel = !!(availEl && sizeEl && remainEl);
+
     var hsid = typeSel.value;
     var bal = balances[hsid];
     // typeSel is a <select> for full_day, or a hidden <input> for the
@@ -71,13 +122,15 @@
       requiresAlloc = (typeSel.dataset.requiresAlloc === "yes");
     }
 
-    if (!requiresAlloc) {
-      availEl.textContent = "Unpaid · no balance required";
-    } else if (bal) {
-      availEl.textContent = bal.available.toFixed(2) + " " + bal.unit +
-        " (" + bal.pending.toFixed(2) + " pending)";
-    } else {
-      availEl.textContent = "—";
+    if (hasBalancePanel) {
+      if (!requiresAlloc) {
+        availEl.textContent = "Unpaid · no balance required";
+      } else if (bal) {
+        availEl.textContent = bal.available.toFixed(2) + " " + bal.unit +
+          " (" + bal.pending.toFixed(2) + " pending)";
+      } else {
+        availEl.textContent = "—";
+      }
     }
 
     // Pick the unit to display. For full_day with an hour-unit type
@@ -124,21 +177,25 @@
         requestSize = b - a;
       }
     }
-    sizeEl.textContent = requestSize > 0
-      ? requestSize.toFixed(2) + " " + unit
-      : "—";
+    if (hasBalancePanel) {
+      sizeEl.textContent = requestSize > 0
+        ? requestSize.toFixed(2) + " " + unit
+        : "—";
 
-    if (!requiresAlloc) {
-      remainEl.textContent = "—";
-      submitBtn.disabled = false;
-    } else if (bal) {
-      var remaining = bal.available_practical - requestSize;
-      remainEl.textContent = remaining.toFixed(2) + " " + bal.unit;
-      submitBtn.disabled = (requestSize > bal.available_practical);
-    } else {
-      remainEl.textContent = "—";
-      submitBtn.disabled = true;
+      if (!requiresAlloc) {
+        remainEl.textContent = "—";
+        submitBtn.disabled = false;
+      } else if (bal) {
+        var remaining = bal.available_practical - requestSize;
+        remainEl.textContent = remaining.toFixed(2) + " " + bal.unit;
+        submitBtn.disabled = (requestSize > bal.available_practical);
+      } else {
+        remainEl.textContent = "—";
+        submitBtn.disabled = true;
+      }
     }
+
+    checkSchedule();
   }
 
   [typeSel, dateFrom, dateTo, timeA, timeB].forEach(function (el) {

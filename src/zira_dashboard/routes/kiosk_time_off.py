@@ -40,7 +40,14 @@ from datetime import date as _date, timedelta as _td
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, odoo_client, settings_store, time_off_balances, time_off_sync
+from .. import (
+    db,
+    odoo_client,
+    schedule_store,
+    settings_store,
+    time_off_balances,
+    time_off_sync,
+)
 from ..deps import templates
 from .kiosk import _mint_token, _person_by_id, _verify_token
 
@@ -364,6 +371,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
     # automatically. `types` is already filtered to hour-unit-only
     # for those shapes by `_fetch_visible_leave_types`.
     partial_day_type = types[0] if (shape != "full_day" and types) else None
+    work_weekdays = sorted(schedule_store.current().work_weekdays)
     return templates.TemplateResponse(
         request,
         "kiosk_time_off_request_details.html",
@@ -377,6 +385,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
             "shift_from": shift_from,
             "shift_to": shift_to,
             "today_iso": _date.today().isoformat(),
+            "work_weekdays": work_weekdays,
         },
     )
 
@@ -620,6 +629,7 @@ def request_submit(
                 "shift_from": shift_from,
                 "shift_to": shift_to,
                 "today_iso": _date.today().isoformat(),
+                "work_weekdays": sorted(schedule_store.current().work_weekdays),
                 "error": err,
             },
             status_code=422,
@@ -935,6 +945,7 @@ def mine_edit(request: Request, token: str, rid: int):
             "shift_from": shift_from,
             "shift_to": shift_to,
             "today_iso": _date.today().isoformat(),
+            "work_weekdays": sorted(schedule_store.current().work_weekdays),
             "edit_mode": True,
             "edit_rid": rid,
             "prefill": {
@@ -1050,6 +1061,7 @@ def mine_edit_submit(
                 "shift_from": shift_from,
                 "shift_to": shift_to,
                 "today_iso": _date.today().isoformat(),
+                "work_weekdays": sorted(schedule_store.current().work_weekdays),
                 "edit_mode": True,
                 "edit_rid": rid,
                 "error": err,
@@ -1125,16 +1137,40 @@ def _label_for(r: dict) -> str:
     return f"{_fmt_hf(hf)}–{_fmt_hf(ht)}"
 
 
-def _approved_by_day(start_d: _date, end_d: _date) -> dict:
-    """Return ``{date: [{name, label}, ...]}`` for approved leaves
-    overlapping ``[start_d, end_d]``.
+def _parse_holiday_date(s):
+    """Odoo returns 'YYYY-MM-DD HH:MM:SS' strings for datetime fields.
+    Strip the time component to get a date for the per-day fan-out.
 
-    Only reads ``state='validate'`` — the kiosk calendar shouldn't
-    surface pending requests because HR may still refuse them; once
-    approved, every overlapping day in the request range is fanned out
-    so the cell-by-cell template loop doesn't have to do its own date
-    math. Names come from the local ``people`` table joined on
-    ``odoo_id`` so we never need an Odoo round-trip on render."""
+    Tolerant of already-parsed values (passing in a ``date`` returns it
+    as-is) so callers don't have to branch on type; returns ``None`` on
+    anything unparseable so the caller can skip that holiday rather than
+    crash the whole calendar render."""
+    if not s:
+        return None
+    if hasattr(s, "isoformat"):  # already a date
+        return s
+    try:
+        return _date.fromisoformat(str(s)[:10])
+    except ValueError:
+        return None
+
+
+def _approved_by_day(start_d: _date, end_d: _date) -> dict:
+    """Return ``{date: [{name, label, source}, ...]}`` for approved
+    leaves and company-wide public holidays overlapping ``[start_d, end_d]``.
+
+    Only reads ``state='validate'`` for leaves — the kiosk calendar
+    shouldn't surface pending requests because HR may still refuse them;
+    once approved, every overlapping day in the request range is fanned
+    out so the cell-by-cell template loop doesn't have to do its own
+    date math. Names come from the local ``people`` table joined on
+    ``odoo_id`` so we never need an Odoo round-trip on render.
+
+    Public holidays come from ``resource.calendar.leaves`` (rows with
+    ``resource_id=False``) and are tagged ``source='holiday'`` so the
+    templates can style them distinctly from per-employee leaves. A
+    failing Odoo call swallows to an empty list so the calendar still
+    renders the rest of the day's entries during a transient outage."""
     rows = db.query(
         "SELECT r.shape, r.date_from, r.date_to, r.hour_from, r.hour_to, "
         "p.name AS person_name "
@@ -1153,6 +1189,29 @@ def _approved_by_day(start_d: _date, end_d: _date) -> dict:
         while cur <= end:
             by_day.setdefault(cur, []).append({
                 "name": r["person_name"], "label": label,
+            })
+            cur = cur + _td(days=1)
+
+    # Merge in company-wide public holidays. Failure is non-fatal — a
+    # transient Odoo outage on the calendar route shouldn't break the
+    # whole render; the rest of the day's entries (from the local
+    # mirror) still show.
+    try:
+        holidays = odoo_client.fetch_public_holidays(start_d, end_d)
+    except Exception:  # noqa: BLE001 — never let the holiday fetch crash render
+        holidays = []
+    for h in holidays:
+        h_start = _parse_holiday_date(h.get("date_from"))
+        h_end = _parse_holiday_date(h.get("date_to"))
+        if not h_start or not h_end:
+            continue
+        cur = max(h_start, start_d)
+        end = min(h_end, end_d)
+        while cur <= end:
+            by_day.setdefault(cur, []).append({
+                "name": h.get("name") or "Plant Closed",
+                "label": "Plant Closed",
+                "source": "holiday",
             })
             cur = cur + _td(days=1)
     return by_day

@@ -127,6 +127,12 @@ def test_request_details_renders_when_token_and_shape_valid(monkeypatch):
         "zira_dashboard.routes.kiosk_time_off._shift_window_for",
         lambda pid: (6.0, 14.5),
     )
+    # Stub the global-schedule lookup so the render doesn't hit Postgres
+    # for the work_weekdays warning payload.
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off.schedule_store.current",
+        lambda: type("S", (), {"work_weekdays": frozenset({0, 1, 2, 3, 4})})(),
+    )
     client = TestClient(app)
     r = client.get(
         "/kiosk/time-off/request/anytoken/details?shape=full_day",
@@ -195,6 +201,12 @@ def test_submit_rejects_partial_day_outside_shift(monkeypatch):
     monkeypatch.setattr(
         "zira_dashboard.time_off_balances.get_for_employee",
         lambda pid: [],
+    )
+    # The 422 rerender path also pulls work_weekdays from schedule_store —
+    # stub it so the test stays DB-free.
+    monkeypatch.setattr(
+        "zira_dashboard.routes.kiosk_time_off.schedule_store.current",
+        lambda: type("S", (), {"work_weekdays": frozenset({0, 1, 2, 3, 4})})(),
     )
     client = TestClient(app)
     r = client.post(

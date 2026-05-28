@@ -59,18 +59,34 @@
                   flex-direction: column;
                   gap: 0.2rem;">
                   {% for n in d.names[:4] %}
-                    <li style="
-                      font-size: 0.85rem;
-                      line-height: 1.2;
-                      color: #0f172a;
-                      background: #fef3c7;
-                      border-radius: 0.25rem;
-                      padding: 0.15rem 0.35rem;
-                      overflow: hidden;
-                      text-overflow: ellipsis;
-                      white-space: nowrap;">
-                      <strong>{{ n.name }}</strong> — {{ n.label }}
-                    </li>
+                    {% if n.source == 'holiday' %}
+                      <li style="
+                        font-size: 0.85rem;
+                        line-height: 1.2;
+                        color: #ffffff;
+                        background: #dc2626;
+                        border-radius: 0.25rem;
+                        padding: 0.15rem 0.35rem;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                        font-weight: 600;">
+                        {{ n.name }}
+                      </li>
+                    {% else %}
+                      <li style="
+                        font-size: 0.85rem;
+                        line-height: 1.2;
+                        color: #0f172a;
+                        background: #fef3c7;
+                        border-radius: 0.25rem;
+                        padding: 0.15rem 0.35rem;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;">
+                        <strong>{{ n.name }}</strong> — {{ n.label }}
+                      </li>
+                    {% endif %}
                   {% endfor %}
                   {% if d.names|length > 4 %}
                     <li style="

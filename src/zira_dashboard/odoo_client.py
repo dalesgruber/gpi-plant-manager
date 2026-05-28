@@ -580,6 +580,29 @@ def refuse_leave(leave_id: int) -> None:
     execute("hr.leave", "action_refuse", [leave_id])
 
 
+def fetch_public_holidays(start_d, end_d) -> list[dict]:
+    """Company-wide public holidays from Odoo's resource.calendar.leaves
+    (rows with resource_id=False). Returns [{id, name, date_from, date_to}, ...]
+    for any holiday whose [date_from, date_to] overlaps the requested range.
+
+    ``resource.calendar.leaves.date_from`` is a datetime field (not date), so
+    the domain needs the time component. ``resource_id=False`` means the row
+    applies to anyone on the calendar — typically "4th of July", "Christmas
+    Day", etc., as opposed to per-employee leaves which would set
+    ``resource_id`` to a specific employee.
+    """
+    domain = [
+        ("resource_id", "=", False),
+        ("date_to", ">=", start_d.isoformat() + " 00:00:00"),
+        ("date_from", "<=", end_d.isoformat() + " 23:59:59"),
+    ]
+    return execute(
+        "resource.calendar.leaves", "search_read",
+        domain,
+        fields=["id", "name", "date_from", "date_to"],
+    )
+
+
 def find_duplicate_leave(
     employee_odoo_id: int,
     holiday_status_id: int,
