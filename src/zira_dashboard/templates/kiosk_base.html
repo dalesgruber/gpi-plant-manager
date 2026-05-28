@@ -107,8 +107,20 @@
 
   /* htmx fragment swap: subtle fade so screen-to-screen transitions
      don't strobe. ~120ms is fast enough that the kiosk still feels
-     snappy but smooths the perceived swap. */
-  #kiosk-screen { opacity: 1; transition: opacity 120ms ease; }
+     snappy but smooths the perceived swap.
+     Also: #kiosk-screen is the actual viewport-filling flex container,
+     not body — body's only direct child is this wrapper. Without
+     `flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column`
+     here, the .k-main child's overflow-y:auto never engages because its
+     parent (#kiosk-screen) has no height constraint. */
+  #kiosk-screen {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    opacity: 1;
+    transition: opacity 120ms ease;
+  }
   #kiosk-screen.htmx-swapping { opacity: 0; }
 </style>
 <script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"

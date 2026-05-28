@@ -1,9 +1,12 @@
 {% extends "kiosk_base.html" %}
 {% block title %}{{ person.name }} — Kiosk{% endblock %}
 {% block content %}
-<div class="k-header">
+<div class="k-header" style="position: relative;">
   <a href="/kiosk" class="k-back">‹ Done</a>
-  <span style="font-size: 2.25rem;">{{ person.name }}</span>
+  <span style="position: absolute; left: 50%; top: 50%;
+               transform: translate(-50%, -50%);
+               font-size: 2.25rem; white-space: nowrap;
+               pointer-events: none;">{{ person.name }}</span>
   {% include "_kiosk_brand.html" %}
 </div>
 <div class="k-main" style="align-items: center; justify-content: center;">
