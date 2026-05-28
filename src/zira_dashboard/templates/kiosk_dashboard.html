@@ -9,7 +9,7 @@
                pointer-events: none;">{{ person.name }}</span>
   {% include "_kiosk_brand.html" %}
 </div>
-<div class="k-main" style="align-items: center; justify-content: center;">
+<div class="k-main" style="align-items: center; justify-content: flex-start; padding-top: 2rem;">
   {% if sync_warning %}
     <div class="k-warning" style="max-width: 720px; text-align: left;">
       <strong>Heads up — {{ sync_warning.count }} of your recent
