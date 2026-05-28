@@ -166,18 +166,23 @@ def _fetch_visible_leave_types(shape: str) -> list[dict]:
     partial-day shapes. Half-day-unit types behave like day-unit for our
     purposes (kept in the full-day bucket).
 
-    Reads from `leave_types_cache`, which is populated by the 10-min
-    poller (Task 10/23). Empty until the poller has run at least once —
-    in that case this returns an empty list and the template will render
-    an empty `<select>`, which is correct: the user can't pick a type if
-    none have synced from Odoo yet.
+    Reads from `leave_types_cache` first. If the table is empty (the
+    poller hasn't successfully run yet — common right after flipping the
+    feature flag on), falls back to `odoo_client.fetch_leave_types()` and
+    opportunistically populates the cache so the next read is fast.
     """
-    hidden = set(settings_store.get_hidden_leave_type_ids())
     rows = db.query(
         "SELECT holiday_status_id, name, request_unit, requires_allocation "
         "FROM leave_types_cache WHERE active = TRUE "
         "ORDER BY name"
     )
+    if not rows:
+        # Cache miss — try Odoo directly. Swallows errors and returns []
+        # if Odoo is unreachable (template's existing empty-state copy
+        # explains the situation to the user).
+        rows = _fallback_fetch_and_cache_leave_types()
+
+    hidden = set(settings_store.get_hidden_leave_type_ids())
     out: list[dict] = []
     for r in rows:
         if r["holiday_status_id"] in hidden:
@@ -195,6 +200,67 @@ def _fetch_visible_leave_types(shape: str) -> list[dict]:
             "requires_allocation": r["requires_allocation"],
         })
     return out
+
+
+def _fallback_fetch_and_cache_leave_types() -> list[dict]:
+    """Hit Odoo directly for the leave types and write them back into the
+    local cache so the next read is fast. Returns rows in the same shape
+    `_fetch_visible_leave_types` expects from the cache table
+    (``{holiday_status_id, name, request_unit, requires_allocation}``).
+
+    Bust the in-process cache first so a previously-cached empty list
+    (from a failed cold-start auth attempt) doesn't shadow the fresh
+    Odoo call — same defense the Settings refresh button uses."""
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        odoo_client._leave_types_cache = None
+        types = odoo_client.fetch_leave_types()
+    except Exception as e:  # noqa: BLE001 — return empty + log; UI shows the empty state
+        _log.warning(
+            "kiosk wizard fallback fetch_leave_types failed: %s", e,
+            exc_info=True,
+        )
+        return []
+
+    # Opportunistically populate the cache table so the next render
+    # doesn't pay the Odoo round-trip again. Per-row try/except so one
+    # bad row (e.g., schema CHECK violation) doesn't poison the batch.
+    for t in types:
+        try:
+            db.execute(
+                "INSERT INTO leave_types_cache "
+                "(holiday_status_id, name, request_unit, "
+                "requires_allocation, color, active, last_pulled_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, now()) "
+                "ON CONFLICT (holiday_status_id) DO UPDATE SET "
+                "name = EXCLUDED.name, "
+                "request_unit = EXCLUDED.request_unit, "
+                "requires_allocation = EXCLUDED.requires_allocation, "
+                "color = EXCLUDED.color, "
+                "active = EXCLUDED.active, "
+                "last_pulled_at = now()",
+                (t["id"], t["name"], t["request_unit"],
+                 t["requires_allocation"], t.get("color"),
+                 t.get("active", True)),
+            )
+        except Exception as e:  # noqa: BLE001
+            _log.warning(
+                "leave_types_cache insert failed for type id=%s: %s",
+                t.get("id"), e, exc_info=True,
+            )
+
+    # Return rows in the same shape the caller expects from the cache
+    # table — only the four fields that get filtered/displayed.
+    return [
+        {
+            "holiday_status_id": t["id"],
+            "name": t["name"],
+            "request_unit": t["request_unit"],
+            "requires_allocation": t["requires_allocation"],
+        }
+        for t in types
+    ]
 
 
 def _refresh_and_load_balances(person_odoo_id: int) -> list[dict]:
