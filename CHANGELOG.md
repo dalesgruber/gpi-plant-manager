@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-05-28
+
+### 8:30 AM
+
+- **fix(timeclock): Refresh from Odoo now actually refreshes** — the **Refresh from Odoo now** button on Settings → Time Off was a no-op even when there was nothing to refresh — the panel kept saying "No leave types loaded from Odoo yet" because the in-process 10-min cache in `odoo_client._leave_types_cache` held an empty list from an earlier silent XML-RPC failure, and the Refresh button didn't bust it. Four fixes: (1) the refresh handler in `routes/settings.py` now resets `_leave_types_cache = None` before calling `time_off_sync.poll_odoo_leaves()`, guaranteeing the next fetch actually hits Odoo. (2) The Settings panel GET now reads from the `leave_types_cache` table (the canonical source populated by the 60s poller) instead of the in-process cache, so the panel mirrors what the kiosk picker sees and stays usable during an Odoo outage; it falls back to a direct `fetch_leave_types()` call only when the table is empty. (3) Exceptions in both the settings GET and the poller's leave-types refresh now log at `warning` with `exc_info=True` instead of being silently swallowed — Railway logs will actually show *why* the fetch failed (e.g., the API user lacking `hr.leave.type` read perm). (4) A new red error banner on the Settings panel shows the Odoo exception text + a hint about granting the API user the Time Off → Officer/User group. New test in `tests/test_odoo_client_leaves.py` pins the cache-reset contract. All 68 time_off/odoo_client tests pass.
+
 ## 2026-05-27
 
 ### 11:00 AM

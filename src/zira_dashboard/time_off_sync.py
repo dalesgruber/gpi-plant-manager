@@ -246,7 +246,14 @@ def poll_odoo_leaves() -> int:
                  t["requires_allocation"], t.get("color"), t.get("active", True)),
             )
     except Exception as e:  # noqa: BLE001
-        _log.info("leave_types_cache refresh failed: %s", e)
+        # Bumped from info -> warning + exc_info so the Railway logs
+        # actually show *why* the leave-types pull failed (e.g. the
+        # Odoo API user lacks read perm on hr.leave.type). Without the
+        # traceback, the Settings panel "no leave types" message had
+        # no breadcrumb back to the root cause.
+        _log.warning(
+            "leave_types_cache refresh failed: %s", e, exc_info=True,
+        )
 
     today = date.today()
     start_d = today - timedelta(days=_POLL_PAST_DAYS)

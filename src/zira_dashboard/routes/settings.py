@@ -104,14 +104,46 @@ def settings_page(
         kiosk_sync_status = status_rows[0] if status_rows else None
     time_off_settings: dict | None = None
     if section == "time_off":
-        from .. import odoo_client
+        from .. import db, odoo_client
+        import logging as _logging
+        _settings_log = _logging.getLogger(__name__)
+        # Primary source: the local leave_types_cache table populated by
+        # the 60s poller. This guarantees the panel mirrors what the
+        # kiosk picker sees, and stays usable during an Odoo outage. We
+        # map holiday_status_id -> id for the template (which iterates
+        # `t.id`/`t.name`).
         leave_types: list[dict] = []
-        if _odoo_configured():
+        cache_rows = db.query(
+            "SELECT holiday_status_id, name, request_unit, "
+            "requires_allocation, color, active "
+            "FROM leave_types_cache WHERE active = TRUE "
+            "ORDER BY name"
+        )
+        for r in cache_rows:
+            leave_types.append({
+                "id": r["holiday_status_id"],
+                "name": r["name"],
+                "request_unit": r["request_unit"],
+                "requires_allocation": r["requires_allocation"],
+                "color": r["color"],
+                "active": r["active"],
+            })
+        # Fallback: if the table is empty (poller hasn't run yet on a
+        # fresh box) AND Odoo is wired up, hit Odoo directly so the
+        # panel isn't blank on first load.
+        odoo_error: str | None = None
+        if not leave_types and _odoo_configured():
             try:
                 leave_types = odoo_client.fetch_leave_types()
-            except Exception:
-                # Odoo unreachable / misconfigured — render the panel
-                # without the leave-types checklist rather than 500ing.
+            except Exception as e:  # noqa: BLE001
+                # Surface the error to the template so the user can
+                # see *why* the panel is empty (e.g., XML-RPC auth
+                # failure, missing read perm on hr.leave.type).
+                _settings_log.warning(
+                    "Settings: Odoo fetch_leave_types failed: %s",
+                    e, exc_info=True,
+                )
+                odoo_error = f"{type(e).__name__}: {e}"
                 leave_types = []
         default_start, default_end = settings_store.get_default_shift_hours()
         time_off_settings = {
@@ -121,6 +153,7 @@ def settings_page(
             "default_shift_start": default_start,
             "default_shift_end": default_end,
             "odoo_configured": _odoo_configured(),
+            "odoo_error": odoo_error,
         }
     tv_displays_rows: list[dict] = []
     all_dashboards_for_picker: list[dict] = []
@@ -531,8 +564,19 @@ async def time_off_set_default_shift(
 def time_off_refresh_now(request: Request):
     """One-shot admin action — runs the Odoo leaves poller synchronously
     so the next page render sees a fresh local mirror. Swallows
-    exceptions so the redirect still works when Odoo is down."""
-    from .. import time_off_sync
+    exceptions so the redirect still works when Odoo is down.
+
+    Busts the in-process leave-types cache first so the poller's call
+    to ``fetch_leave_types`` actually hits Odoo instead of returning the
+    cached (possibly empty) list — that's the whole point of clicking
+    Refresh.
+    """
+    from .. import odoo_client, time_off_sync
+    # Force the next fetch_leave_types() to hit Odoo, not the 10-min
+    # cache. If a previous call returned [] silently (e.g. due to an
+    # earlier XML-RPC permission error), the cache would otherwise hold
+    # that empty list and the Refresh button would be a no-op.
+    odoo_client._leave_types_cache = None
     try:
         time_off_sync.poll_odoo_leaves()
     except Exception:

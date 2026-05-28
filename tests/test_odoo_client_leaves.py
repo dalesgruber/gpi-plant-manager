@@ -67,6 +67,40 @@ def test_fetch_leave_types_refreshes_after_ttl(monkeypatch):
     assert len(calls) == 2
 
 
+def test_resetting_cache_to_none_forces_next_call_to_hit_odoo(monkeypatch):
+    """The Settings → Time Off "Refresh from Odoo now" handler resets
+    ``_leave_types_cache = None`` before calling the poller so an
+    earlier empty result (e.g. from a silent XML-RPC permission error)
+    can't keep the panel blank for 10 minutes. Pin that contract."""
+    # First call populates the cache with a possibly-empty list.
+    odoo_client._leave_types_cache = None
+    responses_empty = {("hr.leave.type", "search_read"): []}
+    calls = _stub_execute(monkeypatch, responses_empty)
+    assert odoo_client.fetch_leave_types() == []
+    assert len(calls) == 1
+    # A second call without resetting would normally return the cached
+    # [] — confirm that's the baseline:
+    assert odoo_client.fetch_leave_types() == []
+    assert len(calls) == 1  # cache hit, no new XML-RPC call
+
+    # Now simulate the Refresh button: reset the cache to None and
+    # re-stub with the *real* leave types Odoo would return after the
+    # API user gets the right permission. The next call MUST hit Odoo,
+    # not the cached empty list.
+    odoo_client._leave_types_cache = None
+    responses_real = {
+        ("hr.leave.type", "search_read"): [
+            {"id": 1, "name": "Custom Hours", "request_unit": "hour",
+             "requires_allocation": "no", "color": 4, "active": True},
+        ],
+    }
+    calls2 = _stub_execute(monkeypatch, responses_real)
+    types = odoo_client.fetch_leave_types()
+    assert len(types) == 1
+    assert types[0]["name"] == "Custom Hours"
+    assert len(calls2) == 1  # fresh call to Odoo, not the cached []
+
+
 def test_fetch_leaves_for_range_passes_domain(monkeypatch):
     responses = {
         ("hr.leave", "search_read"): [

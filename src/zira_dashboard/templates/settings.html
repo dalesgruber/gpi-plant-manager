@@ -522,6 +522,19 @@
       </p>
     {% endif %}
 
+    {% if time_off_settings and time_off_settings.odoo_error %}
+      <p style="background:#fee2e2;border:1px solid #dc2626;padding:0.6rem 0.8rem;
+                border-radius:0.4rem;font-size:0.88rem;color:#7f1d1d">
+        <strong>Odoo returned an error fetching leave types:</strong>
+        <code style="background:transparent;color:inherit">{{ time_off_settings.odoo_error }}</code>
+        <br>
+        Common cause: the API user lacks read permission on
+        <code>hr.leave.type</code>. In Odoo, give that user the
+        <em>Time Off → Officer</em> (or <em>User</em>) group, then click
+        Refresh from Odoo now below.
+      </p>
+    {% endif %}
+
     <form method="post" action="/api/settings/time-off/hidden-types"
           data-section="time_off_hidden">
       <h3 style="margin-top:1rem">Leave types visible in the kiosk</h3>
