@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-05-28
 
+### 10:15 AM
+
+- **Partial-day requests drop the balance panel entirely** — Dale crossed it out on the live screen. With Available always reading "Unpaid · no balance required", request size and remaining-after both at "—" forever (no allocation to subtract from), and submit always enabled, the panel was visual noise. Wrapped the balance panel in `{% if shape == "full_day" %}` so it only renders when there's actually a paid balance to track. JS in `kiosk_time_off.js` already short-circuits at startup when the balance DOM elements are missing, so no JS changes needed — for partial-day shapes, the recalc function never binds event listeners and the submit button stays enabled per the template's static `disabled` attribute logic. Full-day path unchanged.
+
 ### 10:05 AM
 
 - **Two kiosk fixes Dale flagged after seeing the live screens** —

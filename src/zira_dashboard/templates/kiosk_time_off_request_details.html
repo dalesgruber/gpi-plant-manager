@@ -91,6 +91,11 @@
         {% endif %}
       {% endif %}
 
+      {# Balance panel only makes sense for full-day requests against a
+         paid type with allocation. Partial-day shapes always use the
+         unpaid Custom Hours type, so there's no balance to track and
+         the panel would only ever show "Unpaid · no balance required". #}
+      {% if shape == "full_day" %}
       <div id="balance-panel"
            style="background: #f1f5f9; border-radius: 0.5rem;
                   padding: 1rem 1.25rem; font-size: 1.1rem;
@@ -109,6 +114,7 @@
           <div id="balance-remaining" style="font-weight: 600;">—</div>
         </div>
       </div>
+      {% endif %}
 
       {% if shape == "full_day" %}
         <label style="display: flex; flex-direction: column; gap: 0.4rem;">
