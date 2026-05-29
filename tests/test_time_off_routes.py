@@ -225,6 +225,47 @@ def test_submit_rejects_partial_day_outside_shift(monkeypatch):
     assert r.status_code in (200, 303, 422)
 
 
+def test_submit_partial_day_uses_selected_date_for_both_ends(monkeypatch):
+    """Regression: a partial-day (arrive late) request is a SINGLE day. The
+    user picks one date (submitted as date_from); the hidden date_to is a
+    stale "today". The handler must force date_to = date_from so we never
+    post a today->selected multi-day span."""
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._verify_token",
+                        lambda t: 1)
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._person_by_id",
+                        lambda pid: {"id": 1, "name": "T", "odoo_id": 5})
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._shift_window_for",
+                        lambda pid: (6.0, 14.5))
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._shape_to_hour_bounds",
+                        lambda *a, **k: (6.0, 9.0, None))
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._type_request_unit",
+                        lambda hsid: "hour")
+    inserted = {}
+    def fake_insert(**kw):
+        inserted.update(kw)
+        return 777
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._insert_request_row",
+                        fake_insert)
+    monkeypatch.setattr("zira_dashboard.routes.kiosk_time_off._queue_push",
+                        lambda rid: None)
+
+    client = TestClient(app)
+    r = client.post(
+        "/kiosk/time-off/request/anytoken/submit",
+        data={
+            "shape": "late_arrival",
+            "holiday_status_id": "4",
+            "date_from": "2026-06-10",   # the date the user picked
+            "date_to": "2026-05-29",     # stale hidden "today"
+            "time_b": "09:00",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code in (200, 303)
+    assert inserted["date_from"].isoformat() == "2026-06-10"
+    assert inserted["date_to"].isoformat() == "2026-06-10"  # not 2026-05-29
+
+
 def test_calendar_renders_with_month_view(monkeypatch):
     """Who's Out calendar — valid token + stubbed helpers → 200 with a month
     grid. Stubs `_approved_by_day` so the test doesn't need a real DB; the

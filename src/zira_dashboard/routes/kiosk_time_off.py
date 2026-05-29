@@ -603,8 +603,14 @@ def request_submit(
             url=f"/kiosk/time-off/{_mint_token(person_id)}",
             status_code=303,
         )
-    # Swap on accidental inverted range — friendlier than rejecting it.
-    if dt < df:
+    # Partial-day shapes (arrive late / leave early / mid-day gap) are always
+    # a SINGLE day: the user picks one date (submitted as date_from); the
+    # hidden date_to isn't a real second date. Force both ends to the selected
+    # date so we never post a today->selected multi-day span.
+    if shape != "full_day":
+        dt = df
+    elif dt < df:
+        # Full-day: swap an accidentally inverted range rather than reject.
         df, dt = dt, df
 
     shift_from, shift_to = _shift_window_for(p["odoo_id"])
@@ -1038,7 +1044,10 @@ def mine_edit_submit(
             url=f"/kiosk/time-off/mine/{_mint_token(person_id)}/{rid}",
             status_code=303,
         )
-    if dt < df:
+    # Partial-day shapes are single-day; force end = start (see request_submit).
+    if shape != "full_day":
+        dt = df
+    elif dt < df:
         df, dt = dt, df
 
     shift_from, shift_to = _shift_window_for(p["odoo_id"])
