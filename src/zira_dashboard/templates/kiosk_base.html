@@ -143,6 +143,10 @@
     margin-top: 0.2em;
     opacity: 0.9;
   }
+  /* Filled buttons (blue/red/green) have white English text — the muted
+     gray Spanish is low-contrast on them. Use light text so it stays
+     legible. Secondary (white) buttons keep the gray, which reads fine. */
+  .k-btn:not(.secondary) .k-es { color: rgba(255, 255, 255, 0.9); opacity: 1; }
 </style>
 <script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"
         integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
