@@ -2,12 +2,12 @@
 {% block title %}Request Time Off — {{ person.name }}{% endblock %}
 {% block content %}
 <div class="k-header">
-  <a href="/kiosk/time-off/request/{{ token }}" class="k-back">‹ Back</a>
+  <a href="/kiosk/time-off/request/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>
   <span>
-    {% if shape == "full_day" %}Full Day(s) Off
-    {% elif shape == "late_arrival" %}Arriving Late
-    {% elif shape == "early_leave" %}Leaving Early
-    {% else %}Mid-Day Gap{% endif %}
+    {% if shape == "full_day" %}{{ t("Full Day(s) Off") }}
+    {% elif shape == "late_arrival" %}{{ t("Arriving Late") }}
+    {% elif shape == "early_leave" %}{{ t("Leaving Early") }}
+    {% else %}{{ t("Mid-Day Gap") }}{% endif %}
   </span>
   {% include "_kiosk_brand.html" %}
 </div>
@@ -22,7 +22,7 @@
     {% if edit_mode %}
       <div class="k-warning" style="background: #e0f2fe; color: #075985;
                                     border-color: #bae6fd;">
-        Editing existing request
+        {{ t("Editing existing request") }}
       </div>
     {% endif %}
 
@@ -55,7 +55,7 @@
       {% if shape == "full_day" %}
         <label style="display: flex; flex-direction: column; gap: 0.4rem;">
           <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-            Type
+            {{ t("Type") }}
           </span>
           <select name="holiday_status_id" id="holiday-status-select" required
                   style="padding: 0.85rem 1rem; font-size: 1.25rem;
@@ -84,9 +84,9 @@
           <div style="background: #f1f5f9; border-radius: 0.5rem;
                       padding: 0.75rem 1rem; font-size: 1rem;
                       color: #475569;">
-            <span style="font-weight: 600;">Type:</span>
+            <span style="font-weight: 600;">{{ t("Type:") }}</span>
             {{ partial_day_type.name }}
-            <span style="color: #64748b;">&middot; Unpaid</span>
+            <span style="color: #64748b;">{{ t("· Unpaid") }}</span>
           </div>
         {% endif %}
       {% endif %}
@@ -102,15 +102,15 @@
                   display: grid; grid-template-columns: 1fr 1fr 1fr;
                   gap: 0.75rem; color: #334155;">
         <div>
-          <div style="font-size: 0.85rem; color: #64748b;">Available</div>
+          <div style="font-size: 0.85rem; color: #64748b;">{{ t("Available") }}</div>
           <div id="balance-available" style="font-weight: 600;">—</div>
         </div>
         <div>
-          <div style="font-size: 0.85rem; color: #64748b;">This request</div>
+          <div style="font-size: 0.85rem; color: #64748b;">{{ t("This request") }}</div>
           <div id="request-size" style="font-weight: 600;">—</div>
         </div>
         <div>
-          <div style="font-size: 0.85rem; color: #64748b;">Remaining after</div>
+          <div style="font-size: 0.85rem; color: #64748b;">{{ t("Remaining after") }}</div>
           <div id="balance-remaining" style="font-weight: 600;">—</div>
         </div>
       </div>
@@ -119,7 +119,7 @@
       {% if shape == "full_day" %}
         <label style="display: flex; flex-direction: column; gap: 0.4rem;">
           <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-            Start date
+            {{ t("Start date") }}
           </span>
           <input type="date" name="date_from" id="date-from"
                  min="{{ today_iso }}"
@@ -132,7 +132,7 @@
         </label>
         <label style="display: flex; flex-direction: column; gap: 0.4rem;">
           <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-            End date
+            {{ t("End date") }}
           </span>
           <input type="date" name="date_to" id="date-to"
                  min="{{ today_iso }}"
@@ -146,7 +146,7 @@
       {% else %}
         <label style="display: flex; flex-direction: column; gap: 0.4rem;">
           <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-            Date
+            {{ t("Date") }}
           </span>
           <input type="date" name="date_from" id="date-from"
                  min="{{ today_iso }}"
@@ -163,7 +163,7 @@
         {% if shape == "late_arrival" %}
           <label style="display: flex; flex-direction: column; gap: 0.4rem;">
             <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-              I'll arrive at
+              {{ t("I'll arrive at") }}
             </span>
             <input type="time" name="time_b" id="time-b" required step="900"
                    value="{% if edit_mode and prefill and prefill.hour_to is not none %}{{ '%02d:%02d'|format(prefill.hour_to|int, ((prefill.hour_to - (prefill.hour_to|int)) * 60)|round|int) }}{% endif %}"
@@ -176,7 +176,7 @@
         {% elif shape == "early_leave" %}
           <label style="display: flex; flex-direction: column; gap: 0.4rem;">
             <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-              I'll leave at
+              {{ t("I'll leave at") }}
             </span>
             <input type="time" name="time_a" id="time-a" required step="900"
                    value="{% if edit_mode and prefill and prefill.hour_from is not none %}{{ '%02d:%02d'|format(prefill.hour_from|int, ((prefill.hour_from - (prefill.hour_from|int)) * 60)|round|int) }}{% endif %}"
@@ -189,7 +189,7 @@
         {% else %}
           <label style="display: flex; flex-direction: column; gap: 0.4rem;">
             <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-              Gone from
+              {{ t("Gone from") }}
             </span>
             <input type="time" name="time_a" id="time-a" required step="900"
                    value="{% if edit_mode and prefill and prefill.hour_from is not none %}{{ '%02d:%02d'|format(prefill.hour_from|int, ((prefill.hour_from - (prefill.hour_from|int)) * 60)|round|int) }}{% endif %}"
@@ -200,7 +200,7 @@
           </label>
           <label style="display: flex; flex-direction: column; gap: 0.4rem;">
             <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-              To
+              {{ t("To") }}
             </span>
             <input type="time" name="time_b" id="time-b" required step="900"
                    value="{% if edit_mode and prefill and prefill.hour_to is not none %}{{ '%02d:%02d'|format(prefill.hour_to|int, ((prefill.hour_to - (prefill.hour_to|int)) * 60)|round|int) }}{% endif %}"
@@ -214,7 +214,7 @@
 
       <label style="display: flex; flex-direction: column; gap: 0.4rem;">
         <span style="font-size: 1.1rem; font-weight: 600; color: #475569;">
-          Note (optional)
+          {{ t("Note (optional)") }}
         </span>
         <input type="text" name="note" maxlength="200"
                value="{{ (prefill.note if edit_mode and prefill else '') }}"
@@ -235,7 +235,7 @@
                      min-height: 80px;"
               {% if shape == "full_day" and not leave_types %}disabled{% endif %}
               {% if shape != "full_day" and not partial_day_type %}disabled{% endif %}>
-        {% if edit_mode %}Save Changes{% else %}Submit Request{% endif %}
+        {% if edit_mode %}{{ t("Save Changes") }}{% else %}{{ t("Submit Request") }}{% endif %}
       </button>
     </form>
   </div>
