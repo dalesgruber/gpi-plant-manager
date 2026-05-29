@@ -214,11 +214,29 @@
     checkSchedule();
   }
 
-  [typeSel, dateFrom, dateTo, timeA, timeB].forEach(function (el) {
+  // Recalc the balance panel when the type, end date, or times change.
+  [typeSel, dateTo, timeA, timeB].forEach(function (el) {
     if (el) {
       el.addEventListener("change", recalc);
       el.addEventListener("input", recalc);
     }
   });
+
+  // Picking a start date defaults the end date to match it, so a single-day
+  // request is one tap (the user can still push the end date out afterward
+  // for a multi-day request). Only the full_day form has an end-date input;
+  // the partial shapes use a server-forced single date, so dateTo is null
+  // there and this is a harmless no-op. Recalc after syncing.
+  function onStartDateChange() {
+    if (dateTo && dateFrom.value) {
+      dateTo.value = dateFrom.value;
+    }
+    recalc();
+  }
+  if (dateFrom) {
+    dateFrom.addEventListener("change", onStartDateChange);
+    dateFrom.addEventListener("input", onStartDateChange);
+  }
+
   recalc();
 })();
