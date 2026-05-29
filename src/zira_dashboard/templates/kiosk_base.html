@@ -122,6 +122,17 @@
     transition: opacity 120ms ease;
   }
   #kiosk-screen.htmx-swapping { opacity: 0; }
+
+  /* Bilingual stacked text: English on top, Spanish beneath (muted). */
+  .k-en { display: block; }
+  .k-es {
+    display: block;
+    font-size: 0.7em;
+    font-weight: 400;
+    font-style: italic;
+    color: #64748b;
+    line-height: 1.15;
+  }
 </style>
 <script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"
         integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"
