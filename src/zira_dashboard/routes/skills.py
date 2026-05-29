@@ -23,15 +23,26 @@ router = APIRouter()
 @router.get("/staffing/skills", response_class=HTMLResponse)
 def staffing_skills(request: Request):
     from .. import odoo_sync, skill_matrix_views_store as views_store, db
-    from .. import cert_lookup
+    from .. import cert_lookup, _http_cache
+
+    # Response cache. The matrix is roster + skill-level data, which changes
+    # only on roster/skill writes (each invalidates the today bucket) and on
+    # Odoo sync. On a cache hit we also skip the per-request
+    # odoo_sync.sync(force=False) freshness check — fine within the 60s TTL,
+    # and the page warmer / a real miss will re-trigger it.
+    response_cache_key = ("staffing_skills",)
+    cached_resp = _http_cache.get_cached_response(
+        response_cache_key, includes_today=True
+    )
+    if cached_resp is not None:
+        return cached_resp
+
     person_certs = cert_lookup.load_person_certs()
     sync_result = odoo_sync.sync(force=False)
     roster = staffing.load_roster()
     roster.sort(key=lambda p: (not p.active, p.name.lower()))
     active_count = sum(1 for p in roster if p.active)
 
-    # Columns directly from skills table — exclude certifications
-    # (those surface as badges next to names, not as matrix columns).
     skill_rows = db.query(
         "SELECT name, skill_type FROM skills "
         "WHERE skill_type IN ('Production Skills', 'Supervisor Skills') "
@@ -40,11 +51,10 @@ def staffing_skills(request: Request):
     columns = [r["name"] for r in skill_rows]
     type_by_skill = {r["name"]: r["skill_type"] for r in skill_rows}
 
-    # All saved views + the default view (server-side state shared across users).
     all_views = views_store.list_views()
     default_view = views_store.get_default_view()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "skills.html",
         {
@@ -64,6 +74,11 @@ def staffing_skills(request: Request):
             "odoo_url": os.environ.get("ODOO_URL", "").rstrip("/"),
         },
     )
+    _http_cache.set_cache_headers(response, includes_today=True)
+    _http_cache.store_cached_response(
+        response_cache_key, includes_today=True, response=response
+    )
+    return response
 
 
 @router.post("/staffing/skills")
@@ -78,6 +93,8 @@ async def staffing_skills_save(request: Request):
         if form.get(f"reserve_present__{name}"):
             person.reserve = form.get(f"reserve__{name}") in ("on", "1", "true")
     staffing.save_roster(roster)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({"ok": True})
     return RedirectResponse(url="/staffing/skills", status_code=303)
@@ -89,6 +106,8 @@ async def staffing_skills_refresh(request: Request):
     can show progress + reload), or 303 for plain form submits."""
     from .. import odoo_sync
     result = odoo_sync.sync(force=True)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({
             "ok": result.ok,
@@ -111,6 +130,8 @@ async def staffing_skills_view_create(request: Request):
     if views_store.get_view(name) is not None:
         return JSONResponse({"ok": False, "error": "name already exists"}, status_code=409)
     view = views_store.create_view(name, body)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True, "view": view})
 
 
@@ -121,6 +142,8 @@ async def staffing_skills_view_update(name: str, request: Request):
     if views_store.get_view(name) is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     view = views_store.update_view(name, body)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True, "view": view})
 
 
@@ -128,6 +151,8 @@ async def staffing_skills_view_update(name: str, request: Request):
 def staffing_skills_view_clear_default():
     from .. import skill_matrix_views_store as views_store
     views_store.set_default(None)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
 
@@ -135,6 +160,8 @@ def staffing_skills_view_clear_default():
 def staffing_skills_view_delete(name: str):
     from .. import skill_matrix_views_store as views_store
     views_store.delete_view(name)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
 
@@ -144,6 +171,8 @@ def staffing_skills_view_set_default(name: str):
     if views_store.get_view(name) is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     views_store.set_default(name)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
 
@@ -159,6 +188,8 @@ async def staffing_person_add(request: Request):
     skills = {s: 0 for s in staffing.SKILLS}
     roster.append(staffing.Person(name=name, active=True, skills=skills))
     staffing.save_roster(roster)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({"ok": True, "name": name})
     return RedirectResponse(url="/staffing/skills", status_code=303)
@@ -176,6 +207,8 @@ async def staffing_person_delete(request: Request):
     if len(roster) == before:
         return JSONResponse({"ok": False, "error": f"'{name}' not found"}, status_code=404)
     staffing.save_roster(roster)
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     if (request.headers.get("accept") or "").startswith("application/json"):
         return JSONResponse({"ok": True, "removed": name})
     return RedirectResponse(url="/staffing/skills", status_code=303)
