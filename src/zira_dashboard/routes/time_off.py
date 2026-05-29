@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse
 
 from .. import _http_cache, settings_store, stratustime_client
 from ..deps import templates
-from .kiosk_time_off import _approved_by_day
+from .timeclock_time_off import _approved_by_day
 
 router = APIRouter()
 
@@ -34,7 +34,7 @@ def _odoo_time_off_by_day(
     leaves AND company-wide public holidays in the local mirror
     overlapping ``[start_d, end_d]``.
 
-    Wraps ``kiosk_time_off._approved_by_day`` so this route doesn't have
+    Wraps ``timeclock_time_off._approved_by_day`` so this route doesn't have
     to duplicate the SQL or the date-fan-out logic. Default tags entries
     with ``source='odoo'`` so the template can render them distinctly
     from a StratusTime overlay entry on the same day; ``_approved_by_day``

@@ -1,8 +1,8 @@
-"""Background reconciliation for kiosk_punches_log → Odoo hr.attendance.
+"""Background reconciliation for timeclock_punches_log → Odoo hr.attendance.
 
 The kiosk route handlers do their best to write to Odoo synchronously on
 each punch. When Odoo is unreachable (transient network blip, maintenance
-window), the punch is still recorded in kiosk_punches_log with
+window), the punch is still recorded in timeclock_punches_log with
 synced_to_odoo=FALSE and the kiosk shows the user a success page.
 
 This module catches up. The app's background loop calls
@@ -40,7 +40,7 @@ def retry_unsynced_punches() -> int:
     rows = db.query(
         "SELECT id, person_odoo_id, action, wc_name, "
         "COALESCE(rounded_at, occurred_at) AS occurred_at "
-        "FROM kiosk_punches_log "
+        "FROM timeclock_punches_log "
         "WHERE synced_to_odoo = FALSE "
         "ORDER BY occurred_at ASC, id ASC "
         "LIMIT %s",
@@ -53,7 +53,7 @@ def retry_unsynced_punches() -> int:
             synced += 1
         except Exception as e:  # noqa: BLE001 — record per-row failure and continue
             db.execute(
-                "UPDATE kiosk_punches_log SET sync_error = %s WHERE id = %s",
+                "UPDATE timeclock_punches_log SET sync_error = %s WHERE id = %s",
                 (str(e)[:500], r["id"]),
             )
             _log.info(
@@ -87,9 +87,9 @@ def _retry_one(r: dict) -> None:
         return
 
     # Unknown action — flag synced to remove from queue, but note the issue.
-    _log.warning("Unknown kiosk_punches_log.action=%r on row %s", action, r["id"])
+    _log.warning("Unknown timeclock_punches_log.action=%r on row %s", action, r["id"])
     db.execute(
-        "UPDATE kiosk_punches_log SET synced_to_odoo = TRUE, "
+        "UPDATE timeclock_punches_log SET synced_to_odoo = TRUE, "
         "sync_error = %s, synced_at = now() WHERE id = %s",
         (f"unknown action: {action}", r["id"]),
     )
@@ -97,7 +97,7 @@ def _retry_one(r: dict) -> None:
 
 def _mark_synced(log_id: int, odoo_attendance_id: int | None) -> None:
     db.execute(
-        "UPDATE kiosk_punches_log SET synced_to_odoo = TRUE, "
+        "UPDATE timeclock_punches_log SET synced_to_odoo = TRUE, "
         "odoo_attendance_id = %s, sync_error = NULL, synced_at = now() "
         "WHERE id = %s",
         (odoo_attendance_id, log_id),
@@ -117,7 +117,7 @@ def sync_one_by_id(log_id: int) -> None:
     rows = db.query(
         "SELECT id, person_odoo_id, action, wc_name, "
         "COALESCE(rounded_at, occurred_at) AS occurred_at "
-        "FROM kiosk_punches_log WHERE id = %s",
+        "FROM timeclock_punches_log WHERE id = %s",
         (log_id,),
     )
     if not rows:
@@ -127,7 +127,7 @@ def sync_one_by_id(log_id: int) -> None:
         _retry_one(rows[0])
     except Exception as e:  # noqa: BLE001
         db.execute(
-            "UPDATE kiosk_punches_log SET sync_error = %s WHERE id = %s",
+            "UPDATE timeclock_punches_log SET sync_error = %s WHERE id = %s",
             (str(e)[:500], log_id),
         )
         _log.info(

@@ -37,7 +37,7 @@ def utc_system_tz():
 
 
 def test_fmt_time_renders_central_during_dst(utc_system_tz):
-    from zira_dashboard.routes.kiosk import _fmt_time
+    from zira_dashboard.routes.timeclock import _fmt_time
 
     # Noon UTC on 2026-05-29 = 7:00 AM Central (CDT, UTC-5).
     dt = datetime(2026, 5, 29, 12, 0, tzinfo=timezone.utc)
@@ -45,7 +45,7 @@ def test_fmt_time_renders_central_during_dst(utc_system_tz):
 
 
 def test_fmt_time_renders_central_during_standard_time(utc_system_tz):
-    from zira_dashboard.routes.kiosk import _fmt_time
+    from zira_dashboard.routes.timeclock import _fmt_time
 
     # Noon UTC on 2026-01-15 = 6:00 AM Central (CST, UTC-6).
     # Proves the fix uses a DST-aware zone, not a fixed -5 offset.
@@ -54,7 +54,7 @@ def test_fmt_time_renders_central_during_standard_time(utc_system_tz):
 
 
 def test_fmt_short_dt_renders_central(utc_system_tz):
-    from zira_dashboard.routes.kiosk import _fmt_short_dt
+    from zira_dashboard.routes.timeclock import _fmt_short_dt
 
     dt = datetime(2026, 5, 29, 12, 0, tzinfo=timezone.utc)
     assert _fmt_short_dt(dt) == "5/29 7:00 AM"

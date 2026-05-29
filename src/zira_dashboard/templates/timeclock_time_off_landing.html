@@ -1,4 +1,4 @@
-{% extends "kiosk_base.html" %}
+{% extends "timeclock_base.html" %}
 {% block title %}Time Off — {{ person.name }}{% endblock %}
 {% block content %}
 <div class="k-header">
@@ -8,7 +8,7 @@
   <a href="/timeclock/dashboard/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>
   {% endif %}
   <span>{{ t("Time Off — {name}", name=person.name) }}</span>
-  {% include "_kiosk_brand.html" %}
+  {% include "_timeclock_brand.html" %}
 </div>
 <div class="k-main" style="align-items: center;">
   {% if sync_warning %}

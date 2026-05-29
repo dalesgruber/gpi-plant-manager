@@ -14,7 +14,7 @@
 // employee scheduled for weekend OT may legitimately need to request
 // Saturday off — but the warning catches accidental weekend picks.
 //
-// Shape semantics (matches routes/kiosk_time_off.py):
+// Shape semantics (matches routes/timeclock_time_off.py):
 //   full_day      → request size = business days in [date_from, date_to]
 //   late_arrival  → request size = arrival_time - shift_from (hours)
 //   early_leave   → request size = shift_to - leave_time (hours)

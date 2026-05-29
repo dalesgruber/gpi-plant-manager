@@ -43,8 +43,8 @@
        class="settings-nav-item {% if active_section == 'tvs' %}active{% endif %}">
       TVs
     </a>
-    <a href="?section=kiosk"
-       class="settings-nav-item {% if active_section == 'kiosk' %}active{% endif %}">
+    <a href="?section=timeclock"
+       class="settings-nav-item {% if active_section == 'timeclock' %}active{% endif %}">
       Timeclock
     </a>
     <a href="?section=time_off"
@@ -301,8 +301,8 @@
   {% include "_settings_tvs.html" %}
 
   <!-- Timeclock -->
-  <section class="panel" id="kiosk-panel"
-           {% if active_section != 'kiosk' %}style="display:none"{% endif %}>
+  <section class="panel" id="timeclock-panel"
+           {% if active_section != 'timeclock' %}style="display:none"{% endif %}>
     <h2>Timeclock</h2>
     <p style="color:var(--muted);margin:0 0 0.8rem 0">
       Clock in/out + work-center transfers. Writes to Odoo
@@ -408,7 +408,7 @@
         these values. Historical punches are unchanged.
       </p>
       <div class="rounding-actions">
-        {% if saved and active_section == 'kiosk' %}
+        {% if saved and active_section == 'timeclock' %}
           <span class="saved-flash">Saved.</span>
         {% endif %}
         <button type="submit">Save Rounding</button>
@@ -416,28 +416,28 @@
     </form>
 
     <h3 style="margin-top:1.6rem">Sync status (last 7 days)</h3>
-    {% if kiosk_sync_status is none or kiosk_sync_status.total_7d == 0 %}
+    {% if timeclock_sync_status is none or timeclock_sync_status.total_7d == 0 %}
       <p style="color:var(--muted);font-style:italic">No punches in the last 7 days.</p>
     {% else %}
       <ul style="font-size:0.9rem;line-height:1.55;margin:0.4rem 0 0 1.2rem">
-        <li>Total punches: <strong>{{ kiosk_sync_status.total_7d }}</strong></li>
+        <li>Total punches: <strong>{{ timeclock_sync_status.total_7d }}</strong></li>
         <li>Unsynced to Odoo:
-          {% if kiosk_sync_status.unsynced and kiosk_sync_status.unsynced > 0 %}
-            <strong style="color:var(--bad)">{{ kiosk_sync_status.unsynced }}</strong>
+          {% if timeclock_sync_status.unsynced and timeclock_sync_status.unsynced > 0 %}
+            <strong style="color:var(--bad)">{{ timeclock_sync_status.unsynced }}</strong>
             (background worker retries every 60s)
           {% else %}
             <strong style="color:var(--good)">0</strong> ✓
           {% endif %}
         </li>
         <li>Last successful sync:
-          {% if kiosk_sync_status.last_sync_at %}
-            <code>{{ kiosk_sync_status.last_sync_at }}</code>
+          {% if timeclock_sync_status.last_sync_at %}
+            <code>{{ timeclock_sync_status.last_sync_at }}</code>
           {% else %}
             <span style="color:var(--muted)">never</span>
           {% endif %}
         </li>
-        {% if kiosk_sync_status.error_count and kiosk_sync_status.error_count > 0 %}
-          <li><strong style="color:var(--bad)">{{ kiosk_sync_status.error_count }}</strong> rows with errors</li>
+        {% if timeclock_sync_status.error_count and timeclock_sync_status.error_count > 0 %}
+          <li><strong style="color:var(--bad)">{{ timeclock_sync_status.error_count }}</strong> rows with errors</li>
         {% endif %}
       </ul>
     {% endif %}

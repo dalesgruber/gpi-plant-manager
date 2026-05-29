@@ -1,4 +1,4 @@
-"""Kiosk time-off routes — gated by the same HMAC token as `routes/kiosk.py`.
+"""Kiosk time-off routes — gated by the same HMAC token as `routes/timeclock.py`.
 
 Surfaces a touch-friendly time-off flow on the kiosk: landing with three
 big-touch actions (Request Time Off / My Requests / Who's Out), the
@@ -6,11 +6,11 @@ request wizard, the mine list/detail, and the calendar. This module
 currently only owns the landing route; the request wizard, mine, and
 calendar pages get appended by subsequent tasks in the plan.
 
-Auth is identical to `routes/kiosk.py`: every URL takes a 60s HMAC token
+Auth is identical to `routes/timeclock.py`: every URL takes a 60s HMAC token
 in the path, and an invalid/expired token bounces back to `/timeclock` so a
 shared device never leaks one user's data to the next. The helpers
 ``_mint_token`` / ``_verify_token`` / ``_person_by_id`` live in
-`routes/kiosk.py` and are reused here verbatim — duplicating them would
+`routes/timeclock.py` and are reused here verbatim — duplicating them would
 risk drift in the auth boundary.
 
 The landing route also surfaces a warning banner if any of this person's
@@ -49,7 +49,7 @@ from .. import (
     time_off_sync,
 )
 from ..deps import templates
-from .kiosk import (
+from .timeclock import (
     _is_time_off_only,
     _mint_token,
     _person_by_id,
@@ -62,7 +62,7 @@ router = APIRouter()
 def _pending_count(person_odoo_id: int) -> int:
     """Count of this person's requests still in-flight (not yet validated
     or refused/cancelled). Matches `_pending_time_off_count` in
-    `routes/kiosk.py` — kept local because the badge math may diverge
+    `routes/timeclock.py` — kept local because the badge math may diverge
     once the wizard exists (e.g. distinguishing "draft I haven't
     submitted" from "pending HR approval")."""
     rows = db.query(
@@ -91,7 +91,7 @@ def _sync_error_warning(person_odoo_id: int) -> dict | None:
     to sync to Odoo and failed (synced_to_odoo=FALSE AND sync_error IS
     NOT NULL). Returns None if everything synced cleanly.
 
-    Mirrors `_sync_error_warning` in `routes/kiosk.py` — same shape so
+    Mirrors `_sync_error_warning` in `routes/timeclock.py` — same shape so
     the template renders both with the same `k-warning` styling."""
     rows = db.query(
         "SELECT COUNT(*) AS n, MAX(sync_error) AS latest "
@@ -130,7 +130,7 @@ def time_off_landing(request: Request, token: str):
     odoo_id = p.get("odoo_id") or -1
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_landing.html",
+        "timeclock_time_off_landing.html",
         {
             "person": p,
             "token": fresh,
@@ -148,7 +148,7 @@ def time_off_landing(request: Request, token: str):
 @router.get("/timeclock/time-off/request/{token}", response_class=HTMLResponse)
 def request_shape(request: Request, token: str):
     """Legacy shape-picker route. The shape cards now live on the landing
-    page (`kiosk_time_off_landing.html`), so this just redirects there —
+    page (`timeclock_time_off_landing.html`), so this just redirects there —
     kept so old bookmarks and the wizard's bad-input fallbacks still land
     somewhere sensible. Same HMAC gate; invalid token bounces to /timeclock.
     """
@@ -347,7 +347,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
       - midday_gap → date + leave/return times within shift
 
     Shows a balance panel that the client-side JS keeps up to date as
-    the user changes inputs; the JS lives in `static/kiosk_time_off.js`.
+    the user changes inputs; the JS lives in `static/timeclock_time_off.js`.
     Bad token → /timeclock; bad shape → back to the shape picker (never
     render the form with an invalid shape value)."""
     person_id = _verify_token(token)
@@ -386,7 +386,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
     work_weekdays = sorted(schedule_store.current().work_weekdays)
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_request_details.html",
+        "timeclock_time_off_request_details.html",
         {
             "person": p,
             "token": fresh,
@@ -637,7 +637,7 @@ def request_submit(
         )
         return templates.TemplateResponse(
             request,
-            "kiosk_time_off_request_details.html",
+            "timeclock_time_off_request_details.html",
             {
                 "person": p,
                 "token": _mint_token(person_id),
@@ -681,7 +681,7 @@ def request_submit(
 
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_success.html",
+        "timeclock_time_off_success.html",
         {
             "person": p,
             "token": _mint_token(person_id),
@@ -778,7 +778,7 @@ def mine_list(request: Request, token: str):
         r["bucket"] = _state_to_bucket(r["state"])
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_mine.html",
+        "timeclock_time_off_mine.html",
         {"person": p, "token": fresh, "requests": rows, "bilingual": bool(p.get("spanish_speaker"))},
     )
 
@@ -810,7 +810,7 @@ def mine_detail(request: Request, token: str, rid: int):
     fresh = _mint_token(person_id)
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_mine_detail.html",
+        "timeclock_time_off_mine_detail.html",
         {"person": p, "token": fresh, "request_row": row, "bilingual": bool(p.get("spanish_speaker"))},
     )
 
@@ -955,7 +955,7 @@ def mine_edit(request: Request, token: str, rid: int):
 
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_request_details.html",
+        "timeclock_time_off_request_details.html",
         {
             "person": p,
             "token": fresh,
@@ -1075,7 +1075,7 @@ def mine_edit_submit(
         )
         return templates.TemplateResponse(
             request,
-            "kiosk_time_off_request_details.html",
+            "timeclock_time_off_request_details.html",
             {
                 "person": p,
                 "token": _mint_token(person_id),
@@ -1300,7 +1300,7 @@ def time_off_calendar(request: Request, token: str, month: str | None = None):
     fresh = _mint_token(person_id)
     return templates.TemplateResponse(
         request,
-        "kiosk_time_off_calendar.html",
+        "timeclock_time_off_calendar.html",
         {
             "person": p,
             "token": fresh,

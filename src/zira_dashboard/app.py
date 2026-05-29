@@ -28,7 +28,7 @@ from .routes import (
     dashboard,
     goat_watch,
     kiosk,
-    kiosk_time_off,
+    timeclock_time_off,
     late_report,
     leaderboards,
     past_schedules,
@@ -92,15 +92,15 @@ async def _warm_live_cache_loop():
         await asyncio.sleep(45)
 
 
-async def _warm_kiosk_sync_loop():
-    """Reconcile any kiosk_punches_log rows still flagged unsynced
+async def _warm_timeclock_sync_loop():
+    """Reconcile any timeclock_punches_log rows still flagged unsynced
     against Odoo. Routes write to Odoo synchronously on each punch; this
     loop catches anything that failed during a transient Odoo outage.
     Runs every 60s. Errors are logged and swallowed."""
-    from . import kiosk_sync
+    from . import timeclock_sync
     while True:
         try:
-            await asyncio.to_thread(kiosk_sync.retry_unsynced_punches)
+            await asyncio.to_thread(timeclock_sync.retry_unsynced_punches)
         except Exception as e:  # noqa: BLE001 — never let warmer kill itself
             _log.warning("Kiosk sync warmer tick failed: %s", e)
         await asyncio.sleep(60)
@@ -108,7 +108,7 @@ async def _warm_kiosk_sync_loop():
 
 async def _time_off_sync_loop():
     """Reconcile any time_off_requests rows still flagged unsynced
-    against Odoo `hr.leave`. Mirrors `_warm_kiosk_sync_loop` — routes
+    against Odoo `hr.leave`. Mirrors `_warm_timeclock_sync_loop` — routes
     write to Odoo synchronously on submit; this loop catches anything
     that failed during a transient Odoo outage. Runs every 60s.
     Errors are logged and swallowed."""
@@ -265,7 +265,7 @@ async def lifespan(app: FastAPI):
     warmer_task = asyncio.create_task(_warm_zira_cache_loop())
     st_warmer_task = asyncio.create_task(_warm_stratustime_loop())
     live_cache_task = asyncio.create_task(_warm_live_cache_loop())
-    kiosk_sync_task = asyncio.create_task(_warm_kiosk_sync_loop())
+    timeclock_sync_task = asyncio.create_task(_warm_timeclock_sync_loop())
     time_off_sync_task = asyncio.create_task(_time_off_sync_loop())
     time_off_poll_task = asyncio.create_task(_time_off_poll_loop())
     time_off_balance_task = asyncio.create_task(_time_off_balance_sweep_loop())
@@ -278,7 +278,7 @@ async def lifespan(app: FastAPI):
             warmer_task,
             st_warmer_task,
             live_cache_task,
-            kiosk_sync_task,
+            timeclock_sync_task,
             time_off_sync_task,
             time_off_poll_task,
             time_off_balance_task,
@@ -433,8 +433,8 @@ app.include_router(api_layout.router)
 app.include_router(changelog.router)
 app.include_router(admin.router)
 app.include_router(goat_watch.router)
-app.include_router(kiosk.router)
-app.include_router(kiosk_time_off.router)
+app.include_router(timeclock.router)
+app.include_router(timeclock_time_off.router)
 
 
 def main() -> None:

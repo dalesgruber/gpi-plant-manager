@@ -324,12 +324,14 @@ def staffing_page(
     id_to_name = {v: k for k, v in (attendance_pkg.get("name_to_id") or {}).items()}
     late_names_set = {id_to_name[e] for e in late_emp_ids if e in id_to_name}
 
-    time_off_names = [e["name"] for e in time_off_entries]
-    # Roster-availability exclusion uses FULL-DAY absences only — partial-day
-    # people stay in the assignable pool (badged) so they can be scheduled
-    # around their partial. Full-day entries have hours=None; partials carry a
-    # numeric off-span (see scheduler_time_off).
-    time_off_set = {e["name"] for e in time_off_entries if e.get("hours") is None}
+    # Full-day absences drive BOTH the Time Off panel and the roster-availability
+    # exclusion. Partial-day people are deliberately NOT treated as "in the Time
+    # Off section": they stay in the assignable pool / Unscheduled list (badged
+    # with their off-window) so they can still be scheduled around their partial.
+    # Full-day entries have hours=None; partials carry a numeric off-span
+    # (see scheduler_time_off).
+    full_day_entries = [e for e in time_off_entries if e.get("hours") is None]
+    time_off_set = {e["name"] for e in full_day_entries}
 
     active_people = [p for p in roster if p.active]
     all_by_name = {p.name: p for p in roster}
@@ -632,8 +634,12 @@ def staffing_page(
                 "notes": sched.notes or "",
                 "testing_day": bool(sched.testing_day),
                 "publish_block_reasons": publish_block_reasons,
-                "time_off_names": sorted(time_off_names),
-                "time_off_entries": sorted(time_off_entries, key=lambda e: e["name"].lower()),
+                # Time Off panel + the client-side __timeOffNames set are
+                # FULL-DAY only. Partial-day people live in Unscheduled/Reserves
+                # (with an off-window badge); listing them here would let the
+                # left-rail "defensive sweep" pull them back out of Unscheduled.
+                "time_off_names": sorted(e["name"] for e in full_day_entries),
+                "time_off_entries": sorted(full_day_entries, key=lambda e: e["name"].lower()),
                 "partial_hours_by_name": partial_hours_by_name,
                 "partial_range_by_name": partial_range_by_name,
                 "partial_clear_by_name": partial_clear_by_name,

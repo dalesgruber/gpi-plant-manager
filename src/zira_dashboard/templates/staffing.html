@@ -69,7 +69,7 @@
       <h3>Unscheduled <span class="count">{{ unassigned|length }}</span></h3>
       <ul>
         {% if unassigned %}
-          {% for n in unassigned %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}</li>{% endfor %}
+          {% for n in unassigned %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}{% if partial_hours_by_name and n in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ n }}" title="Click to clear this partial for {{ n }} — they actually worked through it">{{ partial_range_by_name.get(n) or (partial_hours_by_name[n] ~ 'h') }} ✕</button>{% endif %}</li>{% endfor %}
         {% else %}
           <li class="empty">— all scheduled —</li>
         {% endif %}
@@ -116,7 +116,7 @@
       <h3>Reserves <span class="count">{{ reserves|length }}</span></h3>
       <ul>
         {% if reserves %}
-          {% for n in reserves %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}</li>{% endfor %}
+          {% for n in reserves %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}{% if partial_hours_by_name and n in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ n }}" title="Click to clear this partial for {{ n }} — they actually worked through it">{{ partial_range_by_name.get(n) or (partial_hours_by_name[n] ~ 'h') }} ✕</button>{% endif %}</li>{% endfor %}
         {% else %}
           <li class="empty">— none flagged —</li>
         {% endif %}
@@ -827,6 +827,13 @@
   // Per-person metadata (reserve flag) for routing add-backs to the right list.
   const __peopleMeta = {{ people_meta | tojson }};
 
+  // Partial-day off windows (name -> "10:00am–11:00am" / hours). Used to
+  // re-attach the amber "off" badge when a partial person is moved back into
+  // Unscheduled/Reserves dynamically (e.g. after clearing them from a WC), so
+  // the off-window note follows them without a full reload.
+  const __partialRangeByName = {{ partial_range_by_name | tojson }};
+  const __partialHoursByName = {{ partial_hours_by_name | tojson }};
+
   // Names of people on time off today. Single source of truth for client-side
   // "is this person on time off?" checks — the Time Off section in the DOM is
   // rendered as <li.time-off-row> without a reliable data-name on every row,
@@ -844,6 +851,30 @@
     removeFromReserves(n);
   });
 
+  // Append the amber clearable off-window badge to a freshly built left-rail
+  // <li>, mirroring the server-rendered Unscheduled/Reserves badge. No-op for
+  // anyone without a partial today. Binds the ✕ handler inline so clearing
+  // works without re-scanning the whole page.
+  function _appendPartialBadge(li, name) {
+    const range = __partialRangeByName[name];
+    const hours = __partialHoursByName[name];
+    if (range == null && hours == null) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'partial-hours-badge clearable';
+    btn.dataset.day = '{{ day }}';
+    btn.dataset.name = name;
+    btn.dataset.bound = '1';
+    btn.title = 'Click to clear this partial for ' + name + ' — they actually worked through it';
+    btn.textContent = (range || (hours + 'h')) + ' ✕';
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _doPartialAction(btn, true);
+    });
+    li.appendChild(btn);
+  }
+
   function _insertSorted(ul, name) {
     const li = document.createElement('li');
     li.dataset.name = name;
@@ -853,6 +884,7 @@
     a.textContent = name;
     li.appendChild(a);
     appendCertBadges(li, name);
+    _appendPartialBadge(li, name);
     const existing = [...ul.querySelectorAll('li:not(.empty)')];
     // Sort by data-name (textContent now includes cert badge text).
     const target = existing.find(other => (other.dataset.name || '').toLowerCase() > name.toLowerCase());

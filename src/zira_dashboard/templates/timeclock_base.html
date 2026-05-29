@@ -108,12 +108,12 @@
   /* htmx fragment swap: subtle fade so screen-to-screen transitions
      don't strobe. ~120ms is fast enough that the kiosk still feels
      snappy but smooths the perceived swap.
-     Also: #kiosk-screen is the actual viewport-filling flex container,
+     Also: #timeclock-screen is the actual viewport-filling flex container,
      not body — body's only direct child is this wrapper. Without
      `flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column`
      here, the .k-main child's overflow-y:auto never engages because its
-     parent (#kiosk-screen) has no height constraint. */
-  #kiosk-screen {
+     parent (#timeclock-screen) has no height constraint. */
+  #timeclock-screen {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -121,7 +121,7 @@
     opacity: 1;
     transition: opacity 120ms ease;
   }
-  #kiosk-screen.htmx-swapping { opacity: 0; }
+  #timeclock-screen.htmx-swapping { opacity: 0; }
 
   /* Bilingual text: one inline-flex column so English always sits directly
      above Spanish in ANY parent — headings, buttons, and flex-row links
@@ -154,17 +154,17 @@
         defer></script>
 </head>
 <body hx-boost="true"
-      hx-target="#kiosk-screen"
-      hx-select="#kiosk-screen"
+      hx-target="#timeclock-screen"
+      hx-select="#timeclock-screen"
       hx-swap="outerHTML swap:120ms">
-<div id="kiosk-screen">
+<div id="timeclock-screen">
 {% block content %}{% endblock %}
 {% block scripts %}{% endblock %}
 </div>
 <script>
   // Idle timeout: return to home after 30s of no input. Skipped on the
   // home page itself so it doesn't constantly self-reload.
-  // Sits OUTSIDE #kiosk-screen so htmx swaps don't tear down/rebind it.
+  // Sits OUTSIDE #timeclock-screen so htmx swaps don't tear down/rebind it.
   (function() {
     var TIMEOUT_MS = 30000;
     var timer;

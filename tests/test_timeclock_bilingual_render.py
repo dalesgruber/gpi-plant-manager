@@ -6,7 +6,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from zira_dashboard import kiosk_i18n
+from zira_dashboard import timeclock_i18n
 
 TEMPLATES = Path("src/zira_dashboard/templates")
 
@@ -14,7 +14,7 @@ TEMPLATES = Path("src/zira_dashboard/templates")
 def _env():
     env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
     env.globals["static_v"] = lambda _f: "test"
-    env.globals["t"] = kiosk_i18n.t
+    env.globals["t"] = timeclock_i18n.t
     return env
 
 
@@ -32,13 +32,13 @@ def _ctx(bilingual):
 
 
 def test_dashboard_english_only_when_not_bilingual():
-    html = _env().get_template("kiosk_dashboard.html").render(**_ctx(False))
+    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(False))
     assert "Pick Work Center" in html
     assert "Elegir estación" not in html
 
 
 def test_dashboard_bilingual_shows_spanish():
-    html = _env().get_template("kiosk_dashboard.html").render(**_ctx(True))
+    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(True))
     assert "Pick Work Center" in html       # English still present
     assert "Elegir estación" in html        # Spanish added
     assert 'class="k-es"' in html

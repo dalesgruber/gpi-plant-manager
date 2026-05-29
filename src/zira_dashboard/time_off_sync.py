@@ -1,6 +1,6 @@
 """Background reconciliation for time_off_requests <-> Odoo hr.leave.
 
-Mirrors the kiosk_sync.py shape: every write is recorded locally first,
+Mirrors the timeclock_sync.py shape: every write is recorded locally first,
 then pushed to Odoo asynchronously. The local row carries a state and a
 ``synced_to_odoo`` flag; the request handlers schedule ``push_one`` to
 run off the request path, and a 60s sweep (added in a later task) picks

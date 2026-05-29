@@ -1,4 +1,4 @@
-{% extends "kiosk_base.html" %}
+{% extends "timeclock_base.html" %}
 {% block title %}Request Time Off — {{ person.name }}{% endblock %}
 {% block content %}
 <div class="k-header">
@@ -9,7 +9,7 @@
     {% elif shape == "early_leave" %}{{ t("Leaving Early") }}
     {% else %}{{ t("Mid-Day Gap") }}{% endif %}
   </span>
-  {% include "_kiosk_brand.html" %}
+  {% include "_timeclock_brand.html" %}
 </div>
 
 <div class="k-main" style="align-items: center;">
@@ -255,5 +255,5 @@
   };
   window.__WORK_WEEKDAYS__ = {{ (work_weekdays if work_weekdays is defined else [0,1,2,3,4])|tojson }};
 </script>
-<script src="/static/kiosk_time_off.js?v={{ static_v('kiosk_time_off.js') }}"></script>
+<script src="/static/timeclock_time_off.js?v={{ static_v('timeclock_time_off.js') }}"></script>
 {% endblock %}

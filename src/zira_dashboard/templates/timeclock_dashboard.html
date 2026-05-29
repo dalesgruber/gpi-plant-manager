@@ -1,4 +1,4 @@
-{% extends "kiosk_base.html" %}
+{% extends "timeclock_base.html" %}
 {% block title %}{{ person.name }} — Kiosk{% endblock %}
 {% block content %}
 <div class="k-header" style="position: relative;">
@@ -7,7 +7,7 @@
                transform: translate(-50%, -50%);
                font-size: 2.25rem; white-space: nowrap;
                pointer-events: none;">{{ person.name }}</span>
-  {% include "_kiosk_brand.html" %}
+  {% include "_timeclock_brand.html" %}
 </div>
 <div class="k-main" style="align-items: center; justify-content: flex-start; padding-top: 2rem;">
   {% if sync_warning %}

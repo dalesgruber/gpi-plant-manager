@@ -2,7 +2,7 @@
 
 Replaces StratusTime for clock-in/out and adds mid-shift work-center
 transfers. Punches write to Odoo `hr.attendance` (sole system of record
-for time-clock) and to a local `kiosk_punches_log` for offline tolerance
+for time-clock) and to a local `timeclock_punches_log` for offline tolerance
 and audit. The kiosk is designed for touch devices in fullscreen browser
 mode; the templates use big-touch / no-scroll layout.
 
@@ -27,13 +27,13 @@ from KIOSK_SESSION_SECRET; a fresh random one is generated each process
 boot if the env var is unset (all tokens then invalidate on restart,
 which is fine for a pilot).
 
-Sync model: every punch writes a row to `kiosk_punches_log` first, then
+Sync model: every punch writes a row to `timeclock_punches_log` first, then
 the success page is rendered immediately, then a FastAPI BackgroundTask
 fires the Odoo XML-RPC write off the request path. The user never waits
 on Odoo. On failure the row stays at synced_to_odoo=FALSE; the 60s sweep
 worker (in app.py) retries unsynced rows as a safety net.
 
-State reads on the dashboard come from `kiosk_punches_log` too, not
+State reads on the dashboard come from `timeclock_punches_log` too, not
 Odoo — `_current_state()` is a ~5ms local SELECT vs a ~200-500ms XML-RPC
 call. Local DB is safe as the source of truth so long as no one is
 punching via both the kiosk and StratusTime at the same time (revisit
@@ -53,7 +53,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, kiosk_sync, shift_config, staffing
+from .. import db, timeclock_sync, shift_config, staffing
 from ..deps import templates
 
 router = APIRouter()
@@ -165,7 +165,7 @@ def _person_by_id(person_id: int) -> dict | None:
 
 def _current_state(person_odoo_id: int) -> dict:
     """Return the kiosk's local view of an employee's current attendance
-    state. Sourced from kiosk_punches_log — no Odoo round trip on the
+    state. Sourced from timeclock_punches_log — no Odoo round trip on the
     read path (was ~200-500ms XML-RPC, now ~5ms local SELECT).
 
     The most recent punch row determines the state. If the last action
@@ -183,7 +183,7 @@ def _current_state(person_odoo_id: int) -> dict:
         "SELECT action, wc_name, "
         "COALESCE(rounded_at, occurred_at) AS occurred_at, "
         "odoo_attendance_id "
-        "FROM kiosk_punches_log WHERE person_odoo_id = %s "
+        "FROM timeclock_punches_log WHERE person_odoo_id = %s "
         "ORDER BY occurred_at DESC, id DESC LIMIT 1",
         (person_odoo_id,),
     )
@@ -222,7 +222,7 @@ def _sync_error_warning(person_odoo_id: int) -> dict | None:
     rows = db.query(
         "SELECT COUNT(*) AS n, MAX(sync_error) AS latest_error, "
         "MAX(occurred_at) AS latest_at "
-        "FROM kiosk_punches_log "
+        "FROM timeclock_punches_log "
         "WHERE person_odoo_id = %s "
         "AND synced_to_odoo = FALSE "
         "AND sync_error IS NOT NULL",
@@ -276,7 +276,7 @@ def _fmt_time(dt: datetime) -> str:
 def _open_log_row(
     person_odoo_id: int, action: str, wc_name: str | None
 ) -> tuple[int, datetime]:
-    """Insert a kiosk_punches_log row (synced=FALSE), compute the rounded
+    """Insert a timeclock_punches_log row (synced=FALSE), compute the rounded
     timestamp using current rounding settings, write it back to the row,
     and return (id, rounded_at). Both occurred_at (raw) and rounded_at
     are persisted; everything downstream reads COALESCE(rounded_at,
@@ -290,7 +290,7 @@ def _open_log_row(
     from .. import rounding, rounding_store
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO kiosk_punches_log "
+            "INSERT INTO timeclock_punches_log "
             "(person_odoo_id, action, wc_name) VALUES (%s, %s, %s) "
             "RETURNING id, occurred_at",
             (person_odoo_id, action, wc_name),
@@ -309,13 +309,13 @@ def _open_log_row(
             rounding_store.current(),
         )
         db.execute(
-            "UPDATE kiosk_punches_log SET rounded_at = %s WHERE id = %s",
+            "UPDATE timeclock_punches_log SET rounded_at = %s WHERE id = %s",
             (rounded, log_id),
         )
         return log_id, rounded
     except Exception:
         _log.exception(
-            "Rounding failed for kiosk_punches_log id=%s; leaving rounded_at NULL",
+            "Rounding failed for timeclock_punches_log id=%s; leaving rounded_at NULL",
             log_id,
         )
         return log_id, occurred_at
@@ -323,7 +323,7 @@ def _open_log_row(
 
 def _log_variance(person_odoo_id: int, scheduled: str | None, actual: str) -> None:
     db.execute(
-        "INSERT INTO kiosk_schedule_variances "
+        "INSERT INTO timeclock_schedule_variances "
         "(person_odoo_id, scheduled_wc_name, actual_wc_name) VALUES (%s, %s, %s)",
         (person_odoo_id, scheduled, actual),
     )
@@ -341,7 +341,7 @@ def _wc_list() -> list[dict]:
 # ---------- routes ----------
 
 @router.get("/timeclock", response_class=HTMLResponse)
-def kiosk_home(request: Request):
+def timeclock_home(request: Request):
     """Searchable employee list. JS filters as the user types; tapping a
     name navigates to the PIN screen."""
     rows = db.query(
@@ -350,7 +350,7 @@ def kiosk_home(request: Request):
         "ORDER BY lower(name)"
     )
     return templates.TemplateResponse(
-        request, "kiosk_home.html", {"people": rows}
+        request, "timeclock_home.html", {"people": rows}
     )
 
 
@@ -372,7 +372,7 @@ def kiosk_start(person_id: int):
 
 
 @router.get("/timeclock/dashboard/{token}", response_class=HTMLResponse)
-def kiosk_dashboard(request: Request, token: str):
+def timeclock_dashboard(request: Request, token: str):
     person_id = _verify_token(token)
     if person_id is None:
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -406,7 +406,7 @@ def kiosk_dashboard(request: Request, token: str):
 
     return templates.TemplateResponse(
         request,
-        "kiosk_dashboard.html",
+        "timeclock_dashboard.html",
         {
             "person": p,
             "token": fresh_token,
@@ -423,7 +423,7 @@ def kiosk_dashboard(request: Request, token: str):
 
 
 @router.get("/timeclock/pick-wc/{token}", response_class=HTMLResponse)
-def kiosk_pick_wc(
+def timeclock_pick_wc(
     request: Request,
     token: str,
     purpose: str = Query(default="transfer"),
@@ -445,7 +445,7 @@ def kiosk_pick_wc(
     fresh_token = _mint_token(person_id)
     return templates.TemplateResponse(
         request,
-        "kiosk_pick_wc.html",
+        "timeclock_pick_wc.html",
         {
             "person": p,
             "token": fresh_token,
@@ -480,12 +480,12 @@ def kiosk_clock_in(
     # background tasks in a threadpool, so the XML-RPC call doesn't block
     # the event loop. The 60s sweep worker remains a safety net for
     # transient failures.
-    background_tasks.add_task(kiosk_sync.sync_one_by_id, log_id)
+    background_tasks.add_task(timeclock_sync.sync_one_by_id, log_id)
     if scheduled_wc_name and scheduled_wc_name != wc_name:
         _log_variance(odoo_id, scheduled_wc_name, wc_name)
     return templates.TemplateResponse(
         request,
-        "kiosk_success.html",
+        "timeclock_success.html",
         {
             "person": p,
             "message": f"Clocked in to {wc_name}",
@@ -512,10 +512,10 @@ def kiosk_clock_out(
         return salaried
     odoo_id = p["odoo_id"]
     log_id, rounded_at = _open_log_row(odoo_id, "clock_out", None)
-    background_tasks.add_task(kiosk_sync.sync_one_by_id, log_id)
+    background_tasks.add_task(timeclock_sync.sync_one_by_id, log_id)
     return templates.TemplateResponse(
         request,
-        "kiosk_success.html",
+        "timeclock_success.html",
         {
             "person": p,
             "message": "Clocked out",
@@ -546,11 +546,11 @@ def kiosk_transfer(
     in_log, in_rounded = _open_log_row(odoo_id, "transfer_in", new_wc_name)
     # FastAPI runs BackgroundTasks in the order they're added, so
     # transfer_out always syncs before transfer_in.
-    background_tasks.add_task(kiosk_sync.sync_one_by_id, out_log)
-    background_tasks.add_task(kiosk_sync.sync_one_by_id, in_log)
+    background_tasks.add_task(timeclock_sync.sync_one_by_id, out_log)
+    background_tasks.add_task(timeclock_sync.sync_one_by_id, in_log)
     return templates.TemplateResponse(
         request,
-        "kiosk_success.html",
+        "timeclock_success.html",
         {
             "person": p,
             "message": f"Transferred to {new_wc_name}",

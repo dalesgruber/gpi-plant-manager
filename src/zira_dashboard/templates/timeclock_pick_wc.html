@@ -1,10 +1,10 @@
-{% extends "kiosk_base.html" %}
+{% extends "timeclock_base.html" %}
 {% block title %}Pick Work Center{% endblock %}
 {% block content %}
 <div class="k-header">
   <a href="/timeclock/dashboard/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>
   <span>{{ person.name }}</span>
-  {% include "_kiosk_brand.html" %}
+  {% include "_timeclock_brand.html" %}
 </div>
 <div class="k-main">
   <h1>

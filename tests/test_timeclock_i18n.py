@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from markupsafe import Markup
 
-from zira_dashboard import kiosk_i18n
+from zira_dashboard import timeclock_i18n
 
 
 class _Ctx(dict):
@@ -12,7 +12,7 @@ class _Ctx(dict):
 
 
 def _render(text, bilingual, **kw):
-    return kiosk_i18n.t(_Ctx(bilingual=bilingual), text, **kw)
+    return timeclock_i18n.t(_Ctx(bilingual=bilingual), text, **kw)
 
 
 def test_english_only_passthrough():
@@ -47,4 +47,4 @@ def test_substituted_value_is_escaped():
 
 
 def test_every_translation_value_is_nonempty():
-    assert all(v.strip() for v in kiosk_i18n.TRANSLATIONS.values())
+    assert all(v.strip() for v in timeclock_i18n.TRANSLATIONS.values())

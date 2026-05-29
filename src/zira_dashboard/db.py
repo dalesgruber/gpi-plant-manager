@@ -134,6 +134,33 @@ def bootstrap_schema() -> None:
 
 
 _SCHEMA_DDL = """
+-- 2026-05-29 migration: the "kiosk" app was renamed to "timeclock". Rename
+-- the existing prod tables + indexes IN PLACE (preserving punch history and
+-- schedule-variance data) BEFORE the CREATE TABLE IF NOT EXISTS statements
+-- below, so the app doesn't silently start writing to fresh empty tables.
+-- Guarded so fresh installs skip it and it's idempotent on every boot.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'kiosk_punches_log')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'timeclock_punches_log') THEN
+    ALTER TABLE kiosk_punches_log RENAME TO timeclock_punches_log;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'kiosk_schedule_variances')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = current_schema() AND table_name = 'timeclock_schedule_variances') THEN
+    ALTER TABLE kiosk_schedule_variances RENAME TO timeclock_schedule_variances;
+  END IF;
+  ALTER INDEX IF EXISTS idx_kiosk_punches_log_unsynced
+    RENAME TO idx_timeclock_punches_log_unsynced;
+  ALTER INDEX IF EXISTS idx_kiosk_punches_log_person
+    RENAME TO idx_timeclock_punches_log_person;
+  ALTER INDEX IF EXISTS idx_kiosk_schedule_variances_day
+    RENAME TO idx_timeclock_schedule_variances_day;
+END $$;
+
 -- 2026-05-26 migration: legacy "value stream" identifiers were renamed
 -- to "department" everywhere. This DO block does the one-time table +
 -- column rename on existing installs; fresh installs skip it (the
@@ -646,7 +673,7 @@ CREATE INDEX IF NOT EXISTS device_tokens_active_idx
 -- rows are written with synced_to_odoo=FALSE first, then flipped to TRUE
 -- once the Odoo write succeeds. The background sync worker reconciles
 -- rows still at FALSE every 60s.
-CREATE TABLE IF NOT EXISTS kiosk_punches_log (
+CREATE TABLE IF NOT EXISTS timeclock_punches_log (
   id                  BIGSERIAL PRIMARY KEY,
   person_odoo_id      INTEGER NOT NULL,
   action              TEXT NOT NULL CHECK (action IN ('clock_in','clock_out','transfer_out','transfer_in')),
@@ -657,16 +684,16 @@ CREATE TABLE IF NOT EXISTS kiosk_punches_log (
   sync_error          TEXT,
   synced_at           TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_kiosk_punches_log_unsynced
-  ON kiosk_punches_log (occurred_at) WHERE synced_to_odoo = FALSE;
-CREATE INDEX IF NOT EXISTS idx_kiosk_punches_log_person
-  ON kiosk_punches_log (person_odoo_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_timeclock_punches_log_unsynced
+  ON timeclock_punches_log (occurred_at) WHERE synced_to_odoo = FALSE;
+CREATE INDEX IF NOT EXISTS idx_timeclock_punches_log_person
+  ON timeclock_punches_log (person_odoo_id, occurred_at DESC);
 
 -- Variance log: every time an employee picks a WC different from what
 -- the scheduler said for today. reviewed_by/at let supervisors triage
 -- (Phase 1 UI). For Phase 0 (Dale-only), variances still get logged so
 -- we have data to design the review UI against.
-CREATE TABLE IF NOT EXISTS kiosk_schedule_variances (
+CREATE TABLE IF NOT EXISTS timeclock_schedule_variances (
   id                  BIGSERIAL PRIMARY KEY,
   person_odoo_id      INTEGER NOT NULL,
   scheduled_wc_name   TEXT,
@@ -675,8 +702,8 @@ CREATE TABLE IF NOT EXISTS kiosk_schedule_variances (
   reviewed_by         TEXT,
   reviewed_at         TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_kiosk_schedule_variances_day
-  ON kiosk_schedule_variances (occurred_at);
+CREATE INDEX IF NOT EXISTS idx_timeclock_schedule_variances_day
+  ON timeclock_schedule_variances (occurred_at);
 
 -- Rounding settings (2026-05-27): plant-wide timeclock punch rounding,
 -- modeled on StratusTime's "Round To Schedule" feature. Singleton row
@@ -695,8 +722,8 @@ INSERT INTO rounding_settings (id) VALUES (1) ON CONFLICT DO NOTHING;
 
 -- Store both raw and rounded timestamps so historical audit is preserved.
 -- Columns added separately (not in the CREATE TABLE above) because
--- kiosk_punches_log already exists in production.
-ALTER TABLE kiosk_punches_log
+-- timeclock_punches_log already exists in production.
+ALTER TABLE timeclock_punches_log
   ADD COLUMN IF NOT EXISTS rounded_at TIMESTAMPTZ;
 
 -- Time-off requests (2026-05-27): local mirror of Odoo hr.leave + sync state.
