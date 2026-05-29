@@ -20,23 +20,6 @@ def test_hidden_leave_type_ids_round_trip(monkeypatch):
     assert settings_store.get_hidden_leave_type_ids() == [3, 7, 11]
 
 
-def test_show_stratustime_overlay_defaults_true(monkeypatch):
-    monkeypatch.setattr(settings_store, "_read_raw", lambda k: None)
-    assert settings_store.get_show_stratustime_overlay() is True
-
-
-def test_show_stratustime_overlay_round_trip(monkeypatch):
-    storage = {}
-    monkeypatch.setattr(settings_store, "_read_raw",
-                        lambda k: storage.get(k))
-    monkeypatch.setattr(settings_store, "_write_raw",
-                        lambda k, v: storage.__setitem__(k, v))
-    settings_store.set_show_stratustime_overlay(False)
-    assert settings_store.get_show_stratustime_overlay() is False
-    settings_store.set_show_stratustime_overlay(True)
-    assert settings_store.get_show_stratustime_overlay() is True
-
-
 def test_default_shift_hours_default(monkeypatch):
     monkeypatch.setattr(settings_store, "_read_raw", lambda k: None)
     assert settings_store.get_default_shift_hours() == (6.0, 14.5)

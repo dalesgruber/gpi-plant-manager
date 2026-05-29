@@ -166,18 +166,6 @@ def set_hidden_leave_type_ids(ids: list[int]) -> None:
     _write_raw("time_off.hidden_leave_type_ids", [int(x) for x in ids])
 
 
-# show_stratustime_overlay -> bool (default True)
-def get_show_stratustime_overlay() -> bool:
-    v = _read_raw("time_off.show_stratustime_overlay")
-    if v is None:
-        return True
-    return bool(v)
-
-
-def set_show_stratustime_overlay(on: bool) -> None:
-    _write_raw("time_off.show_stratustime_overlay", bool(on))
-
-
 # default_shift_hours -> (start, end) tuple of floats
 def get_default_shift_hours() -> tuple[float, float]:
     v = _read_raw("time_off.default_shift_hours")

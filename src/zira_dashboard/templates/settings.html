@@ -509,8 +509,7 @@
     <h2>Time Off</h2>
     <p style="color:var(--muted);margin:0 0 0.8rem 0">
       Timeclock time-off requests + admin calendar. Writes to Odoo
-      <code>hr.leave</code>. Toggle the StratusTime overlay during
-      parallel run; turn it off once Odoo is the system of record.
+      <code>hr.leave</code>.
     </p>
 
     {% if time_off_settings and not time_off_settings.odoo_configured %}
@@ -573,19 +572,6 @@
       {% endif %}
       <div style="display:flex;gap:0.6rem;align-items:center">
         <button type="submit">Save hidden types</button>
-      </div>
-    </form>
-
-    <form method="post" action="/api/settings/time-off/overlay"
-          data-section="time_off_overlay" style="margin-top:1.6rem">
-      <h3 style="margin-top:0">StratusTime overlay</h3>
-      <label style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0 0.8rem 0">
-        <input type="checkbox" name="enabled" value="on"
-          {% if time_off_settings and time_off_settings.show_stratustime_overlay %}checked{% endif %}>
-        Show StratusTime overlay on the admin calendar
-      </label>
-      <div style="display:flex;gap:0.6rem;align-items:center">
-        <button type="submit">Save overlay</button>
       </div>
     </form>
 

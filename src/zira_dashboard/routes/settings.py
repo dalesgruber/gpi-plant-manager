@@ -153,7 +153,6 @@ def settings_page(
         time_off_settings = {
             "leave_types": leave_types,
             "hidden_ids": settings_store.get_hidden_leave_type_ids(),
-            "show_stratustime_overlay": settings_store.get_show_stratustime_overlay(),
             "odoo_configured": _odoo_configured(),
             "odoo_error": odoo_error,
             "odoo_error_class": odoo_error_class,
@@ -527,19 +526,6 @@ async def time_off_set_hidden_types(request: Request):
         except (TypeError, ValueError):
             continue
     settings_store.set_hidden_leave_type_ids(ids)
-    if _wants_json(request):
-        return JSONResponse({"ok": True})
-    return RedirectResponse(url="/settings?saved=1&section=time_off",
-                            status_code=303)
-
-
-@router.post("/api/settings/time-off/overlay")
-async def time_off_set_overlay(request: Request,
-                               enabled: str = Form(default="off")):
-    """Toggle the StratusTime overlay on the admin calendar. Checkbox
-    posts `enabled=on` when checked and omits the field entirely when
-    unchecked, which Form(default='off') turns into off."""
-    settings_store.set_show_stratustime_overlay(enabled == "on")
     if _wants_json(request):
         return JSONResponse({"ok": True})
     return RedirectResponse(url="/settings?saved=1&section=time_off",

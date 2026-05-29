@@ -1,16 +1,9 @@
 """Time-off calendar route: GET /staffing/time-off.
 
-Primary source is the local ``time_off_requests`` mirror (Odoo-sourced,
-state='validate'). During the parallel-run window with StratusTime, the
-admin can toggle a StratusTime overlay on via the Time Off setting; when
-on, those entries appear alongside Odoo entries with a fade + source
-badge so the admin can compare data side-by-side and spot drift.
-
-Source flag on each entry dict (``source = 'odoo' | 'stratustime'``) lets
-the template style each entry without re-querying. Odoo entries are the
-new privacy-safe shape (``name`` + ``label``); StratusTime entries keep
-their richer existing shape (``hours``, ``pay_type``, ``derived``, …) so
-the existing pill-rendering logic still works for them.
+Source is the local ``time_off_requests`` mirror (Odoo-sourced,
+state='validate') plus company-wide public holidays. Each entry dict
+carries a ``source`` flag (``'odoo' | 'holiday'``) and the privacy-safe
+shape (``name`` + ``label``) the template renders.
 """
 
 from __future__ import annotations
@@ -20,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
-from .. import _http_cache, settings_store, stratustime_client
+from .. import _http_cache
 from ..deps import templates
 from .timeclock_time_off import _approved_by_day
 
@@ -52,51 +45,6 @@ def _odoo_time_off_by_day(
         ]
         for d, entries in raw.items()
     }
-
-
-def _stratustime_overlay_by_day(
-    start_d: date, end_d: date,
-) -> dict[date, list[dict]]:
-    """Fetch StratusTime entries for the visible range and tag each
-    with ``source='stratustime'`` so the template can fade them and
-    add the badge.
-
-    Falls back to the per-day path on a bulk-fetch failure, just like
-    the pre-Odoo version did, so a transient StratusTime hiccup never
-    blanks the overlay outright."""
-    try:
-        raw = stratustime_client.time_off_entries_for_range(start_d, end_d)
-    except Exception:
-        raw = {}
-        cursor = start_d
-        while cursor <= end_d:
-            try:
-                raw[cursor] = stratustime_client.time_off_entries_for_day(cursor)
-            except Exception:
-                raw[cursor] = []
-            cursor += timedelta(days=1)
-    out: dict[date, list[dict]] = {}
-    for d, entries in raw.items():
-        out[d] = [{**e, "source": "stratustime"} for e in entries if isinstance(e, dict)]
-    return out
-
-
-def _time_off_by_day(start_d: date, end_d: date) -> dict[date, list[dict]]:
-    """Build the combined day->entries map.
-
-    Reads the local Odoo mirror first; if the StratusTime overlay
-    setting is on (default ``True`` during the pilot), merges
-    StratusTime entries on the same days. Entries from each source
-    are tagged via the ``source`` key so the template can distinguish
-    them without re-querying."""
-    odoo_map = _odoo_time_off_by_day(start_d, end_d)
-    if not settings_store.get_show_stratustime_overlay():
-        return odoo_map
-    st_map = _stratustime_overlay_by_day(start_d, end_d)
-    out: dict[date, list[dict]] = {}
-    for d in set(list(odoo_map.keys()) + list(st_map.keys())):
-        out[d] = list(odoo_map.get(d, [])) + list(st_map.get(d, []))
-    return out
 
 
 @router.get("/staffing/time-off", response_class=HTMLResponse)
@@ -152,7 +100,7 @@ def staffing_time_off(
         range_start = date(cursor.year, 1, 1)
         range_end = date(cursor.year, 12, 31)
 
-    off_map = _time_off_by_day(range_start, range_end)
+    off_map = _odoo_time_off_by_day(range_start, range_end)
 
     import calendar as _cal
     ctx: dict = {
@@ -160,7 +108,6 @@ def staffing_time_off(
         "scale": scale,
         "cursor_iso": cursor.isoformat(),
         "today_iso": today.isoformat(),
-        "show_stratustime_overlay": settings_store.get_show_stratustime_overlay(),
     }
 
     def _month_cells(year: int, month: int):
