@@ -53,7 +53,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, kiosk_sync, staffing
+from .. import db, kiosk_sync, shift_config, staffing
 from ..deps import templates
 
 router = APIRouter()
@@ -157,7 +157,7 @@ def _fmt_short_dt(dt: datetime) -> str:
     """Format as 'M/D h:MM AM/PM' (no leading zeros). Windows needs
     `%#` where POSIX uses `%-`."""
     fmt = "%#m/%#d %#I:%M %p" if os.name == "nt" else "%-m/%-d %-I:%M %p"
-    return dt.astimezone().strftime(fmt)
+    return dt.astimezone(shift_config.SITE_TZ).strftime(fmt)
 
 
 def _sync_error_warning(person_odoo_id: int) -> dict | None:
@@ -220,7 +220,7 @@ def _fmt_time(dt: datetime) -> str:
     """Format as 'H:MM AM/PM' (no leading zero on hour). The `%-I`
     directive doesn't work on Windows — use `%#I` there."""
     fmt = "%#I:%M %p" if os.name == "nt" else "%-I:%M %p"
-    return dt.astimezone().strftime(fmt)
+    return dt.astimezone(shift_config.SITE_TZ).strftime(fmt)
 
 
 def _open_log_row(
@@ -237,7 +237,7 @@ def _open_log_row(
     stays NULL and downstream falls back to occurred_at via COALESCE.
     Better to record the raw punch than lose it entirely.
     """
-    from .. import rounding, rounding_store, shift_config
+    from .. import rounding, rounding_store
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO kiosk_punches_log "
