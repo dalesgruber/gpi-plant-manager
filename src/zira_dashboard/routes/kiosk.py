@@ -296,7 +296,7 @@ def kiosk_home(request: Request):
     name navigates to the PIN screen."""
     rows = db.query(
         "SELECT id, name FROM people "
-        "WHERE active = TRUE AND NOT excluded "
+        "WHERE active = TRUE AND NOT excluded AND wage_type = 'hourly' "
         "ORDER BY lower(name)"
     )
     return templates.TemplateResponse(
