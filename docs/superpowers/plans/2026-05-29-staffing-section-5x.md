@@ -40,10 +40,28 @@ When a step says "Run … Expected: FAIL/PASS," run it in that test environment.
 - `src/zira_dashboard/_http_cache.py` — raise `_RESPONSE_CACHE_TODAY` TTL 15 → 60s.
 - `src/zira_dashboard/app.py` — add two background loops to the lifespan (`_warm_staffing_pages_loop`, `_warm_staffing_stable_loop`).
 - `src/zira_dashboard/staffing.py` — raise `_ROSTER_CACHE_TTL_SECONDS` 60 → 3600s.
-- `src/zira_dashboard/routes/skills.py` — response cache on GET `/staffing/skills` + invalidation on roster writes.
+- `src/zira_dashboard/routes/skills.py` — response cache on GET `/staffing/skills` + invalidation on roster writes (save/add/delete/refresh) **and the five saved-view CRUD handlers** — 9 sites total (see Addendum).
 - `src/zira_dashboard/routes/people.py` — response cache on GET `/staffing/people/{name}` + invalidation on the attendance-reason write.
-- `tests/test_http_cache.py`, `tests/test_staffing.py` (or nearest existing) — constant assertions.
+- `src/zira_dashboard/routes/trophies.py` — *(added in review)* `invalidate_all_cache()` on both award-override success paths (awards embed in cached player cards).
+- `src/zira_dashboard/routes/settings.py` — *(added in review)* `invalidate_today_cache()` on the roster-filter toggle.
+- `src/zira_dashboard/routes/admin.py` — *(added in review)* `invalidate_all_cache()` after `precompute-run` when rows changed.
+- `src/zira_dashboard/routes/leaderboards.py` — *(added in review)* `invalidate_all_cache()` on the three sort/active-toggle config writes.
+- `tests/test_http_cache.py`, `tests/test_staffing_roster_cache.py`, `tests/test_page_warmer.py`, `tests/test_skills_cache.py`, `tests/test_player_card_cache.py` — new/updated tests.
 - `CHANGELOG.md` — one entry per deploy (tier).
+
+---
+
+## Addendum — invalidation completeness (recorded post-implementation)
+
+Two-stage review during execution found that, once the day-view, leaderboards, skills matrix, and player cards all share the two `_http_cache` buckets, several **write paths the original tasks didn't enumerate** also change cached content and must invalidate. All are shipped:
+
+- **Skills saved-view CRUD** (`routes/skills.py`): `view_create`, `view_update`, `view_clear_default`, `view_delete`, `view_set_default` — the matrix embeds the saved-view list + default, so each calls `invalidate_today_cache()`. (Task 5's 4 → 9 invalidation sites.)
+- **Award overrides** (`routes/trophies.py`): both success paths of `POST /api/awards/override` call `invalidate_all_cache()` — `awards_earned_by(...)` is embedded in cached player cards (today + past buckets).
+- **Roster-filter toggle** (`routes/settings.py`): flipping a person's `excluded` flag changes who appears on the cached day-view/skills matrix → `invalidate_today_cache()`.
+- **Precompute-run** (`routes/admin.py`): rewriting past `production_daily` rows → `invalidate_all_cache()` when `rows_written > 0`, so corrected past leaderboards/cards refresh without waiting out the 5-min past TTL.
+- **Leaderboard config writes** (`routes/leaderboards.py`): sort-order + WC active/inactive toggles are global (non-range-scoped) display config → `invalidate_all_cache()`.
+
+Rule of thumb confirmed by review: **any write that changes content rendered on a now-cached page must invalidate** — `invalidate_today_cache()` for today-scoped data, `invalidate_all_cache()` for data that isn't range-scoped (awards, global display config, past-data corrections).
 
 ---
 
