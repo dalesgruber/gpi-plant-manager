@@ -501,6 +501,8 @@ async def roster_filter_toggle(request: Request):
         (excluded_raw, odoo_id),
     )
     staffing._invalidate_roster_cache()
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
 
 
