@@ -59,11 +59,36 @@ def test_entries_have_keys_the_template_reads(monkeypatch):
         "hour_to": 12.0, "state": "validate", "pay_type": "PTO",
     }])
     e = sto.time_off_entries_for_day(date(2026, 6, 1))[0]
-    for key in ("name", "hours", "pay_type", "time_range",
+    for key in ("name", "hours", "pay_type", "time_range", "timing_label",
                 "derived", "manual_absent", "pending"):
         assert key in e
     assert e["hours"] == 2.0
     assert e["time_range"] == "10:00am–12:00pm"
+
+
+def test_timing_label_is_type_free_per_shape(monkeypatch):
+    """The scheduler/Slack/print row shows a privacy-safe timing label, never
+    the leave type. Full-day rows show no timing text (name only); the three
+    partial shapes read 'arrives'/'leaves'/'gone' + time."""
+    _fake_db(monkeypatch, [
+        {"name": "Full", "shape": "full_day", "hour_from": None,
+         "hour_to": None, "state": "validate", "pay_type": "Paid Time Off"},
+        {"name": "Late", "shape": "late_arrival", "hour_from": 6.0,
+         "hour_to": 7.5, "state": "validate", "pay_type": "Birthday Pay"},
+        {"name": "Early", "shape": "early_leave", "hour_from": 14.0,
+         "hour_to": 15.0, "state": "validate", "pay_type": "Unpaid Time Off"},
+        {"name": "Gap", "shape": "midday_gap", "hour_from": 10.0,
+         "hour_to": 12.0, "state": "validate", "pay_type": "Sick"},
+    ])
+    labels = {e["name"]: e["timing_label"]
+              for e in sto.time_off_entries_for_day(date(2026, 6, 1))}
+    assert labels["Full"] == ""
+    assert labels["Late"] == "arrives 7:30am"
+    assert labels["Early"] == "leaves 2:00pm"
+    assert labels["Gap"] == "gone 10:00am–12:00pm"
+    # Crucially, no leave-type name leaks into any label.
+    for lt in ("Paid Time Off", "Birthday Pay", "Unpaid Time Off", "Sick"):
+        assert all(lt not in v for v in labels.values())
 
 
 def test_cleared_partial_is_filtered_out(monkeypatch):

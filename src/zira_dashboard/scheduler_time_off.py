@@ -31,6 +31,34 @@ def _fmt_hf(h: float) -> str:
     return f"{disp}:{mm:02d}{suffix}"
 
 
+def _timing_label(r: dict) -> str:
+    """Privacy-safe timing for a scheduler row — the leave *type* is
+    deliberately omitted (coworkers see that someone's out and when, not
+    why; the type can be sensitive). Full-day rows get no timing text at
+    all (the name alone in the Off-today list says it); the three partial
+    shapes read:
+
+      late_arrival -> "arrives 7:30am"        (arrival = hour_to)
+      early_leave  -> "leaves 2:00pm"          (leave   = hour_from)
+      midday_gap   -> "gone 10:00am–12:00pm"   (gap window)
+
+    Mirrors routes/timeclock_time_off._label_for (the Who's Out calendar),
+    minus its "full day" string.
+    """
+    shape = r["shape"]
+    if shape == "full_day":
+        return ""
+    hf = float(r["hour_from"] or 0)
+    ht = float(r["hour_to"] or 0)
+    if shape == "late_arrival":
+        return f"arrives {_fmt_hf(ht)}"
+    if shape == "early_leave":
+        return f"leaves {_fmt_hf(hf)}"
+    if shape == "midday_gap":
+        return f"gone {_fmt_hf(hf)}–{_fmt_hf(ht)}"
+    return ""
+
+
 def _rows_for_day(day: _date) -> list[dict]:
     return db.query(
         "SELECT p.name AS name, r.shape AS shape, "
@@ -82,6 +110,7 @@ def time_off_entries_for_day(day: _date) -> list[dict]:
             "hours": hours,
             "pay_type": r["pay_type"],
             "time_range": time_range,
+            "timing_label": _timing_label(r),
             "derived": False,
             "manual_absent": False,
             "pending": r["state"] != _APPROVED,

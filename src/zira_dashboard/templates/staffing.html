@@ -87,9 +87,9 @@
                work for Odoo entries too; cleared partials are already filtered
                out of time_off_entries upstream (scheduler_time_off). #}
             {% set is_clearable = is_partial %}
-            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}{% if e.pending %} pending{% endif %}"{% if e.pending %} style="opacity: 0.7;"{% endif %}{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.pay_type }} · off {{ e.time_range or (e.hours ~ 'h') }}"{% else %} title="{{ e.pay_type }}{% if is_partial %} · off {{ e.time_range or (e.hours ~ 'h') }}{% endif %}{% if e.pending %} · pending approval{% endif %}"{% endif %}>
+            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}{% if e.pending %} pending{% endif %}"{% if e.pending %} style="opacity: 0.7;"{% endif %}{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.timing_label }}"{% else %} title="{{ e.timing_label }}{% if e.pending %}{% if e.timing_label %} · {% endif %}pending approval{% endif %}"{% endif %}>
               <span class="name"><a href="/staffing/people/{{ e.name|urlencode }}" class="person-card-link" onclick="event.stopPropagation()">{{ e.name }}</a>{{ cert_badges(e.name, person_certs) }}{{ goat_badges(e.name, goat_holders()) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}{% if e.pending %} <span class="pending-tag" style="font-size: 0.7rem; font-weight: 600; color: #92400e; background: #fef3c7; border-radius: 0.25rem; padding: 0 0.3rem; margin-left: 0.25rem;">pending</span>{% endif %}</span>
-              <span class="ts-meta">{{ e.pay_type }}{% if is_partial %} · {% if e.time_range %}off {{ e.time_range }}{% else %}{{ e.hours }}h{% endif %}{% endif %}</span>
+              <span class="ts-meta">{{ e.timing_label }}</span>
             </li>
           {% endfor %}
         </ul>
