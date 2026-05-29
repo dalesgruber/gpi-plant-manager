@@ -2,14 +2,14 @@
 {% block title %}Pick Work Center{% endblock %}
 {% block content %}
 <div class="k-header">
-  <a href="/kiosk/dashboard/{{ token }}" class="k-back">‹ Back</a>
+  <a href="/kiosk/dashboard/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>
   <span>{{ person.name }}</span>
   {% include "_kiosk_brand.html" %}
 </div>
 <div class="k-main">
   <h1>
-    {% if purpose == 'clock_in' %}Pick where you're working
-    {% else %}Transfer to…
+    {% if purpose == 'clock_in' %}{{ t("Pick where you're working") }}
+    {% else %}{{ t("Transfer to…") }}
     {% endif %}
   </h1>
   <div style="
