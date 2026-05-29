@@ -218,6 +218,22 @@ def _prewarm_stratustime() -> None:
     threading.Thread(target=_warm, daemon=True, name="stratustime-prewarm").start()
 
 
+async def _warm_staffing_pages_loop():
+    """Keep today's hot staffing pages pre-rendered in the response cache
+    so the first human load — including the first after a Railway deploy —
+    is a warm <1ms hit instead of a ~1.9s cold render. Ticks every 45s
+    (matching the live_cache data-refresh cadence); the response cache TTL
+    is 60s so it never goes cold between ticks. The first iteration runs
+    immediately on boot, before the first sleep."""
+    from . import page_warmer
+    while True:
+        try:
+            await asyncio.to_thread(page_warmer.warm_once)
+        except Exception as e:  # noqa: BLE001 — warmer must never die
+            _log.warning("staffing page warmer tick failed: %s", e)
+        await asyncio.sleep(45)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialise the Postgres pool, start the Zira cache warmer,
@@ -239,6 +255,7 @@ async def lifespan(app: FastAPI):
     time_off_sync_task = asyncio.create_task(_time_off_sync_loop())
     time_off_poll_task = asyncio.create_task(_time_off_poll_loop())
     time_off_balance_task = asyncio.create_task(_time_off_balance_sweep_loop())
+    staffing_pages_task = asyncio.create_task(_warm_staffing_pages_loop())
     try:
         yield
     finally:
@@ -250,6 +267,7 @@ async def lifespan(app: FastAPI):
             time_off_sync_task,
             time_off_poll_task,
             time_off_balance_task,
+            staffing_pages_task,
         ):
             t.cancel()
             try:

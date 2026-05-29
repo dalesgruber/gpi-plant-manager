@@ -53,3 +53,14 @@ def test_warm_once_swallows_a_failing_handler(monkeypatch):
     from zira_dashboard import page_warmer
     page_warmer.warm_once()
     assert called == ["lb"]
+
+
+import asyncio
+
+
+def test_app_defines_staffing_pages_loop():
+    # Structural check: the lifespan loop exists and is a coroutine fn.
+    # conftest sets the test env so importing app is safe.
+    from zira_dashboard import app as app_module
+    assert hasattr(app_module, "_warm_staffing_pages_loop")
+    assert asyncio.iscoroutinefunction(app_module._warm_staffing_pages_loop)
