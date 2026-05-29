@@ -140,6 +140,7 @@ def time_off_landing(request: Request, token: str):
             # Salaried staff land here directly (no punch dashboard), so
             # their "Back" should exit to the home roster, not /dashboard.
             "time_off_only": _is_time_off_only(p),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -397,6 +398,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
             "shift_to": shift_to,
             "today_iso": _date.today().isoformat(),
             "work_weekdays": work_weekdays,
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -642,6 +644,7 @@ def request_submit(
                 "today_iso": _date.today().isoformat(),
                 "work_weekdays": sorted(schedule_store.current().work_weekdays),
                 "error": err,
+                "bilingual": bool(p.get("spanish_speaker")),
             },
             status_code=422,
         )
@@ -679,6 +682,7 @@ def request_submit(
             "shape": shape,
             "date_from": df.isoformat(),
             "date_to": dt.isoformat(),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -769,7 +773,7 @@ def mine_list(request: Request, token: str):
     return templates.TemplateResponse(
         request,
         "kiosk_time_off_mine.html",
-        {"person": p, "token": fresh, "requests": rows},
+        {"person": p, "token": fresh, "requests": rows, "bilingual": bool(p.get("spanish_speaker"))},
     )
 
 
@@ -801,7 +805,7 @@ def mine_detail(request: Request, token: str, rid: int):
     return templates.TemplateResponse(
         request,
         "kiosk_time_off_mine_detail.html",
-        {"person": p, "token": fresh, "request_row": row},
+        {"person": p, "token": fresh, "request_row": row, "bilingual": bool(p.get("spanish_speaker"))},
     )
 
 
@@ -959,6 +963,7 @@ def mine_edit(request: Request, token: str, rid: int):
             "work_weekdays": sorted(schedule_store.current().work_weekdays),
             "edit_mode": True,
             "edit_rid": rid,
+            "bilingual": bool(p.get("spanish_speaker")),
             "prefill": {
                 "holiday_status_id": row["holiday_status_id"],
                 "date_from": (
@@ -1076,6 +1081,7 @@ def mine_edit_submit(
                 "edit_mode": True,
                 "edit_rid": rid,
                 "error": err,
+                "bilingual": bool(p.get("spanish_speaker")),
             },
             status_code=422,
         )
@@ -1280,5 +1286,6 @@ def time_off_calendar(request: Request, token: str):
             "token": fresh,
             "heading": today.strftime("%B %Y"),
             "weeks": week_cells,
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )

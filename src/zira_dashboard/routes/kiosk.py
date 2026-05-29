@@ -397,6 +397,7 @@ def kiosk_dashboard(request: Request, token: str):
             "sync_warning": sync_warning,
             "time_off_enabled": time_off_on,
             "pending_time_off_count": pending_time_off,
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -431,6 +432,7 @@ def kiosk_pick_wc(
             "purpose": purpose,
             "scheduled": scheduled,
             "work_centers": _wc_list(),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -468,6 +470,7 @@ def kiosk_clock_in(
             "person": p,
             "message": f"Clocked in to {wc_name}",
             "time": _fmt_time(rounded_at),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -497,6 +500,7 @@ def kiosk_clock_out(
             "person": p,
             "message": "Clocked out",
             "time": _fmt_time(rounded_at),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
 
@@ -531,5 +535,6 @@ def kiosk_transfer(
             "person": p,
             "message": f"Transferred to {new_wc_name}",
             "time": _fmt_time(in_rounded),
+            "bilingual": bool(p.get("spanish_speaker")),
         },
     )
