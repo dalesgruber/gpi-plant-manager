@@ -43,10 +43,23 @@ def staffing_player_card(
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
 ):
-    from .. import production_history
+    from .. import production_history, _http_cache
     today = datetime.now(timezone.utc).date()
     end_d = date.fromisoformat(end) if end else today
     start_d = date.fromisoformat(start) if start else (end_d - timedelta(days=29))
+
+    # Response cache, keyed per person + range. A today-inclusive range goes
+    # in the 60s today bucket (busted by attribution/attendance/roster writes
+    # via invalidate_today_cache); a past-only range is immutable for the
+    # 5min past bucket (only the nightly precompute changes past attribution).
+    includes_today = end_d >= today
+    response_cache_key = ("player_card", name, start_d.isoformat(), end_d.isoformat())
+    cached_resp = _http_cache.get_cached_response(
+        response_cache_key, includes_today=includes_today
+    )
+    if cached_resp is not None:
+        return cached_resp
+
     range_out = production_history.attribution_range(start_d, end_d)
     person = range_out.get(name, {})
     rows = sorted(
@@ -122,7 +135,7 @@ def staffing_player_card(
     )
     from .. import awards
     awards_earned = awards.awards_earned_by(name, today)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "player_card.html",
         {
@@ -145,6 +158,11 @@ def staffing_player_card(
             "awards_earned": awards_earned,
         },
     )
+    _http_cache.set_cache_headers(response, includes_today=includes_today)
+    _http_cache.store_cached_response(
+        response_cache_key, includes_today=includes_today, response=response
+    )
+    return response
 
 
 @router.post("/api/staffing/people/{name}/attendance/reason")
@@ -170,4 +188,6 @@ async def update_attendance_reason(name: str, request: Request):
         f"UPDATE {table} SET reason = %s WHERE day = %s AND name = %s",
         (reason, d, name),
     )
+    from .. import _http_cache
+    _http_cache.invalidate_today_cache()
     return JSONResponse({"ok": True})
