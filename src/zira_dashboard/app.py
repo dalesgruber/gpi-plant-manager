@@ -27,7 +27,7 @@ from .routes import (
     changelog,
     dashboard,
     goat_watch,
-    kiosk,
+    timeclock,
     timeclock_time_off,
     late_report,
     leaderboards,
