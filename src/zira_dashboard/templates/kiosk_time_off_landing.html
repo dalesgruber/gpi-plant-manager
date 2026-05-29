@@ -19,27 +19,91 @@
     </div>
   {% endif %}
 
+  {# ===== Top — Request Time Off (shape picker) ===== #}
+  <div style="width: 100%; max-width: 960px; margin-top: 1rem;">
+    <h2 style="font-size: 1.5rem; font-weight: 700; color: #0f172a;
+               margin: 0 0 1rem 0;">Request Time Off</h2>
+
+    <div style="
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      width: 100%;">
+
+      {# Full Day(s) Off spans all 3 columns — the common case. #}
+      <a href="/kiosk/time-off/request/{{ token }}/details?shape=full_day"
+         class="k-btn"
+         style="grid-column: 1 / -1;
+                text-decoration: none;
+                padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+                display: flex; flex-direction: column; align-items: center;
+                justify-content: center; gap: 0.6rem; line-height: 1.2;
+                text-align: center;">
+        <span style="font-size: 1.6rem;">Full Day(s) Off</span>
+        <span style="font-size: 1rem; font-weight: 400; opacity: 0.9;">
+          Out for one or more whole days
+        </span>
+      </a>
+
+      {# Partial-day options, ordered chronologically:
+         arrive late (morning) → midday gap → leave early (afternoon). #}
+      <a href="/kiosk/time-off/request/{{ token }}/details?shape=late_arrival"
+         class="k-btn secondary"
+         style="text-decoration: none;
+                padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+                display: flex; flex-direction: column; align-items: center;
+                justify-content: center; gap: 0.6rem; line-height: 1.2;
+                text-align: center;">
+        <span style="font-size: 1.6rem;">Arriving Late</span>
+        <span style="font-size: 1rem; font-weight: 400; color: #64748b;">
+          Tell us what time you'll arrive
+        </span>
+      </a>
+
+      <a href="/kiosk/time-off/request/{{ token }}/details?shape=midday_gap"
+         class="k-btn secondary"
+         style="text-decoration: none;
+                padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+                display: flex; flex-direction: column; align-items: center;
+                justify-content: center; gap: 0.6rem; line-height: 1.2;
+                text-align: center;">
+        <span style="font-size: 1.6rem;">Out for Part of the Day</span>
+        <span style="font-size: 1rem; font-weight: 400; color: #64748b;">
+          Leave + return on the same day
+        </span>
+      </a>
+
+      <a href="/kiosk/time-off/request/{{ token }}/details?shape=early_leave"
+         class="k-btn secondary"
+         style="text-decoration: none;
+                padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+                display: flex; flex-direction: column; align-items: center;
+                justify-content: center; gap: 0.6rem; line-height: 1.2;
+                text-align: center;">
+        <span style="font-size: 1.6rem;">Leaving Early</span>
+        <span style="font-size: 1rem; font-weight: 400; color: #64748b;">
+          Tell us what time you'll leave
+        </span>
+      </a>
+    </div>
+  </div>
+
+  {# ===== Divider ===== #}
+  <hr style="width: 100%; max-width: 960px; border: none;
+             border-top: 1px solid #e2e8f0; margin: 2.5rem 0 2rem 0;">
+
+  {# ===== Bottom — My Requests + Who's Out ===== #}
   <div style="
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 1.5rem;
     width: 100%;
-    max-width: 960px;
-    margin-top: 2rem;">
-
-    <a href="/kiosk/time-off/request/{{ token }}"
-       class="k-btn"
-       style="text-decoration: none;
-              padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
-              display: flex; flex-direction: column; align-items: center;
-              justify-content: center; gap: 0.5rem; line-height: 1.2;">
-      <span>Request Time Off</span>
-    </a>
+    max-width: 960px;">
 
     <a href="/kiosk/time-off/mine/{{ token }}"
        class="k-btn secondary"
        style="text-decoration: none;
-              padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+              padding: 2rem 1.5rem; min-height: 140px; min-width: unset;
               display: flex; flex-direction: column; align-items: center;
               justify-content: center; gap: 0.5rem; line-height: 1.2;
               position: relative;">
@@ -58,7 +122,7 @@
     <a href="/kiosk/time-off/calendar/{{ token }}"
        class="k-btn secondary"
        style="text-decoration: none;
-              padding: 2rem 1.5rem; min-height: 160px; min-width: unset;
+              padding: 2rem 1.5rem; min-height: 140px; min-width: unset;
               display: flex; flex-direction: column; align-items: center;
               justify-content: center; gap: 0.5rem; line-height: 1.2;">
       <span>Who's Out</span>

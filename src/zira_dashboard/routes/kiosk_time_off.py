@@ -20,8 +20,8 @@ dashboard for stuck punches — so an employee whose request hasn't made
 it to Odoo isn't left wondering why HR hasn't seen it.
 
 Routes:
-  GET  /kiosk/time-off/{token}                              Landing with 3 buttons
-  GET  /kiosk/time-off/request/{token}                      Wizard step 1 — shape picker
+  GET  /kiosk/time-off/{token}                              Landing — shape picker + My Requests + Who's Out
+  GET  /kiosk/time-off/request/{token}                      Legacy — redirects to landing
   GET  /kiosk/time-off/request/{token}/details?shape=…      Wizard step 2 — details form
   POST /kiosk/time-off/request/{token}/submit               Wizard step 3 — submit + queue sync
   GET  /kiosk/time-off/mine/{token}                         My Requests list
@@ -101,8 +101,9 @@ def _sync_error_warning(person_odoo_id: int) -> dict | None:
 
 @router.get("/kiosk/time-off/{token}", response_class=HTMLResponse)
 def time_off_landing(request: Request, token: str):
-    """Landing page with three big-touch actions: Request Time Off,
-    My Requests, Who's Out. Same HMAC gate as the rest of /kiosk — an
+    """Landing page: the time-off-shape picker (Full Day + three
+    partial-day cards) up top, then My Requests and Who's Out below a
+    divider. Same HMAC gate as the rest of /kiosk — an
     invalid or expired token bounces to /kiosk so a stale URL on a shared
     device never lets the next user act as the previous one.
 
@@ -137,12 +138,10 @@ def time_off_landing(request: Request, token: str):
 
 @router.get("/kiosk/time-off/request/{token}", response_class=HTMLResponse)
 def request_shape(request: Request, token: str):
-    """Wizard step 1 — four big-touch cards that each link to step 2
-    with a `shape=` query param. Same HMAC gate as the landing; invalid
-    token bounces to /kiosk.
-
-    Mints a fresh token before render so the user has the full TTL to
-    pick a shape; the next page picks up that token and mints again.
+    """Legacy shape-picker route. The shape cards now live on the landing
+    page (`kiosk_time_off_landing.html`), so this just redirects there —
+    kept so old bookmarks and the wizard's bad-input fallbacks still land
+    somewhere sensible. Same HMAC gate; invalid token bounces to /kiosk.
     """
     person_id = _verify_token(token)
     if person_id is None:
@@ -150,11 +149,9 @@ def request_shape(request: Request, token: str):
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/kiosk", status_code=303)
-    fresh = _mint_token(person_id)
-    return templates.TemplateResponse(
-        request,
-        "kiosk_time_off_request_shape.html",
-        {"person": p, "token": fresh},
+    return RedirectResponse(
+        url=f"/kiosk/time-off/{_mint_token(person_id)}",
+        status_code=303,
     )
 
 
@@ -352,7 +349,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
         return RedirectResponse(url="/kiosk", status_code=303)
     if shape not in _VALID_SHAPES:
         return RedirectResponse(
-            url=f"/kiosk/time-off/request/{_mint_token(person_id)}",
+            url=f"/kiosk/time-off/{_mint_token(person_id)}",
             status_code=303,
         )
     fresh = _mint_token(person_id)
@@ -585,7 +582,7 @@ def request_submit(
         return RedirectResponse(url="/kiosk", status_code=303)
     if shape not in _VALID_SHAPES:
         return RedirectResponse(
-            url=f"/kiosk/time-off/request/{_mint_token(person_id)}",
+            url=f"/kiosk/time-off/{_mint_token(person_id)}",
             status_code=303,
         )
     try:
@@ -593,7 +590,7 @@ def request_submit(
         dt = _date.fromisoformat(date_to)
     except ValueError:
         return RedirectResponse(
-            url=f"/kiosk/time-off/request/{_mint_token(person_id)}",
+            url=f"/kiosk/time-off/{_mint_token(person_id)}",
             status_code=303,
         )
     # Swap on accidental inverted range — friendlier than rejecting it.
