@@ -467,7 +467,10 @@ def fetch_leaves_for_range(start_d, end_d) -> list[dict]:
             "date_from", "date_to",
             "request_date_from", "request_date_to",
             "request_hour_from", "request_hour_to", "request_unit_hours",
-            "number_of_days", "number_of_hours_display", "name",
+            # Odoo 19 renamed hr.leave.number_of_hours_display -> number_of_hours
+            # (the _display variant was dropped from hr.leave; it survives on
+            # hr.leave.allocation — see fetch_balances_for).
+            "number_of_days", "number_of_hours", "name",
         ],
     )
 
@@ -536,6 +539,10 @@ def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
     matching unit (days_display vs hours_display from Odoo).
     """
     types = fetch_leave_types()
+    # NOTE on field-name asymmetry (Odoo 19): hr.leave.allocation still
+    # exposes the *_display duration fields, but hr.leave dropped
+    # number_of_hours_display in favor of number_of_hours. So the allocation
+    # query keeps _display while the leave query uses number_of_hours.
     allocations = execute(
         "hr.leave.allocation", "search_read",
         [("employee_id", "=", employee_odoo_id),
@@ -548,7 +555,7 @@ def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
         [("employee_id", "=", employee_odoo_id),
          ("state", "in", list(_LEAVE_STATES_OPEN))],
         fields=["holiday_status_id", "state",
-                "number_of_days", "number_of_hours_display"],
+                "number_of_days", "number_of_hours"],
     )
 
     def _hsid(row: dict) -> int:
@@ -560,9 +567,11 @@ def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
     for t in types:
         tid = t["id"]
         unit = "hours" if t["request_unit"] == "hour" else "days"
+        # Allocations keep the _display field name; leaves use number_of_hours
+        # (Odoo 19 — see the search_read field lists above).
         alloc_field = ("number_of_hours_display" if unit == "hours"
                        else "number_of_days_display")
-        leave_field = ("number_of_hours_display" if unit == "hours"
+        leave_field = ("number_of_hours" if unit == "hours"
                        else "number_of_days")
         alloc = 0.0
         for a in allocations:

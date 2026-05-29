@@ -60,6 +60,46 @@ def test_fetch_leave_types_normalizes_boolean_requires_allocation(monkeypatch):
     assert all(t["requires_allocation"] in ("yes", "no") for t in types)
 
 
+def test_fetch_balances_for_uses_number_of_hours_on_hr_leave(monkeypatch):
+    """Odoo 19 dropped hr.leave.number_of_hours_display in favor of
+    number_of_hours (the _display variant survives only on
+    hr.leave.allocation). fetch_balances_for must query number_of_hours on
+    hr.leave or the whole call throws and the balance cache goes empty
+    (kiosk shows "Available: —")."""
+    odoo_client._leave_types_cache = None
+    responses = {
+        ("hr.leave.type", "search_read"): [
+            {"id": 1, "name": "Paid Time Off", "request_unit": "day",
+             "requires_allocation": True, "color": 2, "active": True},
+        ],
+        ("hr.leave.allocation", "search_read"): [
+            {"holiday_status_id": [1, "Paid Time Off"],
+             "number_of_days_display": 10.0, "number_of_hours_display": 80.0},
+        ],
+        ("hr.leave", "search_read"): [
+            {"holiday_status_id": [1, "Paid Time Off"], "state": "validate",
+             "number_of_days": 2.0, "number_of_hours": 16.0},
+        ],
+    }
+    calls = _stub_execute(monkeypatch, responses)
+    out = odoo_client.fetch_balances_for(3)
+
+    leave_call = next(c for c in calls
+                      if c[0] == "hr.leave" and c[1] == "search_read")
+    leave_fields = leave_call[3].get("fields", [])
+    assert "number_of_hours" in leave_fields
+    assert "number_of_hours_display" not in leave_fields
+    # Allocation query still uses the _display field name (Odoo 19 kept it).
+    alloc_call = next(c for c in calls
+                      if c[0] == "hr.leave.allocation" and c[1] == "search_read")
+    assert "number_of_hours_display" in alloc_call[3].get("fields", [])
+
+    pto = next(b for b in out if b["holiday_status_id"] == 1)
+    assert pto["allocated_total"] == 10.0
+    assert pto["taken"] == 2.0
+    assert pto["available"] == 8.0  # 10 allocated - 2 taken (day unit)
+
+
 def test_fetch_leave_types_uses_cache_within_ttl(monkeypatch):
     odoo_client._leave_types_cache = None
     responses = {
