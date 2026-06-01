@@ -309,6 +309,59 @@ def _refresh_and_load_balances(person_odoo_id: int) -> list[dict]:
     return time_off_balances.get_for_employee(person_odoo_id)
 
 
+def _details_context(
+    p: dict,
+    token: str,
+    shape: str,
+    *,
+    balances: list[dict] | None = None,
+    shift_from: float | None = None,
+    shift_to: float | None = None,
+) -> dict:
+    """Build the shared render context for the request-details wizard.
+
+    Used by the GET form, both submit/edit time-validation re-renders, and
+    the overlap-conflict re-render so the context is defined in one place.
+    Callers layer on ``error`` / ``conflict`` / ``edit_mode`` / ``edit_rid`` /
+    ``prefill`` afterward.
+
+    ``balances``   pass pre-loaded balances (the GET path refreshes from Odoo
+                   first); when None, loads the cached balances.
+    ``shift_from`` / ``shift_to``  pass when the caller already computed the
+                   shift window (the time-error paths); when None, computed
+                   here from the employee's shift.
+    """
+    odoo_id = p["odoo_id"]
+    if shift_from is None or shift_to is None:
+        shift_from, shift_to = _shift_window_for(odoo_id)
+    if balances is None:
+        balances = time_off_balances.get_for_employee(odoo_id)
+    types = _fetch_visible_leave_types(shape)
+    balances_by_type = {
+        b["holiday_status_id"]: {
+            "unit": b["unit"],
+            "available": float(b["available"]),
+            "available_practical": float(b["available_practical"]),
+            "pending": float(b["pending"]),
+        }
+        for b in balances
+    }
+    partial_day_type = types[0] if (shape != "full_day" and types) else None
+    return {
+        "person": p,
+        "token": token,
+        "shape": shape,
+        "leave_types": types,
+        "partial_day_type": partial_day_type,
+        "balances_by_type": balances_by_type,
+        "shift_from": shift_from,
+        "shift_to": shift_to,
+        "today_iso": _date.today().isoformat(),
+        "work_weekdays": sorted(schedule_store.current().work_weekdays),
+        "bilingual": bool(p.get("spanish_speaker")),
+    }
+
+
 def _shift_window_for(person_odoo_id: int) -> tuple[float, float]:
     """Return (hour_from, hour_to) for the employee's shift.
 
@@ -362,44 +415,10 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
             status_code=303,
         )
     fresh = _mint_token(person_id)
-    types = _fetch_visible_leave_types(shape)
     balances = _refresh_and_load_balances(p["odoo_id"])
-    # Cast numeric Decimals to floats so the JSON-embedded JS payload
-    # in the template gets plain numbers instead of "Decimal('15.00')"
-    # repr (Jinja's `{{ x }}` would print the Decimal verbatim).
-    balances_by_type = {
-        b["holiday_status_id"]: {
-            "unit": b["unit"],
-            "available": float(b["available"]),
-            "available_practical": float(b["available_practical"]),
-            "pending": float(b["pending"]),
-        }
-        for b in balances
-    }
-    shift_from, shift_to = _shift_window_for(p["odoo_id"])
-    # For partial-day shapes, the type is fixed (always the unpaid
-    # hour-unit type — typically "Custom Hours" in Odoo). The user
-    # doesn't pick; we send the first available hour-unit type id
-    # automatically. `types` is already filtered to hour-unit-only
-    # for those shapes by `_fetch_visible_leave_types`.
-    partial_day_type = types[0] if (shape != "full_day" and types) else None
-    work_weekdays = sorted(schedule_store.current().work_weekdays)
+    ctx = _details_context(p, fresh, shape, balances=balances)
     return templates.TemplateResponse(
-        request,
-        "timeclock_time_off_request_details.html",
-        {
-            "person": p,
-            "token": fresh,
-            "shape": shape,
-            "leave_types": types,
-            "partial_day_type": partial_day_type,
-            "balances_by_type": balances_by_type,
-            "shift_from": shift_from,
-            "shift_to": shift_to,
-            "today_iso": _date.today().isoformat(),
-            "work_weekdays": work_weekdays,
-            "bilingual": bool(p.get("spanish_speaker")),
-        },
+        request, "timeclock_time_off_request_details.html", ctx,
     )
 
 
@@ -618,40 +637,15 @@ def request_submit(
         shape, time_a, time_b, shift_from, shift_to,
     )
     if err:
-        # Re-render the details form with the error in the existing
-        # k-error banner. balances_by_type matches the shape that
-        # `request_details` builds so the form's JS payload stays valid.
-        balances = time_off_balances.get_for_employee(p["odoo_id"])
-        balances_by_type = {
-            b["holiday_status_id"]: {
-                "unit": b["unit"],
-                "available": float(b["available"]),
-                "available_practical": float(b["available_practical"]),
-                "pending": float(b["pending"]),
-            }
-            for b in balances
-        }
-        rerender_types = _fetch_visible_leave_types(shape)
-        rerender_partial = (
-            rerender_types[0] if (shape != "full_day" and rerender_types) else None
+        # Re-render the details form with the error in the existing k-error
+        # banner, reusing the shift window already computed above.
+        ctx = _details_context(
+            p, _mint_token(person_id), shape,
+            shift_from=shift_from, shift_to=shift_to,
         )
+        ctx["error"] = err
         return templates.TemplateResponse(
-            request,
-            "timeclock_time_off_request_details.html",
-            {
-                "person": p,
-                "token": _mint_token(person_id),
-                "shape": shape,
-                "leave_types": rerender_types,
-                "partial_day_type": rerender_partial,
-                "balances_by_type": balances_by_type,
-                "shift_from": shift_from,
-                "shift_to": shift_to,
-                "today_iso": _date.today().isoformat(),
-                "work_weekdays": sorted(schedule_store.current().work_weekdays),
-                "error": err,
-                "bilingual": bool(p.get("spanish_speaker")),
-            },
+            request, "timeclock_time_off_request_details.html", ctx,
             status_code=422,
         )
 
@@ -935,60 +929,26 @@ def mine_edit(request: Request, token: str, rid: int):
             status_code=303,
         )
     fresh = _mint_token(person_id)
-    types = _fetch_visible_leave_types(row["shape"])
     balances = _refresh_and_load_balances(p["odoo_id"])
-    # Cast Decimals to floats so the JSON-embedded JS payload in the
-    # template gets plain numbers, matching the new-request branch.
-    balances_by_type = {
-        b["holiday_status_id"]: {
-            "unit": b["unit"],
-            "available": float(b["available"]),
-            "available_practical": float(b["available_practical"]),
-            "pending": float(b["pending"]),
-        }
-        for b in balances
-    }
-    shift_from, shift_to = _shift_window_for(p["odoo_id"])
-    partial_day_type = (
-        types[0] if (row["shape"] != "full_day" and types) else None
-    )
-
-    return templates.TemplateResponse(
-        request,
-        "timeclock_time_off_request_details.html",
-        {
-            "person": p,
-            "token": fresh,
-            "shape": row["shape"],
-            "leave_types": types,
-            "partial_day_type": partial_day_type,
-            "balances_by_type": balances_by_type,
-            "shift_from": shift_from,
-            "shift_to": shift_to,
-            "today_iso": _date.today().isoformat(),
-            "work_weekdays": sorted(schedule_store.current().work_weekdays),
-            "edit_mode": True,
-            "edit_rid": rid,
-            "bilingual": bool(p.get("spanish_speaker")),
-            "prefill": {
-                "holiday_status_id": row["holiday_status_id"],
-                "date_from": (
-                    row["date_from"].isoformat() if row["date_from"] else ""
-                ),
-                "date_to": (
-                    row["date_to"].isoformat() if row["date_to"] else ""
-                ),
-                "hour_from": (
-                    float(row["hour_from"])
-                    if row["hour_from"] is not None else None
-                ),
-                "hour_to": (
-                    float(row["hour_to"])
-                    if row["hour_to"] is not None else None
-                ),
-                "note": row["note"] or "",
-            },
+    ctx = _details_context(p, fresh, row["shape"], balances=balances)
+    ctx.update({
+        "edit_mode": True,
+        "edit_rid": rid,
+        "prefill": {
+            "holiday_status_id": row["holiday_status_id"],
+            "date_from": row["date_from"].isoformat() if row["date_from"] else "",
+            "date_to": row["date_to"].isoformat() if row["date_to"] else "",
+            "hour_from": (
+                float(row["hour_from"]) if row["hour_from"] is not None else None
+            ),
+            "hour_to": (
+                float(row["hour_to"]) if row["hour_to"] is not None else None
+            ),
+            "note": row["note"] or "",
         },
+    })
+    return templates.TemplateResponse(
+        request, "timeclock_time_off_request_details.html", ctx,
     )
 
 
@@ -1055,43 +1015,13 @@ def mine_edit_submit(
         shape, time_a, time_b, shift_from, shift_to,
     )
     if err:
-        # Re-render the form in edit mode with the error so the user can
-        # fix it without bouncing back to the detail page and losing
-        # their inputs. balances_by_type matches the shape that the GET
-        # branch builds so the form's JS payload stays valid.
-        types = _fetch_visible_leave_types(shape)
-        balances = _refresh_and_load_balances(p["odoo_id"])
-        balances_by_type = {
-            b["holiday_status_id"]: {
-                "unit": b["unit"],
-                "available": float(b["available"]),
-                "available_practical": float(b["available_practical"]),
-                "pending": float(b["pending"]),
-            }
-            for b in balances
-        }
-        partial_day_type = (
-            types[0] if (shape != "full_day" and types) else None
+        ctx = _details_context(
+            p, _mint_token(person_id), shape,
+            shift_from=shift_from, shift_to=shift_to,
         )
+        ctx.update({"edit_mode": True, "edit_rid": rid, "error": err})
         return templates.TemplateResponse(
-            request,
-            "timeclock_time_off_request_details.html",
-            {
-                "person": p,
-                "token": _mint_token(person_id),
-                "shape": shape,
-                "leave_types": types,
-                "partial_day_type": partial_day_type,
-                "balances_by_type": balances_by_type,
-                "shift_from": shift_from,
-                "shift_to": shift_to,
-                "today_iso": _date.today().isoformat(),
-                "work_weekdays": sorted(schedule_store.current().work_weekdays),
-                "edit_mode": True,
-                "edit_rid": rid,
-                "error": err,
-                "bilingual": bool(p.get("spanish_speaker")),
-            },
+            request, "timeclock_time_off_request_details.html", ctx,
             status_code=422,
         )
 
