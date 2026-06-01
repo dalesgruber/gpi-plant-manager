@@ -135,6 +135,7 @@ def test_roster_filter_lists_queries_active_and_splits(monkeypatch):
 
     assert "active" in captured["sql"].lower()
     assert "where odoo_id is not null" in captured["sql"].lower()
+    assert "order by lower(name)" in captured["sql"].lower()
     assert [r["name"] for r in active] == ["Ana"]
     assert [r["name"] for r in inactive] == ["Zed"]
 
