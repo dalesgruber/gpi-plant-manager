@@ -60,19 +60,32 @@ def in_shift(local_dt: datetime) -> bool:
     return True
 
 
-def _published_custom_hours(day: date) -> dict | None:
-    """Return the per-day custom_hours override ONLY when the day's
-    schedule is published. Drafts (and days with no schedule row at all)
-    return None so callers fall back to the settings defaults.
+SATURDAY = 5  # date.weekday(): Monday=0 .. Sunday=6
 
-    Lazy import to avoid the shift_config → staffing → schedule_store cycle.
+
+def _custom_hours(day: date, *, published_only: bool) -> dict | None:
+    """The per-day custom_hours dict for `day`, or None.
+
+    published_only=True (dashboards + punch path): only a PUBLISHED day's
+    override applies — the long-standing rule that keeps drafts out of live
+    metrics. published_only=False (the scheduler's own editor): the
+    configured override applies whether or not it's published, so the Hours
+    pill shows what will apply once published.
+
+    Lazy import to avoid the shift_config -> staffing -> schedule_store cycle.
     """
     from . import staffing
     sched = staffing.load_schedule(day)
-    if not getattr(sched, "published", False):
+    if published_only and not getattr(sched, "published", False):
         return None
     ch = sched.custom_hours
     return ch if isinstance(ch, dict) else None
+
+
+def _saturday_default():
+    """The plant Saturday default schedule (cached singleton)."""
+    from . import saturday_schedule_store
+    return saturday_schedule_store.current()
 
 
 def is_workday(day: date) -> bool:
@@ -100,41 +113,51 @@ def is_workday(day: date) -> bool:
         return False
 
 
-def shift_start_for(day: date) -> time:
-    """Return the shift start for `day`, honoring per-day custom_hours
-    set on the PUBLISHED schedule for that day. Falls back to the global
-    settings default when no schedule is published yet (or when the
-    published schedule has no `start` override)."""
-    ch = _published_custom_hours(day)
+def _use_saturday_default(day: date, *, published_only: bool) -> bool:
+    """Whether `day` resolves from the Saturday default (vs the weekday
+    global schedule), assuming no per-day override applies.
+
+    Gated callers (dashboards, punch path) use it only when the Saturday is
+    actually being worked — is_workday(day), which for a non-work weekday
+    means a published schedule exists. So an unpublished Saturday behaves
+    exactly as today (weekday global), staying inert. The scheduler's
+    configured view always shows the Saturday default on a Saturday, so a
+    fresh Saturday pre-fills 6a-12p before anything is published.
+    """
+    if day.weekday() != SATURDAY:
+        return False
+    if not published_only:
+        return True
+    return is_workday(day)
+
+
+def _resolve_start(day: date, *, published_only: bool) -> time:
+    ch = _custom_hours(day, published_only=published_only)
     if ch and isinstance(ch.get("start"), str):
         try:
             return time.fromisoformat(ch["start"])
         except ValueError:
             pass
+    if _use_saturday_default(day, published_only=published_only):
+        return _saturday_default().shift_start
     return shift_start()
 
 
-def shift_end_for(day: date) -> time:
-    ch = _published_custom_hours(day)
+def _resolve_end(day: date, *, published_only: bool) -> time:
+    ch = _custom_hours(day, published_only=published_only)
     if ch and isinstance(ch.get("end"), str):
         try:
             return time.fromisoformat(ch["end"])
         except ValueError:
             pass
+    if _use_saturday_default(day, published_only=published_only):
+        return _saturday_default().shift_end
     return shift_end()
 
 
-def breaks_for(day: date) -> tuple:
-    """Return the breaks tuple for `day`, honoring per-day custom_hours
-    on the PUBLISHED schedule.
-
-    A published custom_hours with an empty `breaks` list means "no breaks
-    today" — not "fall back to global." Only when the day is unpublished
-    OR the published custom_hours omits the breaks key do we use the
-    global break list.
-    """
+def _resolve_breaks(day: date, *, published_only: bool) -> tuple:
     from .schedule_store import Break
-    ch = _published_custom_hours(day)
+    ch = _custom_hours(day, published_only=published_only)
     if ch and isinstance(ch.get("breaks"), list):
         out = []
         for b in ch["breaks"]:
@@ -148,7 +171,51 @@ def breaks_for(day: date) -> tuple:
             name = str(b.get("name") or "Break")
             out.append(Break(bs, be, name))
         return tuple(out)
+    if _use_saturday_default(day, published_only=published_only):
+        return _saturday_default().breaks
     return breaks()
+
+
+def shift_start_for(day: date) -> time:
+    """Shift start for `day` (gated): published per-day custom_hours, else the
+    Saturday default on a worked Saturday, else the weekday global schedule."""
+    return _resolve_start(day, published_only=True)
+
+
+def shift_end_for(day: date) -> time:
+    return _resolve_end(day, published_only=True)
+
+
+def breaks_for(day: date) -> tuple:
+    """Breaks for `day` (gated). A per-day custom_hours `breaks` list — even
+    empty (= 'no breaks today') — wins; otherwise the Saturday default on a
+    worked Saturday, else the weekday global breaks."""
+    return _resolve_breaks(day, published_only=True)
+
+
+def configured_shift_start_for(day: date) -> time:
+    """Ungated twin for the scheduler editor: a per-day override applies even
+    on a draft; a Saturday with no override shows the Saturday default."""
+    return _resolve_start(day, published_only=False)
+
+
+def configured_shift_end_for(day: date) -> time:
+    return _resolve_end(day, published_only=False)
+
+
+def configured_breaks_for(day: date) -> tuple:
+    return _resolve_breaks(day, published_only=False)
+
+
+def scheduler_hours_source(day: date, has_per_day_override: bool) -> str:
+    """Which hours the scheduler is showing for `day`: 'custom' (a per-day
+    override exists), 'saturday_default' (a Saturday with no override), or
+    'weekday_default'. Drives the Hours-pill styling + banner."""
+    if has_per_day_override:
+        return "custom"
+    if day.weekday() == SATURDAY:
+        return "saturday_default"
+    return "weekday_default"
 
 
 def productive_minutes_for(day: date) -> int:

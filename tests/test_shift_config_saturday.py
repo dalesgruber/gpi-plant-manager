@@ -1,0 +1,107 @@
+"""Saturday-default resolution in shift_config. Fully stubbed — no DB."""
+from datetime import date, datetime, time
+import pytest
+from zira_dashboard import shift_config, staffing, schedule_store, saturday_schedule_store
+from zira_dashboard.saturday_schedule_store import SaturdaySchedule
+from zira_dashboard.schedule_store import Break
+from zira_dashboard.shift_config import SITE_TZ
+
+SAT = date(2026, 5, 16)   # Saturday (weekday 5)
+TUE = date(2026, 5, 19)   # Tuesday (weekday 1)
+
+SAT_DEFAULT = SaturdaySchedule(
+    time(6, 0), time(12, 0),
+    (Break(time(8, 0), time(8, 15), "Morning break"),
+     Break(time(10, 0), time(10, 30), "Lunch")),
+)
+WEEKDAY = schedule_store.Schedule(
+    time(7, 0), time(15, 30), frozenset({0, 1, 2, 3, 4}),
+    (Break(time(9, 0), time(9, 15), "AM"), Break(time(11, 0), time(11, 30), "Lunch")),
+)
+
+
+@pytest.fixture(autouse=True)
+def _stub(monkeypatch):
+    # No DB: stub both stores and the work-week.
+    monkeypatch.setattr(saturday_schedule_store, "current", lambda: SAT_DEFAULT)
+    monkeypatch.setattr(schedule_store, "current", lambda: WEEKDAY)
+
+
+def _load(published, custom=None):
+    return lambda d: staffing.Schedule(
+        day=d, published=published, assignments={}, custom_hours=custom
+    )
+
+
+def test_published_saturday_uses_saturday_default(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", _load(True))
+    assert shift_config.shift_start_for(SAT) == time(6, 0)
+    assert shift_config.shift_end_for(SAT) == time(12, 0)
+    assert shift_config.breaks_for(SAT) == SAT_DEFAULT.breaks
+
+
+def test_unpublished_saturday_gated_falls_back_to_weekday(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", _load(False))
+    assert shift_config.shift_start_for(SAT) == time(7, 0)
+    assert shift_config.shift_end_for(SAT) == time(15, 30)
+    assert shift_config.breaks_for(SAT) == WEEKDAY.breaks
+
+
+def test_configured_saturday_shows_default_even_on_draft(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", _load(False))
+    assert shift_config.configured_shift_start_for(SAT) == time(6, 0)
+    assert shift_config.configured_shift_end_for(SAT) == time(12, 0)
+    assert shift_config.configured_breaks_for(SAT) == SAT_DEFAULT.breaks
+
+
+def test_published_per_day_custom_overrides_saturday_default(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule",
+        _load(True, {"start": "06:00", "end": "14:00", "breaks": []}))
+    assert shift_config.shift_start_for(SAT) == time(6, 0)
+    assert shift_config.shift_end_for(SAT) == time(14, 0)
+    assert shift_config.breaks_for(SAT) == ()   # empty list = no breaks
+
+
+def test_configured_draft_custom_wins_over_saturday_default(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule",
+        _load(False, {"start": "06:00", "end": "13:00", "breaks": []}))
+    assert shift_config.configured_shift_end_for(SAT) == time(13, 0)
+
+
+def test_weekday_unchanged(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", _load(True))
+    assert shift_config.shift_start_for(TUE) == time(7, 0)
+    assert shift_config.shift_end_for(TUE) == time(15, 30)
+    assert shift_config.breaks_for(TUE) == WEEKDAY.breaks
+
+
+def test_productive_minutes_published_saturday(monkeypatch):
+    # 06:00-12:00 = 360 min, minus 15 + 30 = 315.
+    monkeypatch.setattr(staffing, "load_schedule", _load(True))
+    assert shift_config.productive_minutes_for(SAT) == 315
+
+
+def test_in_shift_on_published_saturday(monkeypatch):
+    monkeypatch.setattr(staffing, "load_schedule", _load(True))
+    assert shift_config.in_shift_on(datetime(2026, 5, 16, 7, 0, tzinfo=SITE_TZ)) is True
+    assert shift_config.in_shift_on(datetime(2026, 5, 16, 8, 5, tzinfo=SITE_TZ)) is False
+    assert shift_config.in_shift_on(datetime(2026, 5, 16, 12, 30, tzinfo=SITE_TZ)) is False
+
+
+def test_rounding_snaps_to_saturday_boundaries(monkeypatch):
+    """The punch path feeds shift_start_for/shift_end_for into apply_rounding."""
+    from zira_dashboard.rounding import apply_rounding, RoundingSettings
+    monkeypatch.setattr(staffing, "load_schedule", _load(True))
+    windows = RoundingSettings(15, 0, 0, 15)
+    start, end = shift_config.shift_start_for(SAT), shift_config.shift_end_for(SAT)
+    in_punch = datetime(2026, 5, 16, 5, 52, tzinfo=SITE_TZ)
+    out_punch = datetime(2026, 5, 16, 12, 8, tzinfo=SITE_TZ)
+    assert apply_rounding("clock_in", in_punch, start, end, windows).astimezone(SITE_TZ).time() == time(6, 0)
+    assert apply_rounding("clock_out", out_punch, start, end, windows).astimezone(SITE_TZ).time() == time(12, 0)
+
+
+def test_scheduler_hours_source():
+    assert shift_config.scheduler_hours_source(SAT, False) == "saturday_default"
+    assert shift_config.scheduler_hours_source(TUE, False) == "weekday_default"
+    assert shift_config.scheduler_hours_source(SAT, True) == "custom"
+    assert shift_config.scheduler_hours_source(TUE, True) == "custom"
