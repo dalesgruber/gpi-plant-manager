@@ -330,6 +330,20 @@ def settings_page(
         "ORDER BY skill_type, lower(name)"
     )
     skills_all = [r["name"] for r in _skill_rows]
+    from .. import saturday_schedule_store
+    _sat = saturday_schedule_store.current()
+    saturday_schedule_ctx = {
+        "shift_start": f"{_sat.shift_start.hour:02d}:{_sat.shift_start.minute:02d}",
+        "shift_end":   f"{_sat.shift_end.hour:02d}:{_sat.shift_end.minute:02d}",
+        "breaks": [
+            {
+                "start": f"{b.start.hour:02d}:{b.start.minute:02d}",
+                "end":   f"{b.end.hour:02d}:{b.end.minute:02d}",
+                "name": b.name,
+            }
+            for b in _sat.breaks
+        ],
+    }
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -347,6 +361,7 @@ def settings_page(
             "roster_filter_inactive": roster_filter_inactive,
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
+            "saturday_schedule": saturday_schedule_ctx,
             "rounding": rounding_ctx,
             "work_schedules": work_schedules_ctx,
             "available_schedules": available_schedules,
@@ -401,6 +416,38 @@ async def settings_save_schedule(request: Request):
         shift_start=shift_s,
         shift_end=shift_e,
         work_weekdays=frozenset(weekday_set),
+        breaks=tuple(breaks_new),
+    ))
+    if (request.headers.get("accept") or "").startswith("application/json"):
+        return JSONResponse({"ok": True})
+    return RedirectResponse(url="/settings?saved=1&section=timeclock", status_code=303)
+
+
+@router.post("/settings/saturday_schedule")
+async def settings_save_saturday_schedule(request: Request):
+    """Save the plant Saturday default (shift bookends + breaks). Mirrors
+    settings_save_schedule: unparseable / end<=start values fall back to the
+    current value rather than rejecting the submission."""
+    from .. import saturday_schedule_store
+    form = await request.form()
+    current = saturday_schedule_store.current()
+    shift_s = _parse_hhmm(form.get("shift_start")) or current.shift_start
+    shift_e = _parse_hhmm(form.get("shift_end")) or current.shift_end
+    if shift_e <= shift_s:
+        shift_e = current.shift_end
+    breaks_new: list[schedule_store.Break] = []
+    idx = 0
+    while idx <= 50:
+        bs = _parse_hhmm(form.get(f"break_start_{idx}"))
+        be = _parse_hhmm(form.get(f"break_end_{idx}"))
+        bn = (form.get(f"break_name_{idx}") or "").strip() or "Break"
+        if bs and be and be > bs:
+            breaks_new.append(schedule_store.Break(bs, be, bn[:40]))
+        idx += 1
+    breaks_new.sort(key=lambda b: b.start)
+    saturday_schedule_store.save(saturday_schedule_store.SaturdaySchedule(
+        shift_start=shift_s,
+        shift_end=shift_e,
         breaks=tuple(breaks_new),
     ))
     if (request.headers.get("accept") or "").startswith("application/json"):
