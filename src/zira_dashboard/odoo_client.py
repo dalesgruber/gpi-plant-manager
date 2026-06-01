@@ -187,6 +187,72 @@ def fetch_departments() -> list[str]:
     return out
 
 
+def _float_to_hhmm(f) -> str:
+    """Odoo stores working-schedule hours as floats (5.75 == 05:45). Round
+    to the nearest minute, carrying into the hour, clamped to [00:00, 23:59]."""
+    total = int(round(float(f) * 60))          # minutes since midnight
+    total = max(0, min(total, 23 * 60 + 59))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _calendar_hours_from_lines(rows) -> dict:
+    """Reduce resource.calendar.attendance rows to per-weekday OUTER shift
+    boundaries: {cal_id: {"0": ["05:45","14:30"], ...}} with weekday keys
+    0=Mon..6=Sun (Odoo's dayofweek convention, same as Python weekday()).
+    A lunch split (two lines on one day) collapses to min(hour_from) ..
+    max(hour_to). Malformed rows are skipped."""
+    acc: dict = {}   # {cal_id: {weekday:int -> [min_from:float, max_to:float]}}
+    for r in rows:
+        cal = r.get("calendar_id")
+        cal_id = cal[0] if isinstance(cal, (list, tuple)) and cal else cal
+        if not isinstance(cal_id, int) or isinstance(cal_id, bool):
+            continue
+        try:
+            wd = int(r.get("dayofweek"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= wd <= 6):
+            continue
+        hf = float(r.get("hour_from") or 0.0)
+        ht = float(r.get("hour_to") or 0.0)
+        day = acc.setdefault(cal_id, {}).get(wd)
+        if day is None:
+            acc[cal_id][wd] = [hf, ht]
+        else:
+            day[0] = min(day[0], hf)
+            day[1] = max(day[1], ht)
+    out: dict = {}
+    for cal_id, days in acc.items():
+        out[cal_id] = {
+            str(wd): [_float_to_hhmm(lo), _float_to_hhmm(hi)]
+            for wd, (lo, hi) in days.items()
+        }
+    return out
+
+
+def fetch_work_schedules() -> list[dict]:
+    """Active working schedules (resource.calendar): [{id, name}, ...]."""
+    return execute(
+        "resource.calendar", "search_read",
+        [("active", "=", True)],
+        fields=["id", "name"],
+    )
+
+
+def fetch_calendar_hours(calendar_ids) -> dict:
+    """Per-weekday shift boundaries for the given resource.calendar ids,
+    derived from their attendance lines. Returns
+    {cal_id: {"0": ["05:45","14:30"], ...}}; empty dict for no ids."""
+    if not calendar_ids:
+        return {}
+    rows = execute(
+        "resource.calendar.attendance", "search_read",
+        [("calendar_id", "in", list(calendar_ids))],
+        fields=["calendar_id", "dayofweek", "hour_from", "hour_to"],
+    )
+    return _calendar_hours_from_lines(rows)
+
+
 def fetch_employees() -> list[dict]:
     """All active hr.employee records with the fields we need.
 
@@ -197,7 +263,7 @@ def fetch_employees() -> list[dict]:
     return execute(
         "hr.employee", "search_read",
         [("active", "=", True)],
-        fields=["id", "name", "active", "work_email", "wage_type"],
+        fields=["id", "name", "active", "work_email", "wage_type", "resource_calendar_id"],
     )
 
 

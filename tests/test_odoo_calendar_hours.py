@@ -1,0 +1,43 @@
+"""Pure tests for the per-weekday hours derivation. No Odoo/DB needed."""
+
+from zira_dashboard.odoo_client import _float_to_hhmm, _calendar_hours_from_lines
+
+
+def test_float_to_hhmm_basic():
+    assert _float_to_hhmm(5.75) == "05:45"
+    assert _float_to_hhmm(14.5) == "14:30"
+    assert _float_to_hhmm(0.0) == "00:00"
+
+
+def test_float_to_hhmm_rounds_to_nearest_minute_with_carry():
+    # 5.7584h = 5h 45.504m -> rounds to 5:46
+    assert _float_to_hhmm(5.7584) == "05:46"
+    # 13.999h rounds up to 14:00 (carry across the hour)
+    assert _float_to_hhmm(13.9999) == "14:00"
+
+
+def test_calendar_hours_outer_boundary_for_lunch_split():
+    # Two attendance lines on Monday (dayofweek "0"): morning + afternoon
+    # around lunch. We keep the OUTER boundary: 05:45 .. 14:30.
+    rows = [
+        {"calendar_id": [7, "Drivers"], "dayofweek": "0", "hour_from": 5.75, "hour_to": 11.0},
+        {"calendar_id": [7, "Drivers"], "dayofweek": "0", "hour_from": 11.5, "hour_to": 14.5},
+        {"calendar_id": [7, "Drivers"], "dayofweek": "1", "hour_from": 5.75, "hour_to": 14.5},
+    ]
+    out = _calendar_hours_from_lines(rows)
+    assert out == {
+        7: {
+            "0": ["05:45", "14:30"],
+            "1": ["05:45", "14:30"],
+        }
+    }
+
+
+def test_calendar_hours_skips_malformed_rows():
+    rows = [
+        {"calendar_id": False, "dayofweek": "0", "hour_from": 7.0, "hour_to": 15.0},
+        {"calendar_id": [7, "X"], "dayofweek": "nope", "hour_from": 7.0, "hour_to": 15.0},
+        {"calendar_id": [7, "X"], "dayofweek": "2", "hour_from": 7.0, "hour_to": 15.5},
+    ]
+    out = _calendar_hours_from_lines(rows)
+    assert out == {7: {"2": ["07:00", "15:30"]}}
