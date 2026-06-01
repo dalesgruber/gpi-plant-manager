@@ -1215,6 +1215,7 @@ def _approved_by_day(start_d: _date, end_d: _date) -> dict:
         while cur <= end:
             by_day.setdefault(cur, []).append({
                 "name": r["person_name"], "label": label,
+                "full": r["shape"] == "full_day",
             })
             cur = cur + _td(days=1)
 
@@ -1286,6 +1287,10 @@ def time_off_calendar(request: Request, token: str, month: str | None = None):
     for week in weeks:
         w = []
         for d in week:
+            # Drop Sundays — the plant is closed, so the column carried no
+            # signal; removing it gives the remaining Mon–Sat columns more room.
+            if d.weekday() == 6:
+                continue
             w.append({
                 "num": d.day,
                 "outside": d.month != first.month,

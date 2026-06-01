@@ -1,6 +1,22 @@
 {% extends "timeclock_base.html" %}
 {% block title %}Who's Out — {{ heading }}{% endblock %}
 {% block content %}
+<style>
+  /* Touch: tap a chip to expand its full text in place (tap again to collapse).
+     The truncation lives here (not inline) so the .is-expanded modifier can
+     override it without !important; cursor:pointer also makes iOS Safari fire
+     a click on tap. */
+  .wo-chip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .wo-chip.is-expanded { overflow: visible; white-space: normal; }
+  /* Overflow people (5th onward) stay hidden until the "+N more" toggle is
+     tapped, which flips .show-all on the list and swaps the label to "Show less". */
+  .wo-overflow { display: none; }
+  .wo-list.show-all .wo-overflow { display: block; }
+  .wo-more { font-size: 0.8rem; color: #64748b; padding: 0.15rem 0.35rem; cursor: pointer; }
+  .wo-more .wo-more-less { display: none; }
+  .wo-list.show-all .wo-more-count { display: none; }
+  .wo-list.show-all .wo-more-less { display: inline; }
+</style>
 <div class="k-header">
   <a href="/timeclock/time-off/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>
   <span>{{ t("Who's Out — {heading}", heading=heading) }}</span>
@@ -10,7 +26,7 @@
 <div class="k-main" style="align-items: center;">
   {# Month navigation — page to any month, past or future. #}
   <div style="display: flex; align-items: center; justify-content: center;
-              gap: 0.75rem; width: 100%; max-width: 1100px;
+              gap: 0.75rem; width: 100%; max-width: 1280px;
               margin-bottom: 1rem; flex-wrap: wrap;">
     <a href="/timeclock/time-off/calendar/{{ token }}?month={{ prev_month }}"
        class="k-btn secondary"
@@ -29,7 +45,7 @@
   </div>
   <table style="
     width: 100%;
-    max-width: 1100px;
+    max-width: 1280px;
     border-collapse: collapse;
     table-layout: fixed;
     background: #ffffff;
@@ -45,7 +61,6 @@
         <th style="padding: 0.75rem 0.5rem; font-size: 1rem; font-weight: 600; text-align: center;">{{ t("Thu") }}</th>
         <th style="padding: 0.75rem 0.5rem; font-size: 1rem; font-weight: 600; text-align: center;">{{ t("Fri") }}</th>
         <th style="padding: 0.75rem 0.5rem; font-size: 1rem; font-weight: 600; text-align: center;">{{ t("Sat") }}</th>
-        <th style="padding: 0.75rem 0.5rem; font-size: 1rem; font-weight: 600; text-align: center;">{{ t("Sun") }}</th>
       </tr>
     </thead>
     <tbody>
@@ -54,7 +69,7 @@
           {% for d in week %}
             <td style="
               vertical-align: top;
-              height: 110px;
+              height: 132px;
               padding: 0.4rem;
               border-top: 1px solid #e2e8f0;
               border-right: 1px solid #e2e8f0;
@@ -70,49 +85,42 @@
                 {{ d.num }}
               </div>
               {% if d.names %}
-                <ul style="
+                <ul class="wo-list" style="
                   list-style: none;
                   margin: 0;
                   padding: 0;
                   display: flex;
                   flex-direction: column;
                   gap: 0.2rem;">
-                  {% for n in d.names[:4] %}
+                  {% for n in d.names %}
                     {% if n.source == 'holiday' %}
-                      <li style="
+                      <li class="wo-chip{% if loop.index0 >= 4 %} wo-overflow{% endif %}" title="{{ n.name }}" style="
                         font-size: 0.85rem;
                         line-height: 1.2;
                         color: #ffffff;
                         background: #dc2626;
                         border-radius: 0.25rem;
                         padding: 0.15rem 0.35rem;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
                         font-weight: 600;">
                         {{ n.name }}
                       </li>
                     {% else %}
-                      <li style="
+                      <li class="wo-chip{% if loop.index0 >= 4 %} wo-overflow{% endif %}" title="{{ n.name }} — {{ n.label }}" style="
                         font-size: 0.85rem;
                         line-height: 1.2;
                         color: #0f172a;
-                        background: #fef3c7;
+                        {# full-day → scheduler's blue (#60a5fa); partial → amber #}
+                        background: {% if n.full %}#60a5fa{% else %}#fef3c7{% endif %};
                         border-radius: 0.25rem;
-                        padding: 0.15rem 0.35rem;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;">
+                        padding: 0.15rem 0.35rem;">
                         <strong>{{ n.name }}</strong> — {{ n.label }}
                       </li>
                     {% endif %}
                   {% endfor %}
                   {% if d.names|length > 4 %}
-                    <li style="
-                      font-size: 0.8rem;
-                      color: #64748b;
-                      padding: 0.15rem 0.35rem;">
-                      +{{ d.names|length - 4 }} {{ t("more") }}
+                    <li class="wo-more" title="{% for n in d.names[4:] %}{{ n.name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+                      <span class="wo-more-count">+{{ d.names|length - 4 }} {{ t("more") }}</span>
+                      <span class="wo-more-less">{{ t("Show less") }}</span>
                     </li>
                   {% endif %}
                 </ul>
@@ -124,4 +132,28 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Touchscreen tap-to-expand for Who's Out chips. Bound once on document
+  // (guarded) so htmx month-nav swaps don't stack duplicate listeners; event
+  // delegation keeps it working for chips in freshly-swapped content.
+  (function () {
+    if (window.__woChipTapBound) return;
+    window.__woChipTapBound = true;
+    document.addEventListener('click', function (e) {
+      // "+N more" toggle: reveal/hide the overflow people for that day.
+      var more = e.target.closest('.wo-more');
+      if (more) {
+        var list = more.closest('.wo-list');
+        if (list) list.classList.toggle('show-all');
+        return;
+      }
+      // Otherwise, a person chip: expand/collapse its full text in place.
+      var chip = e.target.closest('.wo-chip');
+      if (chip) chip.classList.toggle('is-expanded');
+    });
+  })();
+</script>
 {% endblock %}

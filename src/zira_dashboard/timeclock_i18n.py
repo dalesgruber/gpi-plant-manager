@@ -86,6 +86,7 @@ TRANSLATIONS: dict[str, str] = {
     "Sat": "Sáb",
     "Sun": "Dom",
     "more": "más",
+    "Show less": "Mostrar menos",
     "Prev": "Anterior",
     "Next": "Siguiente",
     "Today": "Hoy",
