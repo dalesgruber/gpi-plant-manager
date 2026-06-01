@@ -200,6 +200,7 @@ CREATE INDEX IF NOT EXISTS people_active_idx ON people (active);
 ALTER TABLE people ADD COLUMN IF NOT EXISTS excluded BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS wage_type TEXT;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS spanish_speaker BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE people ADD COLUMN IF NOT EXISTS resource_calendar_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS skills (
   id              SERIAL PRIMARY KEY,
@@ -734,6 +735,24 @@ CREATE TABLE IF NOT EXISTS rounding_settings (
   CONSTRAINT rounding_settings_singleton CHECK (id = 1)
 );
 INSERT INTO rounding_settings (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+-- Per-work-schedule rounding overrides (2026-06-01). One row per Odoo
+-- working schedule (resource.calendar) that gets its own punch-rounding
+-- windows. `work_hours` (per-weekday "HH:MM" boundaries) is synced FROM
+-- Odoo; the four window columns are app-owned (set on the settings page).
+-- Row existence == an active override; employees inherit it via
+-- people.resource_calendar_id. Everyone else uses rounding_settings.
+CREATE TABLE IF NOT EXISTS work_schedules (
+  resource_calendar_id  INTEGER PRIMARY KEY,
+  name                  TEXT NOT NULL DEFAULT '',
+  work_hours            JSONB NOT NULL DEFAULT '{}'::jsonb,
+  in_before_min         INT NOT NULL DEFAULT 0,
+  in_after_min          INT NOT NULL DEFAULT 0,
+  out_before_min        INT NOT NULL DEFAULT 0,
+  out_after_min         INT NOT NULL DEFAULT 0,
+  last_synced_at        TIMESTAMPTZ,
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Store both raw and rounded timestamps so historical audit is preserved.
 -- Columns added separately (not in the CREATE TABLE above) because
