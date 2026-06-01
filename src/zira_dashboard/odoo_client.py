@@ -461,6 +461,47 @@ def fetch_open_attendances() -> list[dict]:
     return out
 
 
+def fetch_attendances_for_day(day) -> list[dict]:
+    """Every hr.attendance whose check_in falls on `day` (site-local day,
+    open AND closed), reduced to one entry per employee — their EARLIEST
+    check_in plus whether any of their punches is still open.
+
+    Returns [{employee_odoo_id, first_check_in, currently_open}, ...] where
+    first_check_in is an ISO-8601 UTC string. `day` bounds are the local
+    day converted to UTC, since Odoo stores naive-UTC datetimes."""
+    from datetime import datetime, time as _time, timedelta
+    from . import shift_config
+    start_local = datetime.combine(day, _time.min, tzinfo=shift_config.SITE_TZ)
+    end_local = start_local + timedelta(days=1)
+    rows = execute(
+        "hr.attendance", "search_read",
+        [
+            ("check_in", ">=", _to_odoo_dt(start_local)),
+            ("check_in", "<", _to_odoo_dt(end_local)),
+        ],
+        fields=["id", "employee_id", "check_in", "check_out"],
+    )
+    agg: dict[int, dict] = {}
+    for r in rows:
+        emp = r.get("employee_id")
+        emp_id = emp[0] if isinstance(emp, list) else emp
+        if not emp_id:
+            continue
+        ci = _odoo_dt_to_iso(r.get("check_in"))
+        if ci is None:
+            continue
+        is_open = not r.get("check_out")
+        cur = agg.get(emp_id)
+        if cur is None:
+            agg[emp_id] = {"employee_odoo_id": emp_id, "first_check_in": ci, "currently_open": is_open}
+        else:
+            if ci < cur["first_check_in"]:
+                cur["first_check_in"] = ci
+            if is_open:
+                cur["currently_open"] = True
+    return list(agg.values())
+
+
 def set_attendance_wc(attendance_id: int, wc_name: str | None) -> None:
     """Write the kiosk WC (and resolved department) onto an existing
     hr.attendance. No-op when the WC field isn't configured or wc_name is
