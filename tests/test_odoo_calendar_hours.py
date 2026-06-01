@@ -41,3 +41,23 @@ def test_calendar_hours_skips_malformed_rows():
     ]
     out = _calendar_hours_from_lines(rows)
     assert out == {7: {"2": ["07:00", "15:30"]}}
+
+
+def test_lunch_period_rows_are_excluded_from_boundary():
+    # A (contrived) lunch row whose hours extend past the afternoon end must
+    # NOT widen the boundary — mirrors fetch_resource_calendar's lunch filter.
+    rows = [
+        {"calendar_id": [7, "D"], "dayofweek": "0", "day_period": "morning", "hour_from": 5.75, "hour_to": 11.0},
+        {"calendar_id": [7, "D"], "dayofweek": "0", "day_period": "afternoon", "hour_from": 11.5, "hour_to": 14.5},
+        {"calendar_id": [7, "D"], "dayofweek": "0", "day_period": "lunch", "hour_from": 11.0, "hour_to": 15.0},
+    ]
+    out = _calendar_hours_from_lines(rows)
+    assert out == {7: {"0": ["05:45", "14:30"]}}  # 15.0 lunch end excluded
+
+
+def test_bool_calendar_id_is_skipped():
+    rows = [
+        {"calendar_id": True, "dayofweek": "0", "hour_from": 7.0, "hour_to": 15.0},
+        {"calendar_id": [7, "D"], "dayofweek": "0", "hour_from": 7.0, "hour_to": 15.0},
+    ]
+    assert _calendar_hours_from_lines(rows) == {7: {"0": ["07:00", "15:00"]}}

@@ -203,6 +203,8 @@ def _calendar_hours_from_lines(rows) -> dict:
     max(hour_to). Malformed rows are skipped."""
     acc: dict = {}   # {cal_id: {weekday:int -> [min_from:float, max_to:float]}}
     for r in rows:
+        if r.get("day_period") == "lunch":
+            continue
         cal = r.get("calendar_id")
         cal_id = cal[0] if isinstance(cal, (list, tuple)) and cal else cal
         if not isinstance(cal_id, int) or isinstance(cal_id, bool):
@@ -248,7 +250,7 @@ def fetch_calendar_hours(calendar_ids) -> dict:
     rows = execute(
         "resource.calendar.attendance", "search_read",
         [("calendar_id", "in", list(calendar_ids))],
-        fields=["calendar_id", "dayofweek", "hour_from", "hour_to"],
+        fields=["calendar_id", "dayofweek", "hour_from", "hour_to", "day_period"],
     )
     return _calendar_hours_from_lines(rows)
 
