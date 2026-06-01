@@ -635,6 +635,19 @@ def request_submit(
         # Full-day: swap an accidentally inverted range rather than reject.
         df, dt = dt, df
 
+    # Block a request that overlaps time off this person already has. Don't
+    # post it — Odoo would reject the overlap and the row would stick in the
+    # errored state. Re-render with a modal instead. Checked against the local
+    # mirror, which also catches the worker's own just-submitted draft that
+    # hasn't synced yet (a rapid double-tap).
+    if time_off_sync.find_conflicting_request(p["odoo_id"], df, dt) is not None:
+        ctx = _details_context(p, _mint_token(person_id), shape)
+        ctx["conflict"] = True
+        return templates.TemplateResponse(
+            request, "timeclock_time_off_request_details.html", ctx,
+            status_code=409,
+        )
+
     shift_from, shift_to = _shift_window_for(p["odoo_id"])
     hour_from, hour_to, err = _shape_to_hour_bounds(
         shape, time_a, time_b, shift_from, shift_to,

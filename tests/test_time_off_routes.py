@@ -330,6 +330,69 @@ def test_cancel_handler_marks_row_for_cancel_and_queues(monkeypatch):
     assert queued == [42]
 
 
+def test_submit_blocks_overlapping_request(monkeypatch):
+    """A submit that overlaps an existing request posts nothing, queues no
+    push, and re-renders with conflict=True at HTTP 409."""
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._verify_token", lambda t: 1)
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._person_by_id",
+        lambda pid: {"id": 1, "name": "T", "odoo_id": 5, "spanish_speaker": False})
+    # A conflicting request exists in the mirror.
+    monkeypatch.setattr(
+        "zira_dashboard.time_off_sync.find_conflicting_request",
+        lambda *a, **k: {"id": 99})
+    # Capture the render context instead of rendering Jinja.
+    captured = {}
+
+    def fake_tr(request, name, context, status_code=200):
+        captured["name"] = name
+        captured["context"] = context
+        captured["status"] = status_code
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("conflict", status_code=status_code)
+
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off.templates.TemplateResponse",
+        fake_tr)
+    # These MUST NOT run on the conflict path.
+    inserted = []
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._insert_request_row",
+        lambda **kw: inserted.append(kw) or 1)
+    queued = []
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._queue_push",
+        lambda rid: queued.append(rid))
+    # _details_context dependencies — stub so no real DB / Odoo.
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._shift_window_for",
+        lambda pid: (6.0, 14.5))
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._fetch_visible_leave_types",
+        lambda shape: [{"id": 1, "name": "PTO",
+                        "request_unit": "day", "requires_allocation": "no"}])
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off.time_off_balances.get_for_employee",
+        lambda pid: [])
+    import types as _types
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off.schedule_store.current",
+        lambda: _types.SimpleNamespace(work_weekdays=[0, 1, 2, 3, 4]))
+
+    client = TestClient(app)
+    r = client.post(
+        "/timeclock/time-off/request/anytoken/submit",
+        data={"shape": "full_day", "holiday_status_id": "1",
+              "date_from": "2026-06-01", "date_to": "2026-06-03", "note": ""},
+        follow_redirects=False,
+    )
+    assert r.status_code == 409
+    assert captured["context"].get("conflict") is True
+    assert inserted == []
+    assert queued == []
+
+
 def test_edit_post_updates_row_and_queues_sync(monkeypatch):
     """POST /timeclock/time-off/mine/{token}/{rid}/edit on an existing row
     UPDATEs the row (via ``_update_request_row``) and queues a background
