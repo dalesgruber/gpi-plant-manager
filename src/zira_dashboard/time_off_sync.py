@@ -99,7 +99,9 @@ def find_conflicting_request(
         sql += " AND id <> %s"
         params.append(exclude_rid)
     if established_only:
-        # exclude_rid is always supplied in this mode (the row being pushed).
+        # exclude_rid is always supplied in this mode (the row being pushed);
+        # without it, "id < NULL" would silently drop all earlier rows.
+        assert exclude_rid is not None, "established_only requires exclude_rid"
         sql += " AND (synced_to_odoo = TRUE OR id < %s)"
         params.append(exclude_rid)
     sql += " ORDER BY id LIMIT 1"
@@ -157,6 +159,23 @@ def _push_create(row: dict[str, Any]) -> None:
     See module docstring for why we always check for an existing leave
     before creating.
     """
+    # Backstop + cleanup: if an established overlapping request now exists in
+    # the local mirror, this create can never succeed in Odoo (Odoo rejects
+    # overlaps). Delete the phantom draft instead of looping on sync_error —
+    # this also clears rows already stuck from before the pre-check existed.
+    # established_only so two simultaneous duplicate drafts don't delete each
+    # other (the earlier/already-synced one wins).
+    conflict = find_conflicting_request(
+        row["person_odoo_id"], row["date_from"], row["date_to"],
+        exclude_rid=row["id"], established_only=True,
+    )
+    if conflict is not None:
+        _log.info(
+            "push_create: row %s overlaps established row %s — deleting phantom",
+            row["id"], conflict["id"],
+        )
+        db.execute("DELETE FROM time_off_requests WHERE id = %s", (row["id"],))
+        return
     hour_from = float(row["hour_from"]) if row["hour_from"] is not None else None
     hour_to = float(row["hour_to"]) if row["hour_to"] is not None else None
     existing = odoo_client.find_duplicate_leave(

@@ -521,6 +521,8 @@ def test_find_conflicting_request_returns_none_when_empty(fake_db):
     assert params[0] == 5
     assert date(2026, 6, 1) in params and date(2026, 6, 3) in params
     assert "state IN" in sql
+    assert "date_to >= %s AND date_from <= %s" in sql
+    assert "'draft','draft_edit','confirm','validate1','validate'" in sql
 
 
 def test_find_conflicting_request_returns_first_row(fake_db):
@@ -549,3 +551,55 @@ def test_find_conflicting_request_established_only_clause(fake_db):
         exclude_rid=42, established_only=True)
     sql, params = fake_db["queries"][-1]
     assert "synced_to_odoo = TRUE OR id < %s" in sql
+
+
+# --------------------------------------------------------------------------
+# Task 2: self-healing overlap re-check on the create push path
+# --------------------------------------------------------------------------
+
+
+def test_push_create_deletes_phantom_when_established_conflict(monkeypatch, fake_db):
+    """An established overlapping row exists → the create can never succeed in
+    Odoo, so delete the phantom draft instead of looping on sync_error."""
+    fake_db["query_result"] = [{
+        "id": 7, "person_odoo_id": 5, "shape": "full_day",
+        "holiday_status_id": 1, "date_from": date(2026, 6, 1),
+        "date_to": date(2026, 6, 3), "hour_from": None, "hour_to": None,
+        "note": None, "state": "draft", "odoo_leave_id": None,
+    }]
+    monkeypatch.setattr(time_off_sync, "find_conflicting_request",
+                        lambda *a, **k: {"id": 99})
+    mock_create = MagicMock()
+    monkeypatch.setattr(time_off_sync.odoo_client, "create_leave", mock_create)
+    monkeypatch.setattr(time_off_sync.odoo_client, "find_duplicate_leave",
+                        MagicMock(return_value=None))
+
+    time_off_sync.push_one(7)
+
+    mock_create.assert_not_called()
+    deletes = [e for e in fake_db["executes"]
+               if "DELETE FROM time_off_requests" in e[0]]
+    assert deletes, "expected the phantom row to be DELETEd"
+    assert deletes[0][1] == (7,)
+
+
+def test_push_create_proceeds_when_no_conflict(monkeypatch, fake_db):
+    fake_db["query_result"] = [{
+        "id": 7, "person_odoo_id": 5, "shape": "full_day",
+        "holiday_status_id": 1, "date_from": date(2026, 6, 1),
+        "date_to": date(2026, 6, 3), "hour_from": None, "hour_to": None,
+        "note": None, "state": "draft", "odoo_leave_id": None,
+    }]
+    monkeypatch.setattr(time_off_sync, "find_conflicting_request",
+                        lambda *a, **k: None)
+    mock_create = MagicMock(return_value=555)
+    monkeypatch.setattr(time_off_sync.odoo_client, "create_leave", mock_create)
+    monkeypatch.setattr(time_off_sync.odoo_client, "find_duplicate_leave",
+                        MagicMock(return_value=None))
+    monkeypatch.setattr(time_off_sync.odoo_client, "confirm_leave", MagicMock())
+
+    time_off_sync.push_one(7)
+
+    mock_create.assert_called_once()
+    assert not any("DELETE FROM time_off_requests" in e[0]
+                   for e in fake_db["executes"])
