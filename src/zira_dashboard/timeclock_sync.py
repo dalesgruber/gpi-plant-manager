@@ -70,6 +70,15 @@ def _retry_one(r: dict) -> None:
     ts = r["occurred_at"]
 
     if action in ("clock_in", "transfer_in"):
+        # Self-correcting: if Odoo already shows an open attendance for this
+        # person (a punch added by hand in Odoo, or a stale-window double-tap),
+        # do NOT create a duplicate — adopt the open row so a later clock-out
+        # closes the right one, and label its WC if the punch carries one.
+        existing = odoo_client.get_current_attendance(person_odoo_id)
+        if existing:
+            odoo_client.set_attendance_wc(existing["id"], wc_name)
+            _mark_synced(r["id"], existing["id"])
+            return
         att_id = odoo_client.clock_in(person_odoo_id, wc_name, ts)
         _mark_synced(r["id"], att_id)
         return
