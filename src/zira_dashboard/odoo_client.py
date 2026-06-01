@@ -348,6 +348,68 @@ def get_current_attendance(employee_odoo_id: int) -> dict | None:
     return rows[0] if rows else None
 
 
+def _odoo_dt_to_iso(value: Any) -> str | None:
+    """Odoo returns datetimes as naive-UTC 'YYYY-MM-DD HH:MM:SS' strings
+    (and False for empty). Return an ISO-8601 string with an explicit UTC
+    offset, or None."""
+    if not value:
+        return None
+    if isinstance(value, str):
+        dt = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(
+            tzinfo=timezone.utc)
+        return dt.isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return None
+
+
+def fetch_open_attendances() -> list[dict]:
+    """Every currently-open hr.attendance (check_out IS NULL), one entry
+    per clocked-in employee. Returns
+    [{att_id, employee_odoo_id, check_in, wc_name}, ...] where check_in is
+    an ISO-8601 UTC string and wc_name is None when the kiosk WC field is
+    unset or empty (e.g. a punch added by hand directly in Odoo)."""
+    wc_field = _kiosk_wc_field()
+    fields = ["id", "employee_id", "check_in"]
+    if wc_field:
+        fields.append(wc_field)
+    rows = execute(
+        "hr.attendance", "search_read",
+        [("check_out", "=", False)],
+        fields=fields,
+    )
+    out: list[dict] = []
+    for r in rows:
+        emp = r.get("employee_id")
+        emp_id = emp[0] if isinstance(emp, list) else emp
+        if not emp_id:
+            continue
+        out.append({
+            "att_id": r["id"],
+            "employee_odoo_id": emp_id,
+            "check_in": _odoo_dt_to_iso(r.get("check_in")),
+            "wc_name": (r.get(wc_field) or None) if wc_field else None,
+        })
+    return out
+
+
+def set_attendance_wc(attendance_id: int, wc_name: str | None) -> None:
+    """Write the kiosk WC (and resolved department) onto an existing
+    hr.attendance. No-op when the WC field isn't configured or wc_name is
+    empty. Used when the sync adopts a manually-created open attendance, so
+    kiosk WC/department reports still attribute it."""
+    wc_field = _kiosk_wc_field()
+    if not wc_field or not wc_name:
+        return
+    payload: dict[str, Any] = {wc_field: wc_name}
+    dept_field = _kiosk_department_field()
+    if dept_field:
+        dept_id = _department_id_for_wc(wc_name)
+        if dept_id:
+            payload[dept_field] = dept_id
+    execute("hr.attendance", "write", [attendance_id], payload)
+
+
 def clock_in(employee_odoo_id: int, wc_name: str | None, ts: datetime) -> int:
     """Create a new hr.attendance with check_in=ts. Returns the new id.
 
