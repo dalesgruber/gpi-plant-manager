@@ -27,7 +27,7 @@ It does **nothing on the staffing scheduler**: the person stays in their work-ce
 
 - Auto-detected no-shows (scheduled, no punch) do **not** trigger this — manual declares only (a no-punch person may just be late). They keep showing in the Late/Absence report as today.
 - No change to how absences feed the dashboards (`attendance.full_day_absent_names` already includes manual absences via a separate path — no double-count).
-- No new "reason" capture UI; we surface the existing `manual_absences.reason` if present, else the literal "Absent".
+- No new "reason" capture UI, and the stored reason is not displayed — the entry is always labeled the literal "Absent".
 - Partial-day time off is unaffected (still shown as a badge on the schedulable roster).
 
 ## Design
@@ -37,7 +37,7 @@ After building the Odoo-mirror entries, append one **full-day** entry per declar
 
 ```
 { name, hours: None, pay_type: "Absent", time_range: "",
-  timing_label: "Absent",            # or "Absent — <reason>" if a reason was captured
+  timing_label: "Absent",
   derived: False, manual_absent: True, pending: False }
 ```
 
@@ -55,7 +55,7 @@ In `routes/staffing.py`, per work-center row, derive a **present** view that exc
 Template: render the station summary from a per-row `present_assigned` (added to the `row` dict next to `assigned`), replacing the current `row.assigned`-based `visible_assigned` ([staffing.html:234](../../../src/zira_dashboard/templates/staffing.html)). The existing "already has a production attribution" rejection still applies on top of it.
 
 ### 3. Reason + color
-- Label/meta: "Absent" (or "Absent — <reason>" when `manual_absences.reason` is set).
+- Label/meta: always the literal "Absent" — the stored reason is intentionally not shown.
 - Color: none needed — dormant `.absent` style already light red.
 
 ## Data flow
