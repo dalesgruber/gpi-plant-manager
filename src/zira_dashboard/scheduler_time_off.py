@@ -121,6 +121,27 @@ def time_off_entries_for_day(day: _date) -> list[dict]:
             e for e in out
             if not (0 < (e["hours"] or 0) < 8 and e["name"] in cleared)
         ]
+    # Manually declared absences become full-day "Absent" entries (rendered
+    # light red via the template's manual_absent -> .absent class). An absence
+    # overrides any other entry for that person: drop theirs, add one Absent.
+    from . import late_report
+    try:
+        absent = late_report.absent_names_for_day(day)
+    except Exception:  # noqa: BLE001 — degrade to "no declared absences"
+        absent = set()
+    if absent:
+        out = [e for e in out if e["name"] not in absent]
+        for name in sorted(absent):
+            out.append({
+                "name": name,
+                "hours": None,
+                "pay_type": "Absent",
+                "time_range": "",
+                "timing_label": "Absent",
+                "derived": False,
+                "manual_absent": True,
+                "pending": False,
+            })
     return out
 
 

@@ -11,6 +11,10 @@ def _fake_db(monkeypatch, rows):
     # clear-specific test re-stubs this afterward (monkeypatch last wins).
     from zira_dashboard import late_report
     monkeypatch.setattr(late_report, "cleared_partial_names_for_day", lambda day: set())
+    # Likewise, time_off_entries_for_day queries manual_absences (via
+    # late_report.absent_names_for_day); the broad stub would read the time-off
+    # rows back as "absent". Default to none; the absent-specific test overrides.
+    monkeypatch.setattr(late_report, "absent_names_for_day", lambda day: set())
 
 
 def test_full_day_entry_is_not_partial(monkeypatch):
@@ -119,3 +123,30 @@ def test_cleared_partial_is_filtered_out(monkeypatch):
     assert "Cleared P" not in names   # partial + cleared -> dropped
     assert "Kept P" in names          # partial, not cleared -> kept
     assert "Full P" in names          # full-day -> unaffected by partial clear
+
+
+def test_declared_absent_becomes_full_day_absent_entry(monkeypatch):
+    # Bob is on Odoo full-day PTO; Ana has an approved partial; Carl is only
+    # declared-absent. Declaring Ana absent must override her partial.
+    _fake_db(monkeypatch, [
+        {"name": "Bob", "shape": "full_day", "hour_from": None, "hour_to": None,
+         "state": "validate", "pay_type": "Paid Time Off"},
+        {"name": "Ana", "shape": "late_arrival", "hour_from": 6.0, "hour_to": 9.0,
+         "state": "validate", "pay_type": "Unpaid Time Off"},
+    ])
+    import zira_dashboard.late_report as lr
+    monkeypatch.setattr(lr, "absent_names_for_day", lambda day: {"Ana", "Carl"})
+
+    out = {e["name"]: e for e in sto.time_off_entries_for_day(date(2026, 6, 1))}
+
+    # Bob unchanged (not absent)
+    assert out["Bob"]["pay_type"] == "Paid Time Off"
+    assert out["Bob"]["manual_absent"] is False
+    # Ana: her partial is replaced by a full-day Absent entry
+    assert out["Ana"]["hours"] is None
+    assert out["Ana"]["pay_type"] == "Absent"
+    assert out["Ana"]["timing_label"] == "Absent"
+    assert out["Ana"]["manual_absent"] is True
+    # Carl: declared absent, not in the Odoo feed -> new Absent entry
+    assert out["Carl"]["manual_absent"] is True
+    assert out["Carl"]["hours"] is None
