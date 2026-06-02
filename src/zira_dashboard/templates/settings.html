@@ -409,12 +409,6 @@
         Effective immediately &mdash; punches from this point forward use
         these values. Historical punches are unchanged.
       </p>
-      <div class="rounding-actions">
-        {% if saved and active_section == 'timeclock' %}
-          <span class="saved-flash">Saved.</span>
-        {% endif %}
-        <button type="submit">Save Rounding</button>
-      </div>
     </form>
 
     <div class="per-schedule-rounding" style="margin-top:1.6rem">
@@ -431,7 +425,7 @@
           <strong>{{ ws.name }}</strong>
           <span class="note">{{ ws.hours_display }} &middot; from Odoo</span>
         </div>
-        <form method="post" action="/settings/work_schedule_rounding">
+        <form method="post" action="/settings/work_schedule_rounding" class="ws-rounding-fields">
           <input type="hidden" name="resource_calendar_id" value="{{ ws.resource_calendar_id }}">
           <div class="rounding-grid">
             <div class="rounding-col">
@@ -453,7 +447,6 @@
                 minute(s) after the schedule clock-out time.</label>
             </div>
           </div>
-          <button type="submit">Save</button>
         </form>
         <form method="post" action="/settings/work_schedule_rounding/remove" style="margin-top:0.4rem">
           <input type="hidden" name="resource_calendar_id" value="{{ ws.resource_calendar_id }}">
@@ -524,12 +517,6 @@
       <p class="effective-note">
         Effective immediately &mdash; no restart needed.
       </p>
-      <div class="rounding-actions">
-        {% if saved and active_section == 'timeclock' %}
-          <span class="saved-flash">Saved.</span>
-        {% endif %}
-        <button type="submit">Save Auto-Lunch</button>
-      </div>
     </form>
 
     </div><!-- /tc-tab-rules -->
@@ -990,6 +977,14 @@
     form.addEventListener('input', (e) => {
       if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) schedule();
     });
+    // Button-less autosaved forms: Enter saves in place, never native-submit
+    // (full reload). data-section forms are handled by the submit interceptor
+    // above, so skip them here to avoid a double save.
+    form.addEventListener('submit', (e) => {
+      if (form.dataset.section) return;
+      e.preventDefault();
+      save();
+    });
     window.addEventListener('beforeunload', () => {
       if (!timer) return;
       clearTimeout(timer);
@@ -1001,6 +996,11 @@
   attachAutosaver(document.getElementById('schedule-form'), '/settings/schedule');
   attachAutosaver(document.getElementById('saturday-schedule-form'), '/settings/saturday_schedule');
   attachAutosaver(document.getElementById('wc-form'), '/settings/work_centers');
+  attachAutosaver(document.getElementById('rounding-form'), '/settings/rounding');
+  attachAutosaver(document.getElementById('auto-lunch-form'), '/settings/auto_lunch');
+  document.querySelectorAll('form.ws-rounding-fields').forEach(f => {
+    attachAutosaver(f, '/settings/work_schedule_rounding');
+  });
 
   // ---------- Picker helpers: summary refresh, × clear, max/min guards ----------
   function refreshPickerSummary(picker) {

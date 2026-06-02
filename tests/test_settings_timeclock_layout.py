@@ -97,3 +97,25 @@ def test_rules_tab_orders_autolunch_after_per_schedule():
     assert "Auto-Lunch" in html
     assert html.index("Per-schedule rounding") < html.index("Auto-Lunch"), \
         "Auto-Lunch should sit below the rounding block"
+
+
+def test_rules_forms_have_no_explicit_save_buttons(monkeypatch):
+    _seed_override()
+    monkeypatch.setattr(
+        odoo_client, "fetch_work_schedules",
+        lambda: [{"id": CAL_ID + 1, "name": "Another Schedule"}],
+    )
+    try:
+        r = client.get("/settings?section=timeclock")
+        assert r.status_code == 200
+        html = r.text
+        # The old explicit Save buttons are gone (autosave replaces them).
+        assert "Save Rounding" not in html
+        assert "Save Auto-Lunch" not in html
+        # The per-schedule window form is tagged for the autosaver.
+        assert "ws-rounding-fields" in html
+        # Structural action buttons remain.
+        assert 'action="/settings/work_schedule_rounding/add"' in html
+        assert 'action="/settings/work_schedule_rounding/remove"' in html
+    finally:
+        _drop_override()
