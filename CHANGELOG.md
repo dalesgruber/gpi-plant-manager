@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-02
+
+### 10:45 AM
+
+- **Zero-downtime deploys — TVs no longer flash "upstream error" on every push** — root-caused the report that the **Repair 1 + Repair 3** TV dashboards went black with an "upstream error". The string isn't ours (grep confirms the app never emits "upstream" outside one unrelated ERP comment) — it's **Railway's Envoy edge** response when the `web` container isn't answering. The service runs `numReplicas: 1` with `healthcheckPath` / `overlapSeconds` / `drainingSeconds` all unset, so every deploy is a **hard cutover**: the old container stops and the new one boots with a gap in between where no instance serves. During this morning's go-live push cycle (5 deploys between 08:13–10:31) each cutover opened a ~15–30s dead window; the TVs auto-refresh on a stagger, so whichever screens happened to reload *inside* a window (Repair 1 + 3 this time) rendered Envoy's "upstream error" while the rest kept their last-loaded frame. Fix: point Railway at the existing `/healthz` endpoint (`routes/api_layout.py` — returns `{"ok": true}`, dependency-free, already auth-exempt in `auth.py`) via `deploy.healthcheckPath` in `railway.json`. With a health check configured, Railway keeps the **old** deployment serving until the **new** one passes `/healthz`, so traffic never hits a dead window — and a future broken boot can no longer take the site down (the old container stays up if the new one never goes healthy). No application code changed. Known follow-ups (not in this deploy): (1) make the TV auto-refresh resilient — keep the last frame + retry on a failed fetch instead of navigating to the edge's 502 page; (2) `ZiraClient` (and the StratusTime/Odoo clients) share a single non-thread-safe `requests.Session` across `ThreadPoolExecutor` workers, which is the source of the `Request-sent` / `Idle` warmer errors in the logs.
+
 ## 2026-06-01
 
 ### 12:15 PM
