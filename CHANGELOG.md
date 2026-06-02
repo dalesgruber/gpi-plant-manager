@@ -4,6 +4,11 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-02
 
+### 1:13 PM
+
+- **Attributing production to a person now moves them into the work center's department in Odoo automatically** — when you credit sensed production to someone in the "Assignments to Do" modal, the app no longer just records the attribution — it reflects a real department move. If that person is clocked into a *different* department (or has no open punch at all), their Odoo attendance is transferred/opened to the work center's department, effective at the **start of the window they worked** — clamped so the move can never be backdated before their actual check-in. You see it confirmed as a toast with an **Undo** if it was the wrong call.
+- **"Assignments to Do" modal gains a Testing button for carving out test runs** — next to **Save** there's now a **Testing** button. Use it when part of a sensed run was machine testing rather than real output: it carves a testing time window out of the production, credits those units to **no one** (they're subtracted from the work center's total), and then lets you assign the operator who worked the *remainder* of the window. So a run that was half test, half production gets split correctly — the tester's units drop off the count and only the real production is attributed.
+
 ### 12:21 PM
 
 - **GOAT celebration banner moved into the TV header — gives the boards back a full row** — the "NEW GOAT" record-break banner used to sit in its own full-width strip *below* the header on every TV dashboard, pushing the widgets down. It now rides in the **center of the header, between the work-center title and the operator name(s)** (so an operator board reads `Repair 1 · 🏆 NEW GOAT — Dismantlers … · Jesus Galindo`). On operator boards it's pinned to a single tight line, and the least-important detail (the prior record it beat) ellipsizes first if the operator names crowd it; on the department boards (`/tv/recycling`, `/tv/new`) there's no name block, so it shows in full. The screen/editor view is unchanged — the banner stays below the chrome there. Built as an optional center slot on the shared `tv_header` macro, filled via a `{% call %}` block, with a 3-column header grid in `tv-mode.css`; touches `_tv_header.html`, `tv-mode.css`, `wc_dashboard.html`, `recycling.html`, `new_dept.html`.
