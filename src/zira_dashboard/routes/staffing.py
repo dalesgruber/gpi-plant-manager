@@ -504,8 +504,12 @@ def staffing_page(
             if not any(r["name"] == a["name"] for r in pool):
                 pool.append({"name": a["name"], "level": a["level"], "color": a["color"], "trained": a["level"] >= 1, "reserve": False})
         pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
+        # Full-day-off / absent people stay assigned in the saved data (picker
+        # checkbox + form input below), but are pulled from the station's
+        # display and headcount so the slot reads as needing coverage.
+        present_assigned = staffing.present_operators(assigned, time_off_set)
         # Headcount status
-        count = len(assigned)
+        count = len(present_assigned)
         hc_status = "ok"
         if count == 0:
             hc_status = "empty"
@@ -522,6 +526,7 @@ def staffing_page(
         row = {
             "loc": loc,
             "assigned": assigned,
+            "present_assigned": present_assigned,
             "pool": pool,
             "assigned_set": assigned_set,
             "min_ops": min_ops,
@@ -552,7 +557,7 @@ def staffing_page(
             for r in bay["rows"]:
                 if r["hc_status"] == "under" and r["min_ops"] >= 2:
                     publish_block_reasons.append(
-                        f"{r['loc'].name} requires {r['min_ops']} operators — currently {len(r['assigned'])}."
+                        f"{r['loc'].name} requires {r['min_ops']} operators — currently {len(r['present_assigned'])}."
                     )
 
     # Per-WC default operators (set in Settings → Work Centers). Exposed as a

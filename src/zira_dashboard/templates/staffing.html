@@ -231,7 +231,7 @@
              attribution pill is the single representation. #}
           {% set _wc_attribs_for_row = attributions_by_wc.get(row.loc.name, []) if attributions_by_wc else [] %}
           {% set _attrib_names_for_row = _wc_attribs_for_row | map(attribute='person_name') | list %}
-          {% set visible_assigned = row.assigned | rejectattr('name', 'in', _attrib_names_for_row) | list %}
+          {% set visible_assigned = row.present_assigned | rejectattr('name', 'in', _attrib_names_for_row) | list %}
           <tr>
             {% if loop.first %}
               <td class="bay" rowspan="{{ bay.rows|length }}">
