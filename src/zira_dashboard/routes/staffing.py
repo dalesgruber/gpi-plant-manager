@@ -73,21 +73,23 @@ def _safe_time_off_entries(d):
         return []
 
 
-def _attendance_with_fallback(day, emp_ids):
-    """Return today's per-emp attendance dict, filtered to `emp_ids`.
+def _attendance_with_fallback(day, ids):
+    """Return today's per-id Odoo punch dict, filtered to `ids`.
 
-    The cache holds attendance for ALL known emp_ids; we filter here so
-    callers get exactly the subset they asked for.
+    The cache holds punches for ALL employees; we filter here so callers
+    get exactly the subset they asked for. Keys are str(person_odoo_id);
+    values are {first_check_in, currently_open}. _safe_attendance turns
+    these into a status dict via attendance.compute_status.
     """
-    from .. import live_cache, stratustime_client
-    wanted = set(emp_ids)
+    from .. import live_cache, attendance
+    wanted = {str(i) for i in ids}
     return _live_or_fallback(
         day,
         read=live_cache.read_attendance,
         refresh=live_cache.refresh_attendance,
-        fallback=lambda: stratustime_client.attendance_for_day(day, emp_ids),
+        fallback=lambda: attendance.punches_for_day(day),
         transform=lambda payload: {
-            emp_id: info for emp_id, info in payload.items() if emp_id in wanted
+            sid: info for sid, info in payload.items() if sid in wanted
         },
     )
 
@@ -134,7 +136,8 @@ def _safe_attendance(d, sched, today):
         )
         if now_local < shift_start_local:
             return empty
-        name_to_id = stratustime_client.name_to_emp_id_map()
+        from .. import attendance
+        name_to_id = attendance.name_to_person_id()
         scheduled_names: set[str] = set()
         for ops in sched.assignments.values():
             for n in (ops or []):
@@ -168,7 +171,10 @@ def _safe_attendance(d, sched, today):
 
         all_ids = list({*scheduled_ids, *unscheduled_ids})
         id_to_name = {v: k for k, v in name_to_id.items()}
-        attendance_by_id = _attendance_with_fallback(d, all_ids)
+        punches = _attendance_with_fallback(d, all_ids)
+        attendance_by_id = attendance.compute_status(
+            punches, all_ids, now_local, shift_start_local
+        )
         by_name: dict[str, dict] = {}
         for emp_id, info in attendance_by_id.items():
             name = id_to_name.get(emp_id)
