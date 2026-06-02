@@ -66,4 +66,9 @@ def punch_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, date
         if not name:
             continue
         by_person.setdefault(name, []).append(r)
-    return {name: _segments_from_rows(rs) for name, rs in by_person.items()}
+    out: dict[str, list[tuple[str, datetime, datetime | None]]] = {}
+    for name, rs in by_person.items():
+        segs = _segments_from_rows(rs)
+        if segs:
+            out[name] = segs
+    return out

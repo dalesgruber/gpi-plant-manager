@@ -37,3 +37,22 @@ def test_window_without_wc_dropped():
         {"action": "clock_out", "wc_name": None, "at": t(17)},
     ]
     assert _segments_from_rows(rows) == []
+
+
+from datetime import date
+
+
+def test_punch_windows_omits_people_with_no_resolved_window(monkeypatch):
+    from zira_dashboard import timeclock_windows, db, attendance
+    # Two people: 101 has a real clock_in at a WC; 102 has only a WC-less punch.
+    rows = [
+        {"person_odoo_id": 101, "action": "clock_in", "wc_name": "Dismantler 4", "at": t(13)},
+        {"person_odoo_id": 102, "action": "clock_in", "wc_name": None, "at": t(13)},
+        {"person_odoo_id": 102, "action": "clock_out", "wc_name": None, "at": t(17)},
+    ]
+    monkeypatch.setattr(db, "query", lambda *a, **k: rows)
+    monkeypatch.setattr(attendance, "name_to_person_id",
+                        lambda: {"Eulogio": "101", "Ghost": "102"})
+    out = timeclock_windows.punch_windows_for_day(date(2026, 6, 2))
+    assert out == {"Eulogio": [("Dismantler 4", t(13), None)]}
+    assert "Ghost" not in out  # no real window -> omitted, so fallback isn't suppressed
