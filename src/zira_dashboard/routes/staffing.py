@@ -417,46 +417,10 @@ def staffing_page(
     try:
         from .. import late_report as _lr
         if d == today:
-            roster_map = stratustime_client._emp_id_to_roster_name_map()
-            full_map = stratustime_client._employee_id_to_name_map()
-            # Cleared StratusTime time-off requests
-            cleared_rows = _lr.cleared_partials_for_day(d)
-            if cleared_rows:
-                from datetime import timedelta as _td
-                req_window = stratustime_client.get_time_off_requests(
-                    d - _td(days=3), d + _td(days=3)
-                )
-                req_by_id = {int(r["ID"]): r for r in req_window if r.get("ID")}
-                for row in cleared_rows:
-                    rid = int(row["request_id"])
-                    r = req_by_id.get(rid)
-                    if not r:
-                        continue
-                    emp_id = str(r.get("EmpIdentifier") or "")
-                    nm = roster_map.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
-                    start_str = r.get("StartDateTimeSchema") or ""
-                    end_str = r.get("EndDateTimeSchema") or ""
-                    tr = ""
-                    if start_str[:10] == end_str[:10] and start_str:
-                        tr = stratustime_client._fmt_time_range(start_str, end_str)
-                    cleared_partials_today.append({
-                        "request_id": rid,
-                        "emp_id": emp_id,
-                        "name": nm,
-                        "time_range": tr,
-                    })
-            # Cleared StratusTime non-work shifts
-            cleared_nw_rows = _lr.cleared_non_work_for_day(d)
-            for row in cleared_nw_rows:
-                emp_id = str(row["emp_id"])
-                nm = roster_map.get(emp_id) or full_map.get(emp_id) or f"Unknown ({emp_id})"
-                cleared_partials_today.append({
-                    "request_id": None,
-                    "emp_id": emp_id,
-                    "name": nm,
-                    "time_range": "",
-                })
-            # Cleared by-name (catch-all path — primary going forward)
+            # By-name is the only clear path now. The legacy StratusTime
+            # request-id / non-work-shift clears are retired (StratusTime is
+            # off) — and fetching them is exactly what used to blank this
+            # whole footer once StratusTime stopped responding.
             for row in _lr.cleared_partial_names_today_list(d):
                 cleared_partials_today.append({
                     "request_id": None,
