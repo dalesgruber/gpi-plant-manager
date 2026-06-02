@@ -60,3 +60,15 @@ def test_undo_transfer_without_closed_id_only_unlinks(monkeypatch):
     calls = [c.args for c in fake.call_args_list]
     assert ("hr.attendance", "unlink", [20]) in calls
     assert all(c[1] != "write" for c in calls)
+
+
+def test_get_current_attendance_dept_field_set_but_value_false(monkeypatch):
+    monkeypatch.setenv("ODOO_KIOSK_DEPARTMENT_FIELD", "x_kiosk_department_id")
+    fake = MagicMock(return_value=[{
+        "id": 55, "employee_id": [5, "Bob"], "check_in": "2026-06-02 13:00:00",
+        "x_kiosk_department_id": False,  # Odoo's representation of an unset Many2one
+    }])
+    monkeypatch.setattr(odoo_client, "execute", fake)
+    row = odoo_client.get_current_attendance(5)
+    assert row["department_id"] is None
+    assert row["department_name"] is None
