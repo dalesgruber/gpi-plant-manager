@@ -128,3 +128,32 @@ def test_helper_text_unified_to_help_class():
     # The ad-hoc rounding blurb class is replaced by the shared .help style.
     assert 'class="rounding-blurb"' not in html
     assert 'class="help"' in html
+
+
+def test_add_redirects_to_rules_tab(monkeypatch):
+    monkeypatch.setattr(odoo_client, "fetch_work_schedules",
+                        lambda: [{"id": CAL_ID, "name": "Drivers"}])
+    monkeypatch.setattr(odoo_client, "fetch_calendar_hours",
+                        lambda ids: {CAL_ID: {"0": ["05:45", "14:30"]}})
+    _drop_override()
+    try:
+        r = client.post("/settings/work_schedule_rounding/add",
+                        data={"resource_calendar_id": str(CAL_ID)},
+                        follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"].endswith("#rules")
+    finally:
+        _drop_override()
+
+
+def test_remove_redirects_to_rules_tab():
+    work_schedule_store.create(CAL_ID, "Drivers")
+    work_schedule_store.reload()
+    try:
+        r = client.post("/settings/work_schedule_rounding/remove",
+                        data={"resource_calendar_id": str(CAL_ID)},
+                        follow_redirects=False)
+        assert r.status_code == 303
+        assert r.headers["location"].endswith("#rules")
+    finally:
+        _drop_override()

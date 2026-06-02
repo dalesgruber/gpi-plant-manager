@@ -585,7 +585,7 @@ async def settings_add_work_schedule(request: Request):
         odoo_sync.refresh_work_schedule_hours(only_ids=[cal_id])
     except Exception:
         pass  # row exists; hours fill in on the next periodic sync
-    return RedirectResponse(url="/settings?saved=1&section=timeclock", status_code=303)
+    return RedirectResponse(url="/settings?saved=1&section=timeclock#rules", status_code=303)
 
 
 @router.post("/settings/work_schedule_rounding/remove")
@@ -598,7 +598,7 @@ async def settings_remove_work_schedule(request: Request):
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "bad id"}, status_code=400)
     work_schedule_store.delete(cal_id)
-    return RedirectResponse(url="/settings?saved=1&section=timeclock", status_code=303)
+    return RedirectResponse(url="/settings?saved=1&section=timeclock#rules", status_code=303)
 
 
 @router.post("/settings/groups/add")
