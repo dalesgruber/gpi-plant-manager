@@ -431,6 +431,19 @@ def skill_color(level: int) -> str:
     return SKILL_COLORS.get(int(level), SKILL_COLORS[0])
 
 
+def present_operators(assigned: list[dict], off_names) -> list[dict]:
+    """The assigned operators actually present — i.e. not out for the full day.
+
+    ``assigned`` is a list of {name, ...} dicts; ``off_names`` is the set of
+    names with a full-day time-off/absent entry today. Used for the station
+    summary and the headcount, while the full ``assigned`` list still drives
+    the picker and the schedule save — so the assignment is preserved and
+    undoing an absence restores the person to the slot.
+    """
+    off = set(off_names)
+    return [a for a in assigned if a["name"] not in off]
+
+
 def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -> int:
     """Minutes the person `name` was actually working in [window_start_utc, window_end_utc]
     on `day`. Subtracts:
