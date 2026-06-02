@@ -131,7 +131,9 @@ def _upsert_run(person_odoo_id, day, kind, state, *, target_out_at=None,
 def _write_auto_punch(person_odoo_id, action, wc_name, occurred_at) -> int:
     """Insert an auto-lunch punch stamped at the scheduled boundary time.
     source='auto_lunch'; rounded_at = occurred_at (it IS the schedule, no
-    rounding). Returns the new log id; caller triggers the Odoo sync."""
+    rounding). Callers pass wc_name=None for a clock_out (matching the kiosk
+    convention); the work center to restore is kept on the auto_lunch_runs row
+    and supplied on the clock_in. Returns the new log id; caller triggers sync."""
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO timeclock_punches_log "
@@ -180,11 +182,13 @@ def _apply(person_odoo_id, today, kind, run, t, state, window, settings) -> None
 
 
 def _advance_person(person_odoo_id, today, now, fixed_window, flex_ids, settings) -> None:
-    kind = "flex" if person_odoo_id in flex_ids else "scheduled"
+    run = _get_run(person_odoo_id, today)
+    # Classify once: a run's kind is fixed when the row is first created, so a
+    # mid-day is_flexible change in Odoo can't reclassify an in-progress run.
+    kind = run["kind"] if run else ("flex" if person_odoo_id in flex_ids else "scheduled")
     window = _window_for(person_odoo_id, kind, today, fixed_window, settings)
     if window is None:
         return
-    run = _get_run(person_odoo_id, today)
     run_state = run["state"] if run else "pending"
     if run_state in TERMINAL:
         return
