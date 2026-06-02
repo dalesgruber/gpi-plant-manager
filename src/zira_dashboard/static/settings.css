@@ -502,12 +502,6 @@ button:hover { filter: brightness(1.1); }
   font-weight: 600;
   color: var(--fg);
 }
-.rounding-blurb {
-  color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.4;
-  margin: 0 0 0.6rem;
-}
 .rounding-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -541,24 +535,6 @@ button:hover { filter: brightness(1.1); }
   margin: 0.8rem 0 0.4rem;
   font-style: italic;
 }
-.rounding-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin-top: 0.4rem;
-}
-.rounding-actions button {
-  background: var(--accent);
-  color: #fff;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  padding: 0.4rem 0.9rem;
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.rounding-actions button:hover { background: #15803d; }
 .saved-flash {
   color: var(--accent);
   font-weight: 600;
@@ -606,3 +582,18 @@ button:hover { filter: brightness(1.1); }
     margin-top: 0.6rem; padding-top: 0.6rem;
   }
 }
+
+/* One helper-text style for descriptions under headings inside the timeclock tabs */
+.help {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 0.15rem 0 0.7rem;
+}
+/* Consistent heading rhythm within each tab panel */
+.tc-panel h3 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 0.95rem; font-weight: 600; color: var(--fg);
+}
+.tc-panel > form:first-child h3,
+.tc-panel > h3:first-child { margin-top: 0.2rem; }

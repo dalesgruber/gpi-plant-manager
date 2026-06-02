@@ -119,3 +119,12 @@ def test_rules_forms_have_no_explicit_save_buttons(monkeypatch):
         assert 'action="/settings/work_schedule_rounding/remove"' in html
     finally:
         _drop_override()
+
+
+def test_helper_text_unified_to_help_class():
+    r = client.get("/settings?section=timeclock")
+    assert r.status_code == 200
+    html = r.text
+    # The ad-hoc rounding blurb class is replaced by the shared .help style.
+    assert 'class="rounding-blurb"' not in html
+    assert 'class="help"' in html
