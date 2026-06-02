@@ -316,3 +316,46 @@ def test_late_people_for_day_v2_skips_absent_and_snoozed():
         already_recorded_late_ids=set(),
     )
     assert out["scheduled_late"] == []
+
+
+class _RosterPerson:
+    """Minimal stand-in for staffing.Person for eligibility tests."""
+
+    def __init__(self, name, wage_type, is_flexible=False):
+        self.name = name
+        self.wage_type = wage_type
+        self.is_flexible = is_flexible
+
+
+def test_report_eligible_emp_ids_only_hourly_fixed():
+    """The report applies only to hourly people on a FIXED schedule.
+    Salaried/unknown wage_type and flexible-schedule people are dropped,
+    and anyone missing from name_to_id is skipped."""
+    roster = [
+        _RosterPerson("Hourly Fixed", "hourly", is_flexible=False),   # included
+        _RosterPerson("Hourly Flex", "hourly", is_flexible=True),     # excluded: flex
+        _RosterPerson("Salaried", "monthly", is_flexible=False),      # excluded: wage
+        _RosterPerson("Unknown Wage", None, is_flexible=False),       # excluded: wage
+        _RosterPerson("Unmapped", "hourly", is_flexible=False),       # excluded: no id
+    ]
+    name_to_id = {
+        "Hourly Fixed": "1",
+        "Hourly Flex": "2",
+        "Salaried": "3",
+        "Unknown Wage": "4",
+    }
+    out = late_report.report_eligible_emp_ids(roster, name_to_id)
+    assert out == {"1"}
+
+
+def test_report_eligible_emp_ids_missing_is_flexible_attr_treated_as_fixed():
+    """A roster object without is_flexible degrades to 'fixed' (eligible),
+    mirroring odoo_sync's 'treat as non-flex on failure' philosophy."""
+    class _Legacy:
+        def __init__(self, name, wage_type):
+            self.name = name
+            self.wage_type = wage_type
+
+    roster = [_Legacy("Legacy Hourly", "hourly")]
+    out = late_report.report_eligible_emp_ids(roster, {"Legacy Hourly": "9"})
+    assert out == {"9"}

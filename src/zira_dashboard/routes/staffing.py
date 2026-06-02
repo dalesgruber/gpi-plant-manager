@@ -205,9 +205,18 @@ def _late_emp_ids(d, today, attendance_pkg) -> set[str]:
         shift_start_local = datetime.combine(
             d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ
         )
+        # Same eligibility filter as the report (GET /api/late-report): only
+        # hourly, fixed-schedule people. Keeps the scheduler highlight in sync
+        # with the modal — flex/salaried people no longer light up red.
+        eligible = late_report.report_eligible_emp_ids(
+            staffing.load_roster(), attendance_pkg.get("name_to_id") or {}
+        )
+        scheduled_ids = [
+            e for e in (attendance_pkg.get("scheduled_ids") or []) if e in eligible
+        ]
         late = late_report.late_people_for_day(
             d,
-            attendance_pkg.get("scheduled_ids") or [],
+            scheduled_ids,
             attendance_pkg.get("by_id") or {},
             now_local,
             shift_start_local,
@@ -997,18 +1006,17 @@ def late_report_json():
             snoozed_ids = {s["emp_id"] for s in late_report.active_snoozes(today)}
             already_recorded_late_ids = late_report.late_arrivals_for_day(today)
 
-            # Hourly-only filter: salaried managers (wage_type == 'monthly')
-            # and people with unknown wage_type are dropped from all three
-            # late-report sections. Source of truth is Odoo
-            # hr.employee.wage_type, synced into people.wage_type.
+            # Eligibility filter: the report applies only to hourly people on
+            # a FIXED schedule. Salaried/unknown wage_type (managers) and
+            # flexible-schedule people are dropped from all three sections.
+            # Source of truth is Odoo (wage_type + Schedule Type), synced into
+            # people.wage_type / people.is_flexible.
             name_to_id = attendance_pkg.get("name_to_id") or {}
-            hourly_emp_ids = {
-                name_to_id[p.name]
-                for p in staffing.load_roster()
-                if p.wage_type == "hourly" and p.name in name_to_id
-            }
-            scheduled_ids = [e for e in (attendance_pkg.get("scheduled_ids") or []) if e in hourly_emp_ids]
-            unscheduled_ids = [e for e in (attendance_pkg.get("unscheduled_ids") or []) if e in hourly_emp_ids]
+            eligible_emp_ids = late_report.report_eligible_emp_ids(
+                staffing.load_roster(), name_to_id
+            )
+            scheduled_ids = [e for e in (attendance_pkg.get("scheduled_ids") or []) if e in eligible_emp_ids]
+            unscheduled_ids = [e for e in (attendance_pkg.get("unscheduled_ids") or []) if e in eligible_emp_ids]
 
             sections = late_report.late_people_for_day_v2(
                 day=today,

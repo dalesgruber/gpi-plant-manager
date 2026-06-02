@@ -326,6 +326,35 @@ def late_people_for_day(
     return out
 
 
+def report_eligible_emp_ids(roster, name_to_id: dict) -> set[str]:
+    """Emp_ids the Late/Absence Report (and the in-sync scheduler
+    highlight) applies to.
+
+    A person is eligible only if they are BOTH:
+      - paid hourly (`wage_type == 'hourly'`), and
+      - on a FIXED schedule (`is_flexible` is falsy).
+
+    Excluded:
+      - Salaried / unknown wage_type — managers (Dale, Wendy, Ian, ...)
+        have flexible start times and shouldn't trigger the late workflow.
+      - Flexible-schedule people — Odoo "Schedule Type" → people.is_flexible.
+        With no fixed start there's nothing to be measured "late" against.
+
+    `roster` is an iterable of objects exposing `.name`, `.wage_type`, and
+    `.is_flexible` (staffing.Person). `name_to_id` maps roster name →
+    emp_id; anyone absent from it is skipped. A roster object missing
+    `is_flexible` degrades to "fixed" (eligible), mirroring odoo_sync's
+    treat-as-non-flex-on-failure behavior.
+    """
+    return {
+        name_to_id[p.name]
+        for p in roster
+        if p.wage_type == "hourly"
+        and not getattr(p, "is_flexible", False)
+        and p.name in name_to_id
+    }
+
+
 def late_people_for_day_v2(
     day,
     scheduled_emp_ids: Iterable[str],
