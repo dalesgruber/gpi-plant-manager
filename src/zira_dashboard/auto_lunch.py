@@ -34,7 +34,7 @@ class Transition:
     at: datetime | None = None
 
 
-def lunch_window_for_day(breaks, day: date) -> Window | None:
+def lunch_window_for_day(breaks: tuple, day: date) -> Window | None:
     """(out_at, in_at) for the break named 'lunch' on `day` in site-local tz,
     or None if there's no lunch break. `breaks` is shift_config.breaks_for(day)."""
     for b in breaks:

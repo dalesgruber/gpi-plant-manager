@@ -1,12 +1,11 @@
 """Pure state-machine + window tests for auto_lunch. No DB/Odoo."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time
 
 from zira_dashboard import auto_lunch as al
 from zira_dashboard.schedule_store import Break
 from zira_dashboard.shift_config import SITE_TZ
-from datetime import time
 
 
 def _dt(h, m=0):
@@ -18,6 +17,12 @@ def test_lunch_window_picks_the_lunch_break():
               Break(time(11, 0), time(11, 30), "Lunch"))
     w = al.lunch_window_for_day(breaks, date(2026, 6, 2))
     assert w.out_at == _dt(11, 0) and w.in_at == _dt(11, 30)
+
+
+def test_lunch_window_matches_name_case_insensitively():
+    breaks = (Break(time(11, 0), time(11, 30), "LUNCH"),)
+    w = al.lunch_window_for_day(breaks, date(2026, 6, 2))
+    assert w is not None and w.out_at == _dt(11, 0)
 
 
 def test_lunch_window_none_when_no_lunch():
