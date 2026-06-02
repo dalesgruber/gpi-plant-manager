@@ -183,6 +183,11 @@
     padding: 0 0.5rem; font: inherit; font-size: 1.1rem; line-height: 1.4; cursor: pointer;
   }
   .atd-saved-item .atd-delete:hover { color: var(--bad, #ef4444); border-color: var(--bad, #ef4444); }
+  .atd-testing-panel { margin-top: 6px; padding: 8px; background: #f8f8f8; border-radius: 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .atd-testing-panel label { font-size: 0.85rem; }
+  .atd-test-remainder { flex-basis: 100%; }
+  .atd-transfer-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2937; color: #fff; padding: 10px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); z-index: 10000; font-size: 0.9rem; }
+  .atd-transfer-toast .atd-transfer-undo { margin-left: 10px; background: #f59e0b; color: #1f2937; border: 0; border-radius: 4px; padding: 3px 8px; cursor: pointer; }
 
   /* Global "Late/Absence Report" badge — appears on every page when one or
      more scheduled people are 15+ minutes past shift-start without a punch. */
@@ -400,6 +405,25 @@
     });
   }
 
+  function to24h(label) {
+    // label like "1:05 PM" / "8:50 AM" -> "13:05" / "08:50"
+    var m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(label || '').trim());
+    if (!m) return '';
+    var h = parseInt(m[1], 10) % 12;
+    if (/pm/i.test(m[3])) h += 12;
+    return (h < 10 ? '0' : '') + h + ':' + m[2];
+  }
+
+  function localTimeToIso(dayIso, hhmm) {
+    // dayIso "2026-06-02", hhmm "13:05" -> UTC ISO using the browser's local tz
+    // (plant kiosks/managers run in plant-local time).
+    var p = hhmm.split(':');
+    var dp = dayIso.split('-');
+    var dt = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1,
+                      parseInt(dp[2], 10), parseInt(p[0], 10), parseInt(p[1], 10), 0, 0);
+    return dt.toISOString();
+  }
+
   function renderModal(d) {
     data = d;
     if (!modal) return;
@@ -417,7 +441,21 @@
           html += '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>';
         });
         html += '</select> <button type="button" class="atd-save">Save</button>';
-        html += '<span class="atd-status" hidden></span></div></li>';
+        html += ' <button type="button" class="atd-testing-btn">Testing</button>';
+        html += '<span class="atd-status" hidden></span></div>';
+        // Hidden testing panel — start/end prefilled with the sensed window.
+        html += '<div class="atd-testing-panel" hidden>';
+        html += '<label>Testing from <input type="time" class="atd-test-start" value="' + to24h(item.first_label) + '"></label>';
+        html += '<label>to <input type="time" class="atd-test-end" value="' + to24h(item.last_label) + '"></label>';
+        html += '<div class="atd-test-remainder"><label>Who worked after testing? '
+              + '<select class="atd-test-person"><option value="">— no one (all testing) —</option>';
+        d.people.forEach(function (n) {
+          html += '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>';
+        });
+        html += '</select></label></div>';
+        html += '<button type="button" class="atd-test-confirm">Confirm testing</button>';
+        html += '<span class="atd-test-status" hidden></span></div>';
+        html += '</li>';
       });
       html += '</ul>';
     } else {
@@ -458,6 +496,7 @@
           if (resp.ok) {
             status.hidden = false; status.textContent = 'Saved ✓ ' + person;
             li.classList.add('atd-saved');
+            maybeTransferToast(resp.transfer);
             // Hard reload so the dashboards' bars/downtime widgets show the
             // new name immediately in the (no assignment) slot.
             setTimeout(function () { location.reload(); }, 500);
@@ -488,6 +527,68 @@
           }).catch(function () { b.disabled = false; alert('Network error.'); });
       });
     });
+    modal.querySelectorAll('.atd-testing-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var li = b.closest('.atd-item');
+        var panel = li.querySelector('.atd-testing-panel');
+        panel.hidden = !panel.hidden;
+      });
+    });
+    modal.querySelectorAll('.atd-test-confirm').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var li = b.closest('.atd-item');
+        var startV = li.querySelector('.atd-test-start').value;
+        var endV = li.querySelector('.atd-test-end').value;
+        var person = li.querySelector('.atd-test-person').value;
+        var status = li.querySelector('.atd-test-status');
+        if (!startV || !endV || endV <= startV) {
+          status.hidden = false; status.textContent = 'Testing end must be after start.'; return;
+        }
+        b.disabled = true; status.hidden = true;
+        fetch('/api/staffing/attribute-with-testing', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            day: li.dataset.day, wc_name: li.dataset.wc,
+            testing_start_utc: localTimeToIso(li.dataset.day, startV),
+            testing_end_utc: localTimeToIso(li.dataset.day, endV),
+            sensed_end_utc: li.dataset.end,
+            remainder_person: person || null,
+          }),
+        }).then(function (r) { return r.json(); }).then(function (resp) {
+          if (resp.ok) {
+            status.hidden = false;
+            status.textContent = person ? ('Saved ✓ testing + ' + person) : 'Saved ✓ testing';
+            maybeTransferToast(resp.transfer);
+            setTimeout(function () { location.reload(); }, 800);
+          } else {
+            b.disabled = false; status.hidden = false;
+            status.textContent = 'Failed: ' + (resp.error || 'unknown');
+          }
+        }).catch(function () {
+          b.disabled = false; status.hidden = false; status.textContent = 'Network error.';
+        });
+      });
+    });
+  }
+
+  function maybeTransferToast(t) {
+    if (!t || (t.transfer !== 'moved' && t.transfer !== 'opened')) return;
+    var toast = document.createElement('div');
+    toast.className = 'atd-transfer-toast';
+    var verb = t.transfer === 'opened' ? 'Clocked in' : 'Transferred';
+    toast.innerHTML = escapeHtml(verb + ' ' + (t.person || '') + ' → ' + (t.to_dept || ''))
+      + ' <button type="button" class="atd-transfer-undo">Undo</button>';
+    document.body.appendChild(toast);
+    toast.querySelector('.atd-transfer-undo').addEventListener('click', function () {
+      fetch('/api/staffing/transfer/undo', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({closed_id: t.closed_id || null, new_id: t.new_id}),
+      }).then(function (r) { return r.json(); }).then(function () {
+        toast.textContent = 'Transfer undone.';
+        setTimeout(function () { toast.remove(); }, 1500);
+      });
+    });
+    setTimeout(function () { if (toast.parentNode) toast.remove(); }, 8000);
   }
 
   // Kick it off after a short delay so the rest of the page renders first.
