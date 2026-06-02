@@ -21,6 +21,7 @@ def _wc_department_label(wc_name: str) -> str | None:
 
 
 def _employee_id_for(person_name: str) -> int | None:
+    """The Odoo employee id for a person on the live roster, or None (legacy person / unknown name)."""
     from . import staffing
     for p in staffing.load_roster():
         if p.name == person_name:
@@ -45,13 +46,14 @@ def decide_and_apply(
         close a punch before it opened.
       * Open punch already in the WC's department -> no-op.
       * Open punch in a different (or unknown) department -> transfer at ts.
+      * Unknown current dept or unknown WC dept (either id is None) -> treated as "differs", so the transfer/open proceeds (reversible via undo).
       * No open punch -> open a fresh punch at the WC's department.
     """
     from . import odoo_client
 
     emp_id = _employee_id_for(person_name)
     to_dept = _wc_department_label(wc_name)
-    if not emp_id:
+    if emp_id is None:
         return {"transfer": "skipped_no_employee", "person": person_name}
 
     wc_dept_id = odoo_client._department_id_for_wc(wc_name)

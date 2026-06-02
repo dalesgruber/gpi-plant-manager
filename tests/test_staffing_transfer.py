@@ -87,3 +87,32 @@ def test_opens_new_punch_when_none(roster, monkeypatch):
     assert out["transfer"] == "opened"
     assert out["new_id"] == 300
     assert captured["ts"] == WIN_START
+
+
+def test_transfers_when_current_dept_unknown(roster, monkeypatch):
+    """Dept field unconfigured -> current department_id is None -> treat as
+    differs and transfer (reversible via undo)."""
+    monkeypatch.setattr(odoo_client, "_department_id_for_wc", lambda wc: 9)
+    monkeypatch.setattr(odoo_client, "get_current_attendance", lambda eid: {
+        "id": 1, "check_in": "2026-06-02 12:00:00",
+        "department_id": None, "department_name": None,
+    })
+    captured = {}
+    monkeypatch.setattr(odoo_client, "transfer",
+                        lambda eid, wc, ts: captured.update(called=True) or (1, 2))
+    out = staffing_transfer.decide_and_apply("Lauro", "Junior #2", WIN_START)
+    assert out["transfer"] == "moved"
+    assert captured.get("called") is True
+
+
+def test_transfers_when_wc_dept_unknown(roster, monkeypatch):
+    """WC has no resolvable Odoo dept id -> still transfer (punch opens without
+    a department tag; reversible)."""
+    monkeypatch.setattr(odoo_client, "_department_id_for_wc", lambda wc: None)
+    monkeypatch.setattr(odoo_client, "get_current_attendance", lambda eid: {
+        "id": 1, "check_in": "2026-06-02 12:00:00",
+        "department_id": 3, "department_name": "01 Recycled",
+    })
+    monkeypatch.setattr(odoo_client, "transfer", lambda eid, wc, ts: (1, 2))
+    out = staffing_transfer.decide_and_apply("Lauro", "Junior #2", WIN_START)
+    assert out["transfer"] == "moved"
