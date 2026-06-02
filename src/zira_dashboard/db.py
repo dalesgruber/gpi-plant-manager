@@ -862,7 +862,8 @@ CREATE TABLE IF NOT EXISTS leave_types_cache (
 -- 2026-06-02 auto-lunch: tag system-generated punches so the worker can
 -- recognize its own actions and reports can filter them out.
 ALTER TABLE timeclock_punches_log
-  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'employee';
+  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'employee'
+  CHECK (source IN ('employee', 'auto_lunch'));
 
 -- Flex flag mirrored from each person's Odoo work schedule (Schedule Type =
 -- flexible). Stored on people (always present) rather than work_schedules
