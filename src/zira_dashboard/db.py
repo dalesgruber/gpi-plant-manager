@@ -858,6 +858,46 @@ CREATE TABLE IF NOT EXISTS leave_types_cache (
   active               BOOLEAN NOT NULL DEFAULT TRUE,
   last_pulled_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 2026-06-02 auto-lunch: tag system-generated punches so the worker can
+-- recognize its own actions and reports can filter them out.
+ALTER TABLE timeclock_punches_log
+  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'employee';
+
+-- Flex flag mirrored from each person's Odoo work schedule (Schedule Type =
+-- flexible). Stored on people (always present) rather than work_schedules
+-- (rows exist only for rounding overrides). Drives the elapsed-time lunch trigger.
+ALTER TABLE people ADD COLUMN IF NOT EXISTS is_flexible BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Per-person/per-day lunch state machine. UNIQUE(person, day) enforces one
+-- lunch per day and survives restarts (no double-deduct after a redeploy).
+CREATE TABLE IF NOT EXISTS auto_lunch_runs (
+  id              BIGSERIAL PRIMARY KEY,
+  person_odoo_id  INTEGER NOT NULL,
+  day             DATE    NOT NULL,
+  kind            TEXT    NOT NULL CHECK (kind IN ('scheduled','flex')),
+  state           TEXT    NOT NULL CHECK (state IN
+                    ('pending','auto_out','done','skipped','ended_by_employee')),
+  target_out_at   TIMESTAMPTZ,
+  target_in_at    TIMESTAMPTZ,
+  wc_name         TEXT,
+  out_punch_id    BIGINT,
+  in_punch_id     BIGINT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (person_odoo_id, day)
+);
+
+-- Singleton settings row (id=1). Defaults: OFF, and the first enable runs
+-- observe-only. flex rule defaults to 5h -> 30min.
+CREATE TABLE IF NOT EXISTS auto_lunch_settings (
+  id                INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  enabled           BOOLEAN NOT NULL DEFAULT FALSE,
+  observe_only      BOOLEAN NOT NULL DEFAULT TRUE,
+  flex_after_hours  NUMERIC NOT NULL DEFAULT 5.0,
+  flex_minutes      INTEGER NOT NULL DEFAULT 30
+);
+INSERT INTO auto_lunch_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 """
 
 
