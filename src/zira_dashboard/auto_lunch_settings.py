@@ -41,6 +41,8 @@ def _load_from_db() -> Settings:
 
 
 def current() -> Settings:
+    """Return the singleton settings. Cached in process after first read;
+    invalidated on save(). Falls back to DEFAULT if the table has no row."""
     global _cache
     with _lock:
         if _cache is None:
@@ -49,6 +51,8 @@ def current() -> Settings:
 
 
 def save(s: Settings) -> None:
+    """Persist the settings (UPSERT id=1) and update the in-process cache so
+    the next current() returns the saved value without a re-read."""
     global _cache
     from . import db
     db.execute(
@@ -66,6 +70,7 @@ def save(s: Settings) -> None:
 
 
 def reload() -> Settings:
+    """Force a fresh read from Postgres, bypassing the cache."""
     global _cache
     with _lock:
         _cache = _load_from_db()
