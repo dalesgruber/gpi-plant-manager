@@ -99,6 +99,20 @@ async def _warm_odoo_attendance_loop():
         await asyncio.sleep(30)
 
 
+async def _warm_auto_lunch_loop():
+    """Drive the auto-lunch worker every 60s. Mirrors the other warmers:
+    runs the sync worker off the event loop, swallows errors so the loop
+    never dies, sleeps 60s between ticks. No-ops while the feature is
+    disabled (auto_lunch_settings.enabled defaults to FALSE)."""
+    from . import auto_lunch
+    while True:
+        try:
+            await asyncio.to_thread(auto_lunch.run_tick)
+        except Exception as e:  # noqa: BLE001
+            _log.warning("auto-lunch tick failed: %s", e)
+        await asyncio.sleep(60)
+
+
 async def _time_off_sync_loop():
     """Reconcile any time_off_requests rows still flagged unsynced
     against Odoo `hr.leave`. Mirrors `_warm_timeclock_sync_loop` — routes
@@ -234,6 +248,7 @@ async def lifespan(app: FastAPI):
     time_off_balance_task = asyncio.create_task(_time_off_balance_sweep_loop())
     staffing_pages_task = asyncio.create_task(_warm_staffing_pages_loop())
     staffing_stable_task = asyncio.create_task(_warm_staffing_stable_loop())
+    auto_lunch_task = asyncio.create_task(_warm_auto_lunch_loop())
     try:
         yield
     finally:
@@ -247,6 +262,7 @@ async def lifespan(app: FastAPI):
             time_off_balance_task,
             staffing_pages_task,
             staffing_stable_task,
+            auto_lunch_task,
         ):
             t.cancel()
             try:
