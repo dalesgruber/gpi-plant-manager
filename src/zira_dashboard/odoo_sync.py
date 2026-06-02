@@ -109,17 +109,30 @@ def sync(force: bool = False) -> SyncResult:
         columns_meta = odoo_client.fetch_skill_columns_with_types()
         buckets = odoo_client.fetch_skill_level_buckets()
         departments = odoo_client.fetch_departments()
-        work_schedules_meta = odoo_client.fetch_work_schedules()
     except Exception as e:
         return SyncResult(
             ok=False, refreshed=False, employee_count=0,
             skill_column_count=0, last_sync_at=last, error=str(e),
         )
 
+    # Flex detection is best-effort and isolated: a wrong SCHEDULE_TYPE_FIELD
+    # (the Odoo "Schedule Type" field, confirmed at rollout) must NOT break the
+    # whole employee/skill/department sync. On failure, degrade to "no flex" and
+    # log loudly — auto-lunch simply won't treat anyone as flexible until fixed.
+    try:
+        flex_cal_ids = {
+            c["id"] for c in odoo_client.fetch_work_schedules() if c.get("is_flexible")
+        }
+    except Exception:
+        log.exception(
+            "auto-lunch flex detection failed (check odoo_client.SCHEDULE_TYPE_FIELD); "
+            "treating all employees as non-flex this sync"
+        )
+        flex_cal_ids = set()
+
     from . import db
     columns = [c["name"] for c in columns_meta]
     type_by_skill = {c["name"]: c.get("type", "") for c in columns_meta}
-    flex_cal_ids = {c["id"] for c in work_schedules_meta if c.get("is_flexible")}
     pulled_at = now
 
     def _short_name(full: str) -> str:

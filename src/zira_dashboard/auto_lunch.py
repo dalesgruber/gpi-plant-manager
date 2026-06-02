@@ -110,8 +110,11 @@ def _get_run(person_odoo_id: int, day: date) -> dict | None:
 
 def _upsert_run(person_odoo_id, day, kind, state, *, target_out_at=None,
                 target_in_at=None, wc_name=None, out_punch_id=None,
-                in_punch_id=None) -> None:
-    db.execute(
+                in_punch_id=None, cur=None) -> None:
+    """Upsert the per-person/day run row. Pass an open `cur` to run inside an
+    existing transaction (so the run-state change commits atomically with the
+    punch insert); omit it for a standalone write."""
+    sql = (
         "INSERT INTO auto_lunch_runs (person_odoo_id, day, kind, state, "
         "target_out_at, target_in_at, wc_name, out_punch_id, in_punch_id, updated_at) "
         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) "
@@ -122,26 +125,30 @@ def _upsert_run(person_odoo_id, day, kind, state, *, target_out_at=None,
         "wc_name       = COALESCE(EXCLUDED.wc_name,       auto_lunch_runs.wc_name), "
         "out_punch_id  = COALESCE(EXCLUDED.out_punch_id,  auto_lunch_runs.out_punch_id), "
         "in_punch_id   = COALESCE(EXCLUDED.in_punch_id,   auto_lunch_runs.in_punch_id), "
-        "updated_at = now()",
-        (person_odoo_id, day, kind, state, target_out_at, target_in_at,
-         wc_name, out_punch_id, in_punch_id),
+        "updated_at = now()"
     )
+    params = (person_odoo_id, day, kind, state, target_out_at, target_in_at,
+              wc_name, out_punch_id, in_punch_id)
+    if cur is not None:
+        cur.execute(sql, params)
+    else:
+        db.execute(sql, params)
 
 
-def _write_auto_punch(person_odoo_id, action, wc_name, occurred_at) -> int:
-    """Insert an auto-lunch punch stamped at the scheduled boundary time.
-    source='auto_lunch'; rounded_at = occurred_at (it IS the schedule, no
-    rounding). Callers pass wc_name=None for a clock_out (matching the kiosk
-    convention); the work center to restore is kept on the auto_lunch_runs row
-    and supplied on the clock_in. Returns the new log id; caller triggers sync."""
-    with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO timeclock_punches_log "
-            "(person_odoo_id, action, wc_name, occurred_at, rounded_at, source) "
-            "VALUES (%s, %s, %s, %s, %s, 'auto_lunch') RETURNING id",
-            (person_odoo_id, action, wc_name, occurred_at, occurred_at),
-        )
-        return cur.fetchone()["id"]
+def _write_auto_punch(person_odoo_id, action, wc_name, occurred_at, *, cur) -> int:
+    """Insert an auto-lunch punch stamped at the scheduled boundary time, using
+    the caller's open cursor `cur` so it commits atomically with the run-state
+    update (see _apply). source='auto_lunch'; rounded_at = occurred_at (it IS
+    the schedule, no rounding). Callers pass wc_name=None for a clock_out
+    (matching the kiosk convention); the work center to restore is kept on the
+    auto_lunch_runs row and supplied on the clock_in. Returns the new log id."""
+    cur.execute(
+        "INSERT INTO timeclock_punches_log "
+        "(person_odoo_id, action, wc_name, occurred_at, rounded_at, source) "
+        "VALUES (%s, %s, %s, %s, %s, 'auto_lunch') RETURNING id",
+        (person_odoo_id, action, wc_name, occurred_at, occurred_at),
+    )
+    return cur.fetchone()["id"]
 
 
 def _window_for(person_odoo_id, kind, today, fixed_window, settings) -> Window | None:
@@ -156,26 +163,37 @@ def _window_for(person_odoo_id, kind, today, fixed_window, settings) -> Window |
 def _apply(person_odoo_id, today, kind, run, t, state, window, settings) -> None:
     if t.action == "clock_out":
         wc_name = state["current_wc"]
-        out_id = None
-        if not settings.observe_only:
-            out_id = _write_auto_punch(person_odoo_id, "clock_out", None, t.at)
-            timeclock_sync.sync_one_by_id(out_id)
         _log.info("auto-lunch %s: person %s clock_out @ %s (wc=%s)",
                   "OBSERVE" if settings.observe_only else "LIVE",
                   person_odoo_id, t.at, wc_name)
-        _upsert_run(person_odoo_id, today, kind, "auto_out",
-                    target_out_at=window.out_at, target_in_at=window.in_at,
-                    wc_name=wc_name, out_punch_id=out_id)
+        if settings.observe_only:
+            _upsert_run(person_odoo_id, today, kind, "auto_out",
+                        target_out_at=window.out_at, target_in_at=window.in_at,
+                        wc_name=wc_name)
+            return
+        # Punch insert + run->auto_out commit in ONE transaction, so a crash
+        # between them can't strand the employee (signed out with no owed auto
+        # sign-in). The Odoo sync runs after the local commit; if it lags, the
+        # 60s sweep lands it and the run still owes the auto sign-in.
+        with db.cursor() as cur:
+            out_id = _write_auto_punch(person_odoo_id, "clock_out", None, t.at, cur=cur)
+            _upsert_run(person_odoo_id, today, kind, "auto_out",
+                        target_out_at=window.out_at, target_in_at=window.in_at,
+                        wc_name=wc_name, out_punch_id=out_id, cur=cur)
+        timeclock_sync.sync_one_by_id(out_id)
     elif t.action == "clock_in":
         wc_name = run["wc_name"] if run else None
-        in_id = None
-        if not settings.observe_only:
-            in_id = _write_auto_punch(person_odoo_id, "clock_in", wc_name, t.at)
-            timeclock_sync.sync_one_by_id(in_id)
         _log.info("auto-lunch %s: person %s clock_in @ %s (wc=%s)",
                   "OBSERVE" if settings.observe_only else "LIVE",
                   person_odoo_id, t.at, wc_name)
-        _upsert_run(person_odoo_id, today, kind, "done", in_punch_id=in_id)
+        if settings.observe_only:
+            _upsert_run(person_odoo_id, today, kind, "done")
+            return
+        with db.cursor() as cur:
+            in_id = _write_auto_punch(person_odoo_id, "clock_in", wc_name, t.at, cur=cur)
+            _upsert_run(person_odoo_id, today, kind, "done",
+                        in_punch_id=in_id, cur=cur)
+        timeclock_sync.sync_one_by_id(in_id)
     else:
         _upsert_run(person_odoo_id, today, kind, t.new_state,
                     target_out_at=window.out_at, target_in_at=window.in_at)
