@@ -83,7 +83,6 @@ async def _warm_live_cache_loop():
         try:
             today = datetime.now(timezone.utc).date()
             await asyncio.to_thread(live_cache.refresh_attendance, today)
-            await asyncio.to_thread(live_cache.refresh_timeoff, today)
             await asyncio.to_thread(
                 live_cache.refresh_production, today, _zira_client()
             )

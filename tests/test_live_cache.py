@@ -54,55 +54,6 @@ def test_is_stale_threshold():
     assert live_cache.is_stale(None) is True
 
 
-def test_refresh_attendance_calls_stratustime_and_writes_cache(monkeypatch):
-    from zira_dashboard import db, live_cache
-    db.init_pool(); db.bootstrap_schema(); _reset_caches()
-
-    called = {}
-
-    def fake_emp_id_map():
-        return {"E1": "Alice", "E2": "Bob"}
-
-    def fake_attendance(day, emp_ids, grace_minutes=7):
-        called["day"] = day
-        called["emp_ids"] = sorted(emp_ids)
-        return {"E1": {"status": "no_punch"}, "E2": {"status": "on_time"}}
-
-    monkeypatch.setattr(
-        "zira_dashboard.stratustime_client._employee_id_to_name_map",
-        fake_emp_id_map,
-    )
-    monkeypatch.setattr(
-        "zira_dashboard.stratustime_client.attendance_for_day", fake_attendance
-    )
-
-    live_cache.refresh_attendance(date(2099, 9, 4))
-    got, _ = live_cache.read_attendance(date(2099, 9, 4))
-    assert called["day"] == date(2099, 9, 4)
-    assert called["emp_ids"] == ["E1", "E2"]
-    assert got == {"E1": {"status": "no_punch"}, "E2": {"status": "on_time"}}
-
-
-def test_refresh_attendance_swallows_errors(monkeypatch):
-    from zira_dashboard import db, live_cache
-    db.init_pool(); db.bootstrap_schema(); _reset_caches()
-
-    def fake_emp_id_map():
-        return {"E1": "Alice"}
-
-    def boom(day, emp_ids, grace_minutes=7):
-        raise RuntimeError("stratustime down")
-
-    monkeypatch.setattr(
-        "zira_dashboard.stratustime_client._employee_id_to_name_map",
-        fake_emp_id_map,
-    )
-    monkeypatch.setattr(
-        "zira_dashboard.stratustime_client.attendance_for_day", boom
-    )
-
-    # Must not raise — warmer relies on this.
-    live_cache.refresh_attendance(date(2099, 9, 5))
-    # No row was written (the failure happened before write).
-    got, _ = live_cache.read_attendance(date(2099, 9, 5))
-    assert got is None
+# Odoo-path refresh_attendance tests live in tests/test_live_cache_odoo.py
+# (monkeypatched, no DATABASE_URL needed). The StratusTime-based tests that
+# used to live here were removed when the warmer was repointed to Odoo.

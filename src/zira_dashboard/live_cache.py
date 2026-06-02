@@ -132,32 +132,18 @@ def is_stale(refreshed_at: datetime | None) -> bool:
 
 
 def refresh_attendance(day: date) -> None:
-    """Pull today's StratusTime attendance for every known emp_id and
-    write the full dict to cache.
-
-    Routes read the cached payload and filter to the emp_ids they care
-    about. Caching the superset means one warmer tick serves every
-    consumer of attendance data.
+    """Pull today's Odoo punches for every employee and write the keyed
+    payload to cache: {str(person_odoo_id): {first_check_in, currently_open}}.
+    Routes read it and compute status against now (see attendance.compute_status).
 
     Errors are logged and swallowed — the warmer keeps running and the
     previous good payload (if any) remains in the cache table."""
     try:
-        from . import stratustime_client
-        emp_ids = list(stratustime_client._employee_id_to_name_map().keys())
-        payload = stratustime_client.attendance_for_day(day, emp_ids)
+        from . import attendance
+        payload = attendance.punches_for_day(day)
         write_attendance(day, payload)
     except Exception as e:
         _log.warning("refresh_attendance(%s) failed: %s", day, e)
-
-
-def refresh_timeoff(day: date) -> None:
-    """Pull today's StratusTime time-off entries, write to cache."""
-    try:
-        from . import stratustime_client
-        payload = stratustime_client.time_off_entries_for_day(day)
-        write_timeoff(day, payload)
-    except Exception as e:
-        _log.warning("refresh_timeoff(%s) failed: %s", day, e)
 
 
 def refresh_production(day: date, client) -> None:
