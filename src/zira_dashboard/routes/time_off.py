@@ -30,7 +30,7 @@ def _odoo_time_off_by_day(
     Wraps ``timeclock_time_off._approved_by_day`` so this route doesn't have
     to duplicate the SQL or the date-fan-out logic. Default tags entries
     with ``source='odoo'`` so the template can render them distinctly
-    from a StratusTime overlay entry on the same day; ``_approved_by_day``
+    from a public-holiday entry on the same day; ``_approved_by_day``
     pre-tags public-holiday entries with ``source='holiday'`` which we
     preserve here so they get the distinct red styling in the template."""
     raw = _approved_by_day(start_d, end_d)
@@ -68,7 +68,7 @@ def staffing_time_off(
     if cached_resp is not None:
         return cached_resp
 
-    # Compute the visible date range so we only fetch StratusTime data for what
+    # Compute the visible date range so we only fetch Odoo data for what
     # the user actually sees (cached 5 min per day inside the client).
     if scale == "day":
         range_start = cursor

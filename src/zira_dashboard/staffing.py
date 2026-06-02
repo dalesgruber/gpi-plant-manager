@@ -341,7 +341,7 @@ def _load_schedule_from_db(day: date) -> "Schedule":
     assignments: dict[str, list[str]] = {}
     for a in asg_rows:
         assignments.setdefault(a["wc_name"], []).append(a["person_name"])
-    # Time-off is now sourced from StratusTime (sub-project #2), not the local DB.
+    # Time-off is sourced from the Odoo-backed time_off_requests mirror, not the local DB.
     wc_notes = {n["wc_name"]: n["note"] for n in notes_rows}
     return Schedule(
         day=day,
@@ -437,10 +437,10 @@ def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -
 
     - Scheduled breaks (lunch, cleanup, etc.) that fall within the window —
       productive labor stops during these.
-    - Partial-day StratusTime off-intervals that overlap the window — the
+    - Partial-day Odoo off-intervals that overlap the window — the
       operator was clocked out for those minutes.
 
-    Falls back gracefully when StratusTime is unreachable: the StratusTime
+    Falls back gracefully when the Odoo mirror is unavailable: the off-interval
     subtraction is skipped, but break subtraction still applies.
 
     `window_start_utc` and `window_end_utc` must be timezone-aware UTC datetimes.

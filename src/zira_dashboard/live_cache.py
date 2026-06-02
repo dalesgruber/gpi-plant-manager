@@ -1,4 +1,4 @@
-"""Live cache for today's StratusTime + Odoo data.
+"""Live cache for today's Odoo data.
 
 Owns three single-row JSONB tables (today_attendance_cache,
 today_timeoff_cache, today_production_cache). The warmer (in app.py)

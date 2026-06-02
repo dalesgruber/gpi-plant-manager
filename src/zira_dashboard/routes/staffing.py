@@ -18,7 +18,7 @@ class _Phase:
     """Tiny context manager that records milliseconds elapsed under a name.
 
     Used to build a Server-Timing header so the GET /staffing response
-    exposes phase durations (db, stratustime, render, total) directly in
+    exposes phase durations (db, attendance, render, total) directly in
     browser devtools' Network → Timing tab.
     """
 
@@ -37,7 +37,7 @@ class _Phase:
 
 
 def _server_timing_header(phases: dict) -> str:
-    """Format a Server-Timing value: 'db;dur=42.1, stratustime;dur=320.4, ...'."""
+    """Format a Server-Timing value: 'db;dur=42.1, attendance;dur=320.4, ...'."""
     return ", ".join(f"{name};dur={dur:.1f}" for name, dur in phases.items())
 
 
@@ -45,7 +45,7 @@ def _live_or_fallback(day, *, read, refresh, fallback, transform):
     """Cold-start safety valve for live_cache lookups.
 
     Reads `read(day)`; if missing or stale, calls `refresh(day)` and re-reads;
-    if still empty, returns `fallback()` (caller-provided StratusTime call).
+    if still empty, returns `fallback()` (caller-provided direct fetch).
     Otherwise returns `transform(payload)`. The fallback already returns the
     caller's final shape, so it's not passed through `transform`.
     """
@@ -112,12 +112,12 @@ def _timeoff_names_with_fallback(day):
 
 
 def _safe_attendance(d, sched, today):
-    """Wrap StratusTime attendance lookup. Returns
+    """Wrap the Odoo attendance/status lookup. Returns
     {by_name, by_id, name_to_id, scheduled_ids, unscheduled_ids}.
 
     Returns empty dicts on any error or when attendance isn't applicable
     (not today, or before shift start). by_name keys are roster names;
-    by_id keys are StratusTime EmpIdentifiers (used by late_report).
+    by_id keys are str(person_odoo_id) (used by late_report).
 
     Fetches attendance for both scheduled people AND active non-reserve
     people who weren't assigned to a WC today — so the Late/Absence
@@ -144,7 +144,7 @@ def _safe_attendance(d, sched, today):
                 if n:
                     scheduled_names.add(n)
 
-        # Anyone with an active StratusTime time-off entry today —
+        # Anyone with an active Odoo time-off entry today —
         # full-day or partial — is officially excused. They don't
         # belong on the late/absence report. Drop them from both
         # scheduled and unscheduled lists before fetching attendance.
@@ -192,7 +192,7 @@ def _safe_attendance(d, sched, today):
 
 
 def _late_emp_ids(d, today, attendance_pkg) -> set[str]:
-    """Compute the set of currently-late StratusTime EmpIdentifiers for `d`.
+    """Compute the set of currently-late person ids for `d`.
 
     Uses the same threshold + filtering as the Late/Absence Report so the
     scheduler highlight stays in sync with the global modal.
@@ -248,7 +248,7 @@ def staffing_page(
 
     # Server-side response cache: 15 s for today, 5 min for past days.
     # Most pageviews — including the reload after a clear-partial click —
-    # serve from cache and never pay the StratusTime/Zira/DB chain.
+    # serve from cache and never pay the Odoo/Zira/DB chain.
     # Mutations (POST /staffing, /api/staffing/attribute, clear-partial,
     # declare-absent, etc.) all call invalidate_today_cache() so saves
     # show up on the next reload regardless of TTL.
@@ -262,7 +262,7 @@ def staffing_page(
         return cached_resp
 
     # One pool fans out everything that doesn't depend on the schedule:
-    # 3 DB reads (certs, roster, schedule) + StratusTime time-off. The
+    # 3 DB reads (certs, roster, schedule) + Odoo time-off. The
     # attendance fetch is fired AFTER the schedule resolves (it needs
     # `sched.assignments`) but still runs concurrently with the rest of
     # the page-prep work.
@@ -319,8 +319,8 @@ def staffing_page(
         # with our render-prep work below.
         f_attendance = pool.submit(_safe_attendance, d, sched, today)
 
-        # Collect StratusTime time-off (already fetched in parallel above).
-        with _Phase(phases, "stratustime"):
+        # Collect Odoo time-off (already fetched in parallel above).
+        with _Phase(phases, "attendance"):
             time_off_entries = f_time_off_entries.result()
             attendance_pkg = f_attendance.result()
             attendance_by_name = attendance_pkg.get("by_name") or {}
@@ -679,7 +679,7 @@ async def staffing_save(
             picked_defaults = form.getlist(f"default__{loc.name}")
             clean_defaults = [n.strip() for n in picked_defaults if n and n.strip()]
             work_centers_store.save_one(loc, {"default_people": clean_defaults})
-    # Time-off is now sourced from StratusTime (sub-project #2). The scheduler UI
+    # Time-off is sourced from the Odoo mirror. The scheduler UI
     # no longer collects time-off entries via form fields, so we ignore any
     # `loc____time_off` values that a stale tab might still be posting.
 

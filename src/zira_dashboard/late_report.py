@@ -1,7 +1,7 @@
 """Late / absence report: declared absences + snoozes + late-people query.
 
 Two-table data layer (manual_absences, late_snoozes — see db.py) plus a
-pure helper that filters StratusTime attendance into "late" rows for the
+pure helper that filters Odoo attendance into "late" rows for the
 report.
 
 `late_people_for_day` is the only function that reasons about thresholds.
@@ -298,7 +298,7 @@ def late_people_for_day(
       - They are NOT currently snoozed
 
     Result rows: {emp_id, name, minutes_late}.
-    Attendance dict shape matches stratustime_client.attendance_for_day.
+    Attendance dict shape matches attendance.compute_status output.
     Caller supplies `now_local` and `shift_start_local` so this stays pure
     (testable without mocking time).
     """

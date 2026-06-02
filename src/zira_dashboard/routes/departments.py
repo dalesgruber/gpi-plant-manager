@@ -114,7 +114,7 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     window_start_utc = shift_start_local.astimezone(timezone.utc)
     window_end_utc = window_end_local.astimezone(timezone.utc)
 
-    # Full-day absences (StratusTime >=8h off, manual absences, derived
+    # Full-day absences (approved full-day off, manual absences, derived
     # no-punch). Scheduled-but-absent people shouldn't count toward
     # man-hours — otherwise pph/hr/person collapses by the absent share.
     try:
@@ -731,7 +731,7 @@ def _render_new_dept(
     station_names = {s.name for s in stations}
 
     # Per-person effective minutes during [shift_start, now-or-shift-end],
-    # subtracting StratusTime partial-off intervals.
+    # subtracting Odoo partial-off intervals.
     shift_start_local_for_mh = datetime.combine(d, shift_config.shift_start_for(d), tzinfo=shift_config.SITE_TZ)
     shift_end_local_for_mh = datetime.combine(d, shift_config.shift_end_for(d), tzinfo=shift_config.SITE_TZ)
     window_end_local = (
