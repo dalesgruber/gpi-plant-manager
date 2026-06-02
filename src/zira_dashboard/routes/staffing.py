@@ -9,6 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import _http_cache, schedule_store, shift_config, staffing, time_format, work_centers_store
+from .._http_cache import invalidate_today_cache
 from ..deps import templates
 
 router = APIRouter()
@@ -897,10 +898,16 @@ async def staffing_attribute(request: Request):
     if not (wc and person and end_utc > start_utc):
         return JSONResponse({"ok": False, "error": "missing/invalid fields"}, status_code=400)
     new_id = wc_attributions.add(day, wc, person, start_utc, end_utc)
-    # Drop cached dashboard responses so the next load reflects the change.
-    from .._http_cache import invalidate_today_cache
+    # Department transfer side-effect: if the person physically moved to this
+    # WC's department, reflect it in Odoo. Never let an Odoo hiccup fail the
+    # attribution write — the credit is the source of truth.
+    from .. import staffing_transfer
+    try:
+        transfer = staffing_transfer.decide_and_apply(person, wc, start_utc)
+    except Exception as e:  # noqa: BLE001
+        transfer = {"transfer": "error", "error": str(e)}
     invalidate_today_cache()
-    return JSONResponse({"ok": True, "id": new_id})
+    return JSONResponse({"ok": True, "id": new_id, "transfer": transfer})
 
 
 @router.delete("/api/staffing/attribute/{attribution_id}")
@@ -911,7 +918,72 @@ def staffing_attribute_delete(attribution_id: int):
         wc_attributions.delete(attribution_id)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
-    from .._http_cache import invalidate_today_cache
+    invalidate_today_cache()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/api/staffing/attribute-with-testing")
+async def staffing_attribute_with_testing(request: Request):
+    """Carve a no-credit testing window out of sensed production, then
+    optionally attribute the remainder to a real person.
+
+    Body (JSON):
+      day, wc_name, testing_start_utc, testing_end_utc,
+      sensed_end_utc (optional remainder end; defaults to testing_end_utc),
+      remainder_person (optional).
+    """
+    from datetime import date as _date, datetime as _dt
+    from .. import wc_attributions, staffing_transfer
+    body = await request.json()
+    try:
+        day = _date.fromisoformat(body["day"])
+        wc = str(body["wc_name"]).strip()
+        t_start = _dt.fromisoformat(body["testing_start_utc"])
+        t_end = _dt.fromisoformat(body["testing_end_utc"])
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": f"bad body: {e}"}, status_code=400)
+    if not wc or t_end <= t_start:
+        return JSONResponse({"ok": False, "error": "missing/invalid fields"}, status_code=400)
+
+    ids: list[int] = []
+    ids.append(wc_attributions.add(
+        day, wc, wc_attributions.TESTING_PERSON, t_start, t_end, source="testing"))
+
+    transfer = {"transfer": "none"}
+    remainder = str(body.get("remainder_person") or "").strip()
+    if remainder:
+        try:
+            rem_end = _dt.fromisoformat(body["sensed_end_utc"])
+        except (KeyError, TypeError, ValueError):
+            rem_end = t_end
+        if rem_end <= t_end:
+            rem_end = t_end
+        ids.append(wc_attributions.add(day, wc, remainder, t_end, rem_end))
+        try:
+            transfer = staffing_transfer.decide_and_apply(remainder, wc, t_end)
+        except Exception as e:  # noqa: BLE001
+            transfer = {"transfer": "error", "error": str(e)}
+
+    invalidate_today_cache()
+    return JSONResponse({"ok": True, "ids": ids, "transfer": transfer})
+
+
+@router.post("/api/staffing/transfer/undo")
+async def staffing_transfer_undo(request: Request):
+    """Reverse an Odoo department transfer created by an assignment.
+    Body (JSON): {closed_id: int|null, new_id: int}."""
+    from .. import odoo_client
+    body = await request.json()
+    try:
+        new_id = int(body["new_id"])
+    except (KeyError, TypeError, ValueError) as e:
+        return JSONResponse({"ok": False, "error": f"bad body: {e}"}, status_code=400)
+    closed_id = body.get("closed_id")
+    closed_id = int(closed_id) if closed_id else None
+    try:
+        odoo_client.undo_transfer(closed_id, new_id)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     invalidate_today_cache()
     return JSONResponse({"ok": True})
 
