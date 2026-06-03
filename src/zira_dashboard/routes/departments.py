@@ -319,6 +319,50 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     }
 
 
+@router.get("/api/debug/goal-calc", include_in_schema=False)
+def debug_goal_calc(day: str, wc: str = "Dismantler 1"):
+    """TEMP read-only diagnostic: dump the exact inputs the per-WC goal calc
+    uses for `day`/`wc`, so we can see why a day's goal is wrong instead of
+    guessing. Remove once the goal regression is resolved."""
+    from datetime import date as _date, datetime as _dt, timezone as _tz
+    from fastapi.responses import JSONResponse
+    from .. import shift_config, settings_store, staffing, work_centers_store
+    from ..stations import recycling_stations
+    try:
+        d = _date.fromisoformat(day)
+        st = next((s for s in recycling_stations() if s.name == wc), None)
+        loc = next((l for l in staffing.LOCATIONS if l.name == wc), None)
+        sched = staffing.load_schedule(d)
+        ss = shift_config.shift_start_for(d)
+        se = shift_config.shift_end_for(d)
+        start_local = _dt.combine(d, ss, tzinfo=shift_config.SITE_TZ)
+        end_local = _dt.combine(d, se, tzinfo=shift_config.SITE_TZ)
+        win_start = start_local.astimezone(_tz.utc)
+        win_end = end_local.astimezone(_tz.utc)
+        pmw = shift_config.productive_minutes_in_window(d, win_start, win_end)
+        pmpd = shift_config.productive_minutes_per_day()
+        stgt = settings_store.station_target(st) if st else None
+        gpd = work_centers_store.goal_per_day(loc) if loc else None
+        return JSONResponse({
+            "day": day, "wc": wc,
+            "sched_published": getattr(sched, "published", None),
+            "sched_custom_hours_RAW": sched.custom_hours,
+            "shift_start_for": str(ss), "shift_end_for": str(se),
+            "breaks_for_day": [[str(b.start), str(b.end), getattr(b, "name", "")]
+                               for b in shift_config.breaks_for(d)],
+            "global_breaks": [[str(b.start), str(b.end)] for b in shift_config.breaks()],
+            "global_shift": [str(shift_config.shift_start()), str(shift_config.shift_end())],
+            "productive_minutes_per_day_GLOBAL": pmpd,
+            "productive_minutes_in_window_DAY": pmw,
+            "goal_per_day": gpd,
+            "station_target_per_hour": stgt,
+            "computed_full_day_goal": (stgt * pmw / 60.0) if stgt else None,
+        })
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "tb": traceback.format_exc()}, status_code=500)
+
+
 @router.get("/recycling", response_class=HTMLResponse)
 def recycling(
     request: Request,
