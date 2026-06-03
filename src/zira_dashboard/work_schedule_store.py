@@ -21,6 +21,7 @@ from datetime import time
 from threading import RLock
 
 from .rounding import RoundingSettings
+from .schedule_store import _parse_time
 
 
 @dataclass(frozen=True)
@@ -29,18 +30,6 @@ class WorkScheduleOverride:
     name: str
     work_hours: dict[int, tuple[time, time]]   # weekday 0=Mon..6=Sun -> (start, end)
     rounding: RoundingSettings
-
-
-def _parse_time(s) -> time | None:
-    if isinstance(s, time):
-        return s
-    if not isinstance(s, str):
-        return None
-    try:
-        hh, mm = s.split(":")[:2]
-        return time(int(hh), int(mm))
-    except (ValueError, AttributeError):
-        return None
 
 
 def _parse_work_hours(raw) -> dict[int, tuple[time, time]]:

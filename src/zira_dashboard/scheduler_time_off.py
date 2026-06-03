@@ -12,23 +12,13 @@ from __future__ import annotations
 from datetime import date as _date
 
 from . import db
+from .time_format import fmt_decimal_hour
 
 # Requests in these states count as "happening" on the scheduler. 'validate'
 # is approved; the rest are pending. Refused/cancelled/draft-cancel excluded.
 _APPROVED = "validate"
 _PENDING = ("draft", "confirm", "validate1")
 _VISIBLE_STATES = (_APPROVED,) + _PENDING
-
-
-def _fmt_hf(h: float) -> str:
-    """Decimal-hour float -> 12-hour clock, e.g. 6.5 -> '6:30am'."""
-    hh = int(h)
-    mm = int(round((h - hh) * 60))
-    suffix = "am" if hh < 12 else "pm"
-    disp = hh if hh <= 12 else hh - 12
-    if disp == 0:
-        disp = 12
-    return f"{disp}:{mm:02d}{suffix}"
 
 
 def _timing_label(r: dict) -> str:
@@ -51,11 +41,11 @@ def _timing_label(r: dict) -> str:
     hf = float(r["hour_from"] or 0)
     ht = float(r["hour_to"] or 0)
     if shape == "late_arrival":
-        return f"arrives {_fmt_hf(ht)}"
+        return f"arrives {fmt_decimal_hour(ht)}"
     if shape == "early_leave":
-        return f"leaves {_fmt_hf(hf)}"
+        return f"leaves {fmt_decimal_hour(hf)}"
     if shape == "midday_gap":
-        return f"gone {_fmt_hf(hf)}–{_fmt_hf(ht)}"
+        return f"gone {fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
     return ""
 
 
@@ -104,7 +94,7 @@ def time_off_entries_for_day(day: _date) -> list[dict]:
             hf = float(r["hour_from"] or 0)
             ht = float(r["hour_to"] or 0)
             hours = round(ht - hf, 2)
-            time_range = f"{_fmt_hf(hf)}–{_fmt_hf(ht)}"
+            time_range = f"{fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
         out.append({
             "name": r["name"],
             "hours": hours,

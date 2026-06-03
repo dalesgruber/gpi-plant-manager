@@ -35,3 +35,18 @@ def fmt_time_range(start_str: str, end_str: str) -> str:
     if s[-1] == e[-1]:
         s = s[:-1]
     return f"{s}-{e}"
+
+
+def fmt_decimal_hour(h: float) -> str:
+    """Format a decimal-hour float as a 12-hour clock string.
+
+    ``6.5 -> "6:30am"``, ``14.0 -> "2:00pm"``, ``12.0 -> "12:00pm"``,
+    ``0.0 -> "12:00am"``.
+    """
+    hh = int(h)
+    mm = int(round((h - hh) * 60))
+    suffix = "am" if hh < 12 else "pm"
+    disp = hh if hh <= 12 else hh - 12
+    if disp == 0:
+        disp = 12
+    return f"{disp}:{mm:02d}{suffix}"

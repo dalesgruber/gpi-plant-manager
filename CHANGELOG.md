@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-03
 
+### 9:46 AM
+
+- **Deduped two copy-pasted helpers (Tier 1 refactor, behavior-identical)** — `_fmt_hf` (the decimal-hour → `"6:30am"` clock formatter) existed as a **byte-identical copy** in `scheduler_time_off.py` and `routes/timeclock_time_off.py` — with a code comment literally flagging the "keep these in sync" hazard. It's now a single `fmt_decimal_hour` in `time_format.py` that both import. Separately, `work_schedule_store._parse_time` was a verbatim copy of `schedule_store._parse_time`; it now imports the shared one (mirroring what `saturday_schedule_store` already does). Pure functions, no behavior change — verified the formatter across am/pm/midnight/noon edge cases; full suite green (524 passed).
+
 ### 9:40 AM
 
 - **`db.py` slimmed 918 → 149 lines — its 770-line schema DDL moved to `_schema.py` (Tier 1 refactor, byte-identical)** — `db.py` mixed a tight ~150-line connection-pool/query facade with a giant embedded `_SCHEMA_DDL` string (every `CREATE TABLE IF NOT EXISTS` plus a dozen historical guarded `DO`-block migrations). Moved that DDL verbatim into a new `_schema.py` as `SCHEMA_DDL`, which `db.bootstrap_schema()` now imports and executes exactly as before. Kept it as a Python constant (not a `.sql` file) so it always ships in the Railway build with zero packaging config. Verified **byte-for-byte identical** — the extracted DDL bytes match `HEAD` exactly (34,286 bytes), so the schema applied on every boot is unchanged. `db.py` now reads as the focused Postgres connection facade its docstring describes; the schema is a separate, greppable artifact. Full test suite green (524 passed).

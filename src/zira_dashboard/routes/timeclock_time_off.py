@@ -49,6 +49,7 @@ from .. import (
     time_off_sync,
 )
 from ..deps import templates
+from ..time_format import fmt_decimal_hour
 from .timeclock import (
     _is_time_off_only,
     _mint_token,
@@ -1083,22 +1084,6 @@ def mine_edit_submit(
 # ----- Who's Out calendar (Task 20) -----
 
 
-def _fmt_hf(h: float) -> str:
-    """Format a decimal-hour float as a 12-hour clock string.
-
-    ``6.5 -> "6:30am"``, ``14.0 -> "2:00pm"``, ``12.0 -> "12:00pm"``,
-    ``0.0 -> "12:00am"``. Used by the calendar labels so the timing
-    shows up in a glanceable form on the kiosk; matches how the rest
-    of the punch UI prints clock times."""
-    hh = int(h)
-    mm = int(round((h - hh) * 60))
-    suffix = "am" if hh < 12 else "pm"
-    disp = hh if hh <= 12 else hh - 12
-    if disp == 0:
-        disp = 12
-    return f"{disp}:{mm:02d}{suffix}"
-
-
 def _label_for(r: dict) -> str:
     """Render a privacy-safe timing label for one approved leave row.
 
@@ -1114,10 +1099,10 @@ def _label_for(r: dict) -> str:
     hf = float(r["hour_from"] or 0)
     ht = float(r["hour_to"] or 0)
     if r["shape"] == "late_arrival":
-        return f"arrives {_fmt_hf(ht)}"
+        return f"arrives {fmt_decimal_hour(ht)}"
     if r["shape"] == "early_leave":
-        return f"leaves {_fmt_hf(hf)}"
-    return f"{_fmt_hf(hf)}–{_fmt_hf(ht)}"
+        return f"leaves {fmt_decimal_hour(hf)}"
+    return f"{fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
 
 
 def _parse_holiday_date(s):
