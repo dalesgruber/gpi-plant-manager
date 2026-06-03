@@ -48,7 +48,7 @@ def punch_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, date
         end_local = start_local + _td(days=1)                      # next local midnight
         start_utc = start_local.astimezone(_tz.utc)
         end_utc = end_local.astimezone(_tz.utc)
-        id_to_name = {v: k for k, v in attendance.name_to_person_id().items()}
+        id_to_name = attendance.person_id_to_name()
         rows = db.query(
             "SELECT person_odoo_id, action, wc_name, "
             "       COALESCE(rounded_at, occurred_at) AS at "
@@ -112,7 +112,7 @@ def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime,
         from . import odoo_client, attendance
         from datetime import datetime as _dt
         intervals = odoo_client.fetch_attendance_intervals_for_day(day)
-        id_to_name = {v: k for k, v in attendance.name_to_person_id().items()}
+        id_to_name = attendance.person_id_to_name()
     except Exception:
         return {}
     by_person: dict[str, list[dict]] = {}

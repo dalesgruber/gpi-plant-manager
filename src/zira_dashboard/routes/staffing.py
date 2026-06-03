@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, schedule_store, shift_config, staffing, time_format, work_centers_store
+from .. import _http_cache, attendance, schedule_store, shift_config, staffing, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 
@@ -137,7 +137,6 @@ def _safe_attendance(d, sched, today):
         )
         if now_local < shift_start_local:
             return empty
-        from .. import attendance
         name_to_id = attendance.name_to_person_id()
         scheduled_names: set[str] = set()
         for ops in sched.assignments.values():
@@ -171,7 +170,7 @@ def _safe_attendance(d, sched, today):
         unscheduled_ids = [name_to_id[n] for n in unscheduled_names if n in name_to_id]
 
         all_ids = list({*scheduled_ids, *unscheduled_ids})
-        id_to_name = {v: k for k, v in name_to_id.items()}
+        id_to_name = attendance.person_id_to_name(name_to_id)
         punches = _attendance_with_fallback(d, all_ids)
         attendance_by_id = attendance.compute_status(
             punches, all_ids, now_local, shift_start_local
@@ -337,7 +336,7 @@ def staffing_page(
 
     # Resolve the late-emp-id set to roster names for the template highlight.
     late_emp_ids = _late_emp_ids(d, today, attendance_pkg)
-    id_to_name = {v: k for k, v in (attendance_pkg.get("name_to_id") or {}).items()}
+    id_to_name = attendance.person_id_to_name(attendance_pkg.get("name_to_id") or {})
     late_names_set = {id_to_name[e] for e in late_emp_ids if e in id_to_name}
 
     # Full-day absences drive BOTH the Time Off panel and the roster-availability
@@ -1111,7 +1110,7 @@ def late_report_json():
                 already_recorded_late_ids=already_recorded_late_ids,
             )
 
-            id_to_name = {v: k for k, v in (attendance_pkg.get("name_to_id") or {}).items()}
+            id_to_name = attendance.person_id_to_name(attendance_pkg.get("name_to_id") or {})
 
             def _resolve(emp_id):
                 # id_to_name covers all active people (Odoo). No StratusTime fallback.

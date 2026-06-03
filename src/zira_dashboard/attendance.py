@@ -92,6 +92,17 @@ def name_to_person_id() -> dict:
     return {r["name"]: str(r["odoo_id"]) for r in rows}
 
 
+def person_id_to_name(name_to_id: dict | None = None) -> dict:
+    """{str(person_odoo_id): roster_name} — the inverse of name_to_person_id().
+
+    Pass an already-fetched ``name_to_id`` map to avoid a re-query; omit it to
+    fetch one. Identity is ``str(person_odoo_id)`` throughout (see module
+    docstring), so the returned keys are strings."""
+    if name_to_id is None:
+        name_to_id = name_to_person_id()
+    return {v: k for k, v in name_to_id.items()}
+
+
 def derived_absent_names(day) -> set:
     """Active, non-reserve roster people with NO Odoo punch by
     shift_start + ABSENT_BUFFER_MINUTES who are not on approved/pending

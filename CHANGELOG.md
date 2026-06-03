@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-03
 
+### 10:31 AM
+
+- **Deduped the person-id ↔ name map inversion (Tier 1, behavior-identical)** — five sites rebuilt the `{str(odoo_id): name}` inverse of `attendance.name_to_person_id()` inline (`timeclock_windows.py` ×2, `routes/staffing.py` ×3). Added one `attendance.person_id_to_name(name_to_id=None)` — it fetches + inverts when called bare (the timeclock-windows sites, which already did exactly that), or inverts an **already-fetched** map when passed one (the staffing sites, so it adds **no extra DB query** on the hot staffing render). Identity stays `str(person_odoo_id)` throughout. Verified output + no new queries; full suite green (524 passed), ruff clean.
+
 ### 10:25 AM
 
 - **Fixed a duplicate `"department"` dict key in the Settings work-center rows (ruff F601)** — `routes/settings.py` built each work-center row with `"department"` set twice — `loc.department`, then `eff["department"]`. Python keeps the last, so `eff["department"]` (the resolved/effective value, consistent with every other field in the row, which all come from `eff`) silently won and the earlier `loc.department` was dead code. Removed the dead line — **behavior-identical** (the rendered dict is unchanged) — which also clears the last ruff finding, so `ruff check` is now green across the whole repo. Full suite green (524 passed).
