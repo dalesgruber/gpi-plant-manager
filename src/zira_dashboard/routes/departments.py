@@ -15,28 +15,11 @@ from .. import layout_store, settings_store, shift_config, staffing, widget_cust
 from ..deps import _parse_day, _state, client, templates
 from ..leaderboard import cached_leaderboard as leaderboard
 from ..progress import progress_buckets
+from ..recycling_data import progress_color
 from ..shift_config import shift_elapsed_minutes
 from ..stations import Station, recycling_stations
 
 router = APIRouter()
-
-
-def _progress_color(pct_of_target: float | None) -> str | None:
-    """HSL color for an actual-vs-goal percentage. Neutral gray at 100%
-    (was pure white, invisible on light-mode backgrounds); ramps to red
-    below and green above. Saturation/lightness step in 12 buckets so
-    big misses stand out and small ones are subtle.
-    """
-    if pct_of_target is None:
-        return None
-    delta = max(-100.0, min(100.0, pct_of_target - 100.0))
-    if abs(delta) < 1.0:
-        return "#9ca3af"  # neutral gray — readable on both light + dark
-    step = min(12, max(1, round(abs(delta) / 100.0 * 12)))
-    sat = 55.0 + step * 2.0
-    light = 65.0 - step * 3.5
-    hue = 130 if delta > 0 else 0
-    return f"hsl({hue:.0f}, {sat:.0f}%, {light:.0f}%)"
 
 
 def _who_by_wc(assignments: dict[str, list[str]], day) -> dict[str, str]:
@@ -500,7 +483,7 @@ def _render_recycling(
                 "units": units,
                 "pct_of_target": round(pct_of_target, 1) if pct_of_target is not None else None,
                 "expected": int(round(expected)),
-                "color": _progress_color(pct_of_target),
+                "color": progress_color(pct_of_target),
                 "downtime_minutes": agg_downtime.get(name, 0),
             })
         max_u = max((r["units"] for r in out), default=0)
@@ -802,7 +785,7 @@ def _render_new_dept(
             "who": who_by_wc.get(r.station.name, r.station.name),
             "units": r.units,
             "expected": int(round(expected)),
-            "color": _progress_color(pct_of_target),
+            "color": progress_color(pct_of_target),
             "pct_of_target": round(pct_of_target, 1) if pct_of_target is not None else None,
         })
     base = max((max(b["units"], b["expected"]) for b in bars), default=0)
