@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-03
+
+### 8:34 AM
+
+- **Recycling goals now follow the time clock for the whole day — fixes goals reading ~200% on days with auto-lunch** — a work center's goal is driven by when its operator is actually clocked in (per the schedule's productive hours, breaks/lunch removed). The bug: the goal read only the **morning** attendance record, because auto-lunch closes the morning record at lunch and opens a **fresh afternoon record** — and the goal source (the local kiosk punch mirror) was missing that afternoon record, so every scheduled station's goal truncated at lunch (~half a day → boards showed ~200%). Now the goal reads the **complete set of Odoo `hr.attendance` records** for the day — morning, post-lunch, and every mid-shift transfer — so a person clocked in all day gets a full-day goal, and a **mid-shift transfer moves the goal to the new work center automatically**. That also means a mid-day move to an *unscheduled* WC lights up its goal straight from the time clock; the manual **"↪ assign"** attribution stays as the fallback for production where someone worked a WC but forgot to transfer. New `odoo_client.fetch_attendance_intervals_for_day` (all records as `[check_in, check_out, wc]` intervals) + `timeclock_windows.attendance_windows_for_day` (stitches a person's records, inheriting the WC across an untagged split); `_recycling_day_data` now sources work segments from that instead of the punch-log mirror.
+
 ## 2026-06-02
 
 ### 3:04 PM

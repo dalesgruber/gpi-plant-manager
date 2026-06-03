@@ -99,14 +99,20 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
     window_start_utc = shift_start_local.astimezone(timezone.utc)
     window_end_utc = window_end_local.astimezone(timezone.utc)
 
-    # Merge schedule + kiosk punches + open-ended attributions into closed work
-    # segments; punches win per person. who/expected both derive from these so a
-    # mid-day assignment (e.g. Dismantler 4) gets a goal prorated from its start.
+    # Merge timeclock attendance + open-ended attributions + schedule into closed
+    # work segments. The TIMECLOCK is the source of truth for where each operator
+    # is clocked in: attendance_windows_for_day reads the COMPLETE set of Odoo
+    # hr.attendance records (morning record, auto-lunch's afternoon record, every
+    # mid-shift transfer), so a person clocked in all day gets a full-day goal and
+    # a mid-day transfer moves the goal to the new WC. Manual attributions are the
+    # fallback for production at a WC the operator never transferred into. Per
+    # person, the timeclock wins over the schedule; people with no attendance
+    # records fall back to their schedule.
     from .. import assignment_windows, timeclock_windows, wc_attributions
     segments = assignment_windows.resolve_segments(
         assignments=sched.assignments,
         attributions=wc_attributions.creditable_for_day(d),
-        punch_windows=timeclock_windows.punch_windows_for_day(d),
+        punch_windows=timeclock_windows.attendance_windows_for_day(d),
         shift_start_utc=window_start_utc,
         cap_utc=window_end_utc,
         time_off_key=staffing.TIME_OFF_KEY,
@@ -327,7 +333,7 @@ def debug_goal_calc(day: str, wc: str = "Dismantler 1"):
     from datetime import date as _date, datetime as _dt, timezone as _tz
     from fastapi.responses import JSONResponse
     from .. import (shift_config, settings_store, staffing, work_centers_store,
-                    assignment_windows, timeclock_windows, wc_attributions)
+                    assignment_windows, timeclock_windows, wc_attributions, odoo_client)
     from ..stations import recycling_stations
     try:
         d = _date.fromisoformat(day)
@@ -347,10 +353,13 @@ def debug_goal_calc(day: str, wc: str = "Dismantler 1"):
         # Replicate the ACTUAL segment-based goal path (resolve_segments +
         # productive_minutes_in_window) so we see the real per-WC window/goal,
         # not a simplified full-shift calc.
-        punches = timeclock_windows.punch_windows_for_day(d)
+        # Mirror the ACTUAL deployed goal path: Odoo attendance windows +
+        # attributions -> segments -> per-WC goal.
+        att_windows = timeclock_windows.attendance_windows_for_day(d)
+        raw_intervals = odoo_client.fetch_attendance_intervals_for_day(d)
         attrs = wc_attributions.creditable_for_day(d)
         segs = assignment_windows.resolve_segments(
-            assignments=sched.assignments, attributions=attrs, punch_windows=punches,
+            assignments=sched.assignments, attributions=attrs, punch_windows=att_windows,
             shift_start_utc=win_start, cap_utc=win_end, time_off_key=staffing.TIME_OFF_KEY,
         )
         seg_dump = [
@@ -360,10 +369,10 @@ def debug_goal_calc(day: str, wc: str = "Dismantler 1"):
             for s in segs if s.wc_name == wc
         ]
         real_goal = sum((stgt or 0) * sd["prod_min"] / 60.0 for sd in seg_dump)
-        punch_dump = {
+        windows_dump = {
             name: [[w, (a.isoformat() if a else None), (b.isoformat() if b else None)]
                    for (w, a, b) in wins]
-            for name, wins in punches.items()
+            for name, wins in att_windows.items()
         }
         return JSONResponse({
             "day": day, "wc": wc,
@@ -380,7 +389,10 @@ def debug_goal_calc(day: str, wc: str = "Dismantler 1"):
             "simplified_full_day_goal": (stgt * pmw / 60.0) if stgt else None,
             "SEGMENTS_for_wc": seg_dump,
             "REAL_goal_from_segments": real_goal,
-            "punch_windows_ALL": punch_dump,
+            "attendance_windows_ALL": windows_dump,
+            "raw_odoo_intervals_for_wc_people": [
+                iv for iv in raw_intervals
+            ],
         })
     except Exception as e:
         import traceback

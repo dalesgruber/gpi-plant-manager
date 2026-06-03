@@ -562,6 +562,53 @@ def fetch_attendances_for_day(day) -> list[dict]:
     return list(agg.values())
 
 
+def fetch_attendance_intervals_for_day(day) -> list[dict]:
+    """EVERY hr.attendance whose check_in falls on `day` (site-local), as full
+    intervals -- NOT collapsed per employee like fetch_attendances_for_day.
+
+    Returns [{employee_odoo_id, check_in, check_out, wc_name}, ...] where
+    check_in/check_out are ISO-8601 UTC strings (check_out is None for a record
+    still open) and wc_name is the kiosk WC field (None if unset/untagged).
+
+    This is the goal's source of truth for where each operator was clocked in:
+    auto-lunch splits the day into a morning + afternoon record, and mid-shift
+    transfers each create their own record, so a person can legitimately have
+    several intervals in a day. Day bounds are the local day converted to UTC
+    (Odoo stores naive-UTC datetimes)."""
+    from datetime import datetime, time as _time, timedelta
+    from . import shift_config
+    start_local = datetime.combine(day, _time.min, tzinfo=shift_config.SITE_TZ)
+    end_local = start_local + timedelta(days=1)
+    wc_field = _kiosk_wc_field()
+    fields = ["id", "employee_id", "check_in", "check_out"]
+    if wc_field:
+        fields.append(wc_field)
+    rows = execute(
+        "hr.attendance", "search_read",
+        [
+            ("check_in", ">=", _to_odoo_dt(start_local)),
+            ("check_in", "<", _to_odoo_dt(end_local)),
+        ],
+        fields=fields,
+    )
+    out: list[dict] = []
+    for r in rows:
+        emp = r.get("employee_id")
+        emp_id = emp[0] if isinstance(emp, list) else emp
+        if not emp_id:
+            continue
+        ci = _odoo_dt_to_iso(r.get("check_in"))
+        if ci is None:
+            continue
+        out.append({
+            "employee_odoo_id": emp_id,
+            "check_in": ci,
+            "check_out": _odoo_dt_to_iso(r.get("check_out")),
+            "wc_name": (r.get(wc_field) or None) if wc_field else None,
+        })
+    return out
+
+
 def set_attendance_wc(attendance_id: int, wc_name: str | None) -> None:
     """Write the kiosk WC (and resolved department) onto an existing
     hr.attendance. No-op when the WC field isn't configured or wc_name is

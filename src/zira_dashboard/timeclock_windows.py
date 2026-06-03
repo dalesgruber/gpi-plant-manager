@@ -72,3 +72,67 @@ def punch_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, date
         if segs:
             out[name] = segs
     return out
+
+
+def _windows_from_intervals(intervals: list[dict]) -> list[tuple[str, datetime, datetime | None]]:
+    """ONE person's attendance records -> [(wc_name, start_utc, end_utc|None)],
+    sorted by start. Each record is {wc_name, start, end(None=still open)}.
+
+    A record with NO wc_name inherits the previous record's WC -- the person
+    didn't transfer (a transfer would tag the new WC), so they're still at the
+    same WC (this is what stitches auto-lunch's untagged afternoon record onto
+    the morning WC). A leading WC-less record (no prior WC) is skipped. Pure.
+    """
+    out: list[tuple[str, datetime, datetime | None]] = []
+    last_wc: str | None = None
+    for r in sorted(intervals, key=lambda x: x["start"]):
+        wc = r.get("wc_name") or last_wc
+        if not wc:
+            continue
+        last_wc = wc
+        out.append((wc, r["start"], r.get("end")))
+    return out
+
+
+def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, datetime | None]]]:
+    """{roster_name: [(wc_name, start_utc, end_utc|None), ...]} built from the
+    COMPLETE set of Odoo hr.attendance records for `day` -- the source of truth
+    for where each operator was clocked in.
+
+    Unlike punch_windows_for_day (which reads the local kiosk punch mirror and
+    can miss records that auto-lunch / sync write straight to Odoo), this reads
+    every Odoo attendance record: the morning record, auto-lunch's afternoon
+    record, and any mid-shift transfers -- so a scheduled operator's goal spans
+    their whole clocked-in day instead of truncating at the auto-lunch split.
+
+    Never raises -- returns {} on any error (Odoo down, etc.), in which case the
+    resolver falls back to the schedule.
+    """
+    try:
+        from . import odoo_client, attendance
+        from datetime import datetime as _dt
+        intervals = odoo_client.fetch_attendance_intervals_for_day(day)
+        id_to_name = {v: k for k, v in attendance.name_to_person_id().items()}
+    except Exception:
+        return {}
+    by_person: dict[str, list[dict]] = {}
+    for it in intervals:
+        name = id_to_name.get(str(it.get("employee_odoo_id")))
+        if not name:
+            continue
+        ci = it.get("check_in")
+        if not ci:
+            continue
+        try:
+            start = _dt.fromisoformat(ci)
+            end = _dt.fromisoformat(it["check_out"]) if it.get("check_out") else None
+        except (ValueError, TypeError):
+            continue
+        by_person.setdefault(name, []).append(
+            {"wc_name": it.get("wc_name"), "start": start, "end": end})
+    out: dict[str, list[tuple[str, datetime, datetime | None]]] = {}
+    for name, recs in by_person.items():
+        wins = _windows_from_intervals(recs)
+        if wins:
+            out[name] = wins
+    return out
