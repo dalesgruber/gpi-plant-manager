@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-03
 
+### 10:25 AM
+
+- **Fixed a duplicate `"department"` dict key in the Settings work-center rows (ruff F601)** — `routes/settings.py` built each work-center row with `"department"` set twice — `loc.department`, then `eff["department"]`. Python keeps the last, so `eff["department"]` (the resolved/effective value, consistent with every other field in the row, which all come from `eff`) silently won and the earlier `loc.department` was dead code. Removed the dead line — **behavior-identical** (the rendered dict is unchanged) — which also clears the last ruff finding, so `ruff check` is now green across the whole repo. Full suite green (524 passed).
+
 ### 10:21 AM
 
 - **Added a ruff config + auto-cleaned the unused imports / dead code it flagged (Tier 1, behavior-preserving)** — set up `[tool.ruff]` in `pyproject.toml` (pyflakes `F` ruleset — high-signal, no FastAPI false-positives — target py311, line-length 100) and added `ruff` to the dev extra. Applied the safe fixes across `src`/`tests`/`scripts`: 23 unused imports removed, 6 redundant test re-imports, 1 unused test var, 1 placeholder-less f-string. One autofix had to be reverted — `routes/timeclock.py`'s `live_cache` import *looks* unused but the state-reconciliation tests patch `timeclock.live_cache` through it, so it's load-bearing; restored on its own line with a `# noqa: F401` + comment. Full suite green (524 passed). Ruff also surfaced one likely-latent issue it can't safely auto-fix and that I've **left untouched for review**: a duplicate `"department"` key in the Settings work-center dict (`routes/settings.py:259` — `eff["department"]` silently overrides the earlier `loc.department`). No CI/pre-push hook wired (would block the frequent pushes against pre-existing style debt); the config is a manual baseline for now.

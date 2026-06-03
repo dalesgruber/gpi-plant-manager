@@ -249,7 +249,6 @@ def settings_page(
                 "key": loc.meter_id or f"name:{loc.name}",
                 "name": loc.name,
                 "bay": loc.bay,
-                "department": loc.department,
                 "required_skills": required_skills,
                 "min_ops": eff["min_ops"],
                 "max_ops": max_ops if max_ops is not None else "",
