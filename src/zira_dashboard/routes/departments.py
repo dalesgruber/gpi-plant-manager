@@ -15,7 +15,15 @@ from .. import layout_store, settings_store, shift_config, staffing, widget_cust
 from ..deps import _parse_day, _state, client, templates
 from ..leaderboard import cached_leaderboard as leaderboard
 from ..progress import progress_buckets
-from ..recycling_data import compute_per_wc_expected, progress_color
+from ..recycling_data import (
+    aggregate_buckets,
+    build_bars,
+    build_downtime_rows,
+    compute_per_wc_expected,
+    group_goal,
+    progress_color,
+    sort_bars,
+)
 from ..shift_config import shift_elapsed_minutes
 from ..stations import Station, recycling_stations
 
@@ -434,93 +442,50 @@ def _render_recycling(
     pph_per_person_ex_d4 = (units_ex_d4 / total_man_hours) if total_man_hours > 0 else 0.0
 
     # Buckets aggregated by time-of-day label.
-    def _aggregate_buckets(per_day_buckets: list[list[dict]]) -> list[dict]:
-        agg: dict[str, dict] = {}
-        order: list[str] = []
-        for day_buckets in per_day_buckets:
-            for b in day_buckets:
-                lbl = b["label"]
-                if lbl not in agg:
-                    agg[lbl] = {"label": lbl, "actual": 0, "target": 0, "in_progress": False}
-                    order.append(lbl)
-                agg[lbl]["actual"] += b["actual"]
-                agg[lbl]["target"] += b["target"]
-                if b["in_progress"]:
-                    agg[lbl]["in_progress"] = True
-        order.sort()
-        return [agg[lbl] for lbl in order]
-
-    dism_progress = _aggregate_buckets([p["dism_buckets"] for p in per_day])
-    repair_progress = _aggregate_buckets([p["repair_buckets"] for p in per_day])
+    dism_progress = aggregate_buckets([p["dism_buckets"] for p in per_day])
+    repair_progress = aggregate_buckets([p["repair_buckets"] for p in per_day])
 
     # Group hourly target — average over total elapsed hours, summing per-WC expected.
     elapsed_hours_total = total_elapsed / 60.0 if total_elapsed else 0.0
-    def _group_goal(category: str) -> float:
-        if elapsed_hours_total <= 0:
-            return 0.0
-        total_expected = sum(
-            agg_expected[name]
-            for name in agg_expected
-            if agg_category.get(name) == category
-        )
-        return total_expected / elapsed_hours_total
-    dism_group_target = _group_goal("Dismantler")
-    repair_group_target = _group_goal("Repair")
+    dism_group_target = group_goal(
+        "Dismantler",
+        elapsed_hours_total=elapsed_hours_total,
+        agg_expected=agg_expected,
+        agg_category=agg_category,
+    )
+    repair_group_target = group_goal(
+        "Repair",
+        elapsed_hours_total=elapsed_hours_total,
+        agg_expected=agg_expected,
+        agg_category=agg_category,
+    )
 
     customs_all = widget_customizer.load_all("recycling")
 
     def _bars(category: str) -> list[dict]:
-        names = sorted(n for n in agg_active_names if agg_category.get(n) == category)
-        out = []
-        for name in names:
-            units = agg_units.get(name, 0)
-            expected = agg_expected.get(name, 0.0)
-            pct_of_target = (units / expected * 100.0) if expected > 0 else None
-            out.append({
-                "name": name,
-                "who": agg_who_today.get(name) if not is_range else None,
-                "units": units,
-                "pct_of_target": round(pct_of_target, 1) if pct_of_target is not None else None,
-                "expected": int(round(expected)),
-                "color": progress_color(pct_of_target),
-                "downtime_minutes": agg_downtime.get(name, 0),
-            })
-        max_u = max((r["units"] for r in out), default=0)
-        max_e = max((r["expected"] for r in out), default=0)
-        base = max(max_u, max_e)
-        scale = (base * 1.1) if base > 0 else 1.0
-        has_target_line = (max_e > 0)
-        for r in out:
-            r["pct"] = (r["units"] / scale * 100.0) if scale else 0.0
-            r["target_pct"] = (r["expected"] / scale * 100.0) if (scale and has_target_line) else None
-        return out
+        return build_bars(
+            category,
+            agg_active_names=agg_active_names,
+            agg_category=agg_category,
+            agg_units=agg_units,
+            agg_expected=agg_expected,
+            agg_who_today=agg_who_today,
+            is_range=is_range,
+            agg_downtime=agg_downtime,
+        )
 
     def _sorted_bars(items: list, widget_id: str) -> list:
-        s = customs_all.get(widget_id, {}).get("sort", "preset")
-        if s == "desc":  return sorted(items, key=lambda x: -x["units"])
-        if s == "asc":   return sorted(items, key=lambda x: x["units"])
-        if s == "alpha": return sorted(items, key=lambda x: x["name"].lower())
-        return items
+        return sort_bars(items, widget_id, customs_all=customs_all)
 
     def _downtime_rows():
-        names = sorted(
-            n for n in agg_active_names
-            if agg_category.get(n) in ("Dismantler", "Repair")
+        return build_downtime_rows(
+            agg_active_names=agg_active_names,
+            agg_category=agg_category,
+            agg_downtime=agg_downtime,
+            total_elapsed=total_elapsed,
+            agg_who_today=agg_who_today,
+            is_range=is_range,
         )
-        out = []
-        for name in names:
-            down = agg_downtime.get(name, 0)
-            working = max(0, total_elapsed - down)
-            total = total_elapsed if total_elapsed else 1
-            out.append({
-                "name": name,
-                "who": agg_who_today.get(name) if not is_range else None,
-                "working": working,
-                "down": down,
-                "working_pct": working / total * 100.0,
-                "down_pct": down / total * 100.0,
-            })
-        return out
 
     now_local = now.astimezone(shift_config.SITE_TZ)
     now_label = now_local.strftime("%H:%M")
