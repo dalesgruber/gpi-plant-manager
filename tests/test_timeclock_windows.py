@@ -60,7 +60,7 @@ def test_punch_windows_omits_people_with_no_resolved_window(monkeypatch):
 
 # ---- attendance_windows_for_day (Odoo hr.attendance source -- the goal's truth) ----
 
-from zira_dashboard.timeclock_windows import _windows_from_intervals, attendance_windows_for_day
+from zira_dashboard.timeclock_windows import _windows_from_intervals
 
 
 def test_windows_morning_and_afternoon_same_wc():

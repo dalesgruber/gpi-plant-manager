@@ -130,7 +130,7 @@ def test_attribution_for_past_unpublished_day_uses_assignments(monkeypatch):
     """Past days use saved assignments even if never formally published —
     by the time a day is in the past, the saved draft is the closest
     record of what actually happened."""
-    from zira_dashboard import staffing, production_history
+    from zira_dashboard import staffing
     from zira_dashboard.production_history import attribution_for
 
     fake_sched = staffing.Schedule(
@@ -149,7 +149,7 @@ def test_attribution_for_past_unpublished_day_uses_assignments(monkeypatch):
 
 
 def test_attribution_for_uses_published_assignments(monkeypatch):
-    from zira_dashboard import staffing, production_history
+    from zira_dashboard import staffing
     from zira_dashboard.production_history import attribution_for
 
     fake_sched = staffing.Schedule(
@@ -208,7 +208,7 @@ import pytest
 def test_daily_records_reads_from_production_daily():
     """daily_records must return rows from production_daily without
     calling production_history.attribution_for at all."""
-    from zira_dashboard import db, precompute, production_history
+    from zira_dashboard import db, precompute
 
     db.init_pool(); db.bootstrap_schema()
     db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
@@ -247,7 +247,7 @@ def test_daily_records_reads_from_production_daily():
     reason="Postgres test needs DATABASE_URL",
 )
 def test_attribution_range_reads_from_production_daily():
-    from zira_dashboard import db, precompute, production_history
+    from zira_dashboard import db, precompute
 
     db.init_pool(); db.bootstrap_schema()
     db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
@@ -285,7 +285,7 @@ def test_attribution_range_reads_from_production_daily():
     reason="Postgres test needs DATABASE_URL",
 )
 def test_attribution_per_day_reads_from_production_daily():
-    from zira_dashboard import db, precompute, production_history
+    from zira_dashboard import db, precompute
 
     db.init_pool(); db.bootstrap_schema()
     db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",

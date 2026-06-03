@@ -53,7 +53,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, timeclock_sync, shift_config, staffing, live_cache, attendance_state
+from .. import db, timeclock_sync, shift_config, staffing, attendance_state
+# Not called directly here, but the state-reconciliation tests patch
+# timeclock.live_cache.read_open_attendance through this module — keep it
+# importable as part of the module surface.
+from .. import live_cache  # noqa: F401
 from ..deps import templates
 
 router = APIRouter()

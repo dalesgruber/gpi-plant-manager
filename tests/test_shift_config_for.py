@@ -101,7 +101,6 @@ def test_productive_minutes_for_half_day_with_one_break(monkeypatch):
     assert shift_config.productive_minutes_for(date(2026, 4, 28)) == 210
 
 
-from datetime import datetime
 from zira_dashboard.shift_config import SITE_TZ
 
 
@@ -206,7 +205,6 @@ def test_in_shift_on_honors_published_schedule_on_saturday(monkeypatch):
             custom_hours={"start": "06:00", "end": "10:00", "breaks": []},
         ))
     monkeypatch.setattr(shift_config, "work_weekdays", lambda: frozenset({0, 1, 2, 3, 4}))
-    saturday = date(2026, 5, 16)
     # 08:00 site-local sits inside the published 06:00–10:00 window.
     in_window = datetime(2026, 5, 16, 8, 0, tzinfo=SITE_TZ)
     assert shift_config.in_shift_on(in_window) is True

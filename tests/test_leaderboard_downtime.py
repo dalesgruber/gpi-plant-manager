@@ -8,7 +8,7 @@ lunch portion of a long downtime event would be incorrectly counted.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 
 import pytest
 

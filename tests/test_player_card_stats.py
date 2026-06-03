@@ -5,7 +5,6 @@ work_centers_store) so they don't need DATABASE_URL.
 """
 from __future__ import annotations
 
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -23,7 +22,6 @@ def _stub_route_dependencies(monkeypatch, *, person_data, registered, members_ma
     members_map: {group_name: [wc_name, ...]}
     """
     from zira_dashboard import staffing
-    from zira_dashboard.routes import people as people_route
     from zira_dashboard import production_history, work_centers_store, late_report, awards
 
     class _FakeLoc:

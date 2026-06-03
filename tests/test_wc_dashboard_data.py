@@ -43,7 +43,6 @@ def test_slug_empty_input():
     assert slug_for_wc("   ") == ""
 
 
-import os
 from datetime import date as _date
 
 import pytest
@@ -213,7 +212,7 @@ def _fake_readings(per_minute):
 def test_daily_progress_cumulative(monkeypatch):
     """Daily progress: list of (minute_offset, cumulative_units) at 15-min granularity."""
     from zira_dashboard import wc_dashboard_data, staffing
-    from datetime import datetime, timezone
+    from datetime import datetime
     from zira_dashboard.shift_config import SITE_TZ
     # Stub the schedule DB lookup that shift_start_for / productive_minutes_for need.
     # custom_hours only override the global shift when the day is PUBLISHED
@@ -383,7 +382,7 @@ def test_fifteen_min_increments_zeros_break_bucket_targets(monkeypatch):
     breaks (which would put it above the Pallets banner target —
     "behind goal" on the chart while Pallets says "ahead of goal").
     """
-    from datetime import date, time, datetime, timezone
+    from datetime import date, time
     from zira_dashboard import wc_dashboard_data, shift_config
 
     class _FakeBreak:

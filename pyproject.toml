@@ -26,6 +26,7 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "responses>=0.24",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -37,3 +38,13 @@ packages = ["src/zira_probe", "src/zira_dashboard"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# Start with pyflakes (F): unused imports, undefined names, redefinitions,
+# repeated dict keys — high signal, no FastAPI false positives. Broaden to
+# E / I / UP / B once the baseline is clean and there's CI/hook enforcement.
+select = ["F"]

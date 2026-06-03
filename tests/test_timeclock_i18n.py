@@ -2,7 +2,6 @@
 format substitution, and graceful fallback for unknown strings."""
 from __future__ import annotations
 
-from markupsafe import Markup
 
 from zira_dashboard import timeclock_i18n
 

@@ -36,7 +36,7 @@ def test_trophies_page_renders_with_no_data(monkeypatch):
 
 def test_override_endpoint_replace(monkeypatch):
     from fastapi.testclient import TestClient
-    from zira_dashboard import db, awards
+    from zira_dashboard import db
     from zira_dashboard.app import app
 
     spy = MagicMock()

@@ -6,7 +6,6 @@ via monkeypatch so they run without a DB.
 """
 from __future__ import annotations
 
-import time
 
 
 def _stub(monkeypatch, *, groups, goat_by_group, overrides=None):

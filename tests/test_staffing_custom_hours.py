@@ -5,7 +5,7 @@ when DATABASE_URL is not set (e.g., CI without a Postgres available).
 """
 
 import os
-from datetime import date, time
+from datetime import date
 
 import pytest
 

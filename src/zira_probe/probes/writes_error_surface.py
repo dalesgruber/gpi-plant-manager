@@ -51,7 +51,7 @@ def _run(
             obs = [f"Rejected with {resp.status_code} — as expected."]
         elif 200 <= resp.status_code < 300:
             status = "expected_failure"
-            obs = [f"Unexpected 2xx — payload was accepted."]
+            obs = ["Unexpected 2xx — payload was accepted."]
         else:
             status = "unexpected_failure"
             obs = [f"Unexpected status {resp.status_code}."]

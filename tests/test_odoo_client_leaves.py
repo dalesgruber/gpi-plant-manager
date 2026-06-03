@@ -1,8 +1,6 @@
 import time
 from datetime import date
 
-import pytest
-from unittest.mock import patch
 
 from zira_dashboard import odoo_client
 
