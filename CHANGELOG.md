@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-03
 
+### 10:14 AM
+
+- **Extracted the remaining big inline assets (index / leaderboards / settings) to `/static` (Tier 1 refactor, behavior-identical)** — following the footer move, three more pages carried large inline blocks: `index.html`'s 160-line `<style>` → `/static/index.css`; `leaderboards.html`'s three `<script>` blocks (show-all toggle, the person-days popup, drag-to-reorder) → `/static/leaderboards.js`; and `settings.html`'s ~580 lines of inline JS → `/static/settings.js`. The CSS and the leaderboards JS moved **verbatim** (re-embedding reproduces the originals byte-for-byte). settings.html's JS referenced one server value, so its single `const PROD_MIN = {{ productive_minutes }}` line became a tiny inline `<script>window.PROD_MIN = …</script>` plus `const PROD_MIN = window.PROD_MIN;` in the file — everything else verbatim. All kept as a plain `<script src>` / `<link>` at the same position to preserve execution order and the global functions inline handlers call. All three templates still compile; the assets are now cacheable across loads; full suite green (524 passed).
+
 ### 9:53 AM
 
 - **Unified the 10 background warmer loops behind one runner + registry (Tier 1 refactor, behavior-identical)** — `app.py`'s startup ran ten near-identical `async def _warm_*_loop()` functions, each repeating the same `while True / try / await to_thread(…) / except-log / sleep(N)` skeleton (~175 lines + a 10-line create/cancel block). Replaced them with ten tiny `_tick_*` coroutines (each is the original loop's exact body) driven by one `_run_warmer(name, tick, interval)` helper over a `_WARMERS` registry. Every warmer keeps its **exact cadence** (30/45/60/300/600s), its immediate-first-run, and its log-and-swallow safety — verified the registry holds all 10 with intervals unchanged. `app.py` drops 428 → 354 lines and the lifespan is now a 3-line comprehension. Updated 3 structural tests that asserted the old per-loop function names (they now assert the tick is a registered coroutine). Full suite green (524 passed).
