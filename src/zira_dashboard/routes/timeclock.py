@@ -246,10 +246,11 @@ def _fmt_time(dt: datetime) -> str:
 
 
 def _hours_for_punch(resource_calendar_id, local_date):
-    """Resolve (shift_start, shift_end) for a punch — unchanged from the prior
-    behavior. An employee on an Odoo work schedule with synced hours for this
-    weekday gets those boundaries; everyone else (and any missing hours) falls
-    back to the plant default. We never guess a boundary."""
+    """Resolve (shift_start, shift_end) for a punch. An employee on an Odoo
+    work schedule with synced hours for this weekday gets those boundaries;
+    everyone else (and any missing hours) falls back to the plant default.
+    Shift boundaries stay Odoo-sourced — only the rounding *windows* are
+    department-driven (see _windows_for_day). We never guess a boundary."""
     from .. import work_schedule_store
     if resource_calendar_id is not None:
         ws = work_schedule_store.get(resource_calendar_id)
