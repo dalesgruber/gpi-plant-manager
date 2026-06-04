@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-04
+
+### 7:09 AM
+
+- **New read-only diagnostic `/admin/ribbon-vs-widget` — decomposes why a person's Monthly Ribbon total differs from their recycling-dashboard bar** — the recycling "Repairs" / "Dismantler" bars are **per work center** (one station's raw Zira meter total, from `zira_daily_cache`), while Monthly Ribbons are **per person** (their total across *every* WC they were credited that day — units split per operator, testing-windows removed, from `production_daily`). So a ribbon total legitimately exceeds a person's home-station bar whenever they floated to a second station, and the two displays are answering different questions. This GET endpoint puts both sources side-by-side for one day (`?day=YYYY-MM-DD`, default yesterday UTC; optional `?name=` substring filter): per-person ribbon totals each with a per-WC breakdown, plus per-WC widget meter totals — each carrying `computed_at` to surface any snapshot-timing skew. Read-only, no writes, no admin secret (matches `/admin/data-status` / `/admin/person-state`). +4 DB-free tests (monkeypatched `db.query`); ruff clean.
+
 ## 2026-06-03
 
 ### 1:36 PM

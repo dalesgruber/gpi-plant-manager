@@ -6,6 +6,7 @@ JSON so Dale can paste the result into a chat to share status.
 
 from __future__ import annotations
 
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -121,6 +122,121 @@ def data_status(
             }
             for day in sorted(set(zira_by_day) | set(sched_by_day) | set(asg_by_day))
         },
+    })
+
+
+@router.get("/admin/ribbon-vs-widget")
+def ribbon_vs_widget(
+    day: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+):
+    """Diagnostic: decompose the per-PERSON ribbon total vs the
+    per-WORK-CENTER widget total for one day, so the gap can be read off.
+
+    Read-only; GET-able from a browser; returns JSON.
+
+      - ``day``  YYYY-MM-DD (default: yesterday, UTC) — matches how the
+        recycling "Yesterday" range and the precompute job bucket a day
+        (full UTC calendar day via ``day_window_utc``).
+      - ``name`` optional case-insensitive substring filter on the person.
+
+    Two sources answer two different questions:
+
+      - ribbon -> ``production_daily``: a PERSON's total across every WC they
+        were credited that day (units split per operator, testing windows
+        removed). This is what "Monthly Ribbons" ranks.
+      - widget -> ``zira_daily_cache``: a WORK CENTER's raw meter total. This
+        is what the recycling Repairs / Dismantler bars show.
+
+    A person's ribbon total exceeds their home-WC widget bar precisely when
+    they were credited production on more than one station that day; the
+    ``per_wc`` breakdown shows exactly where the extra units came from.
+    ``computed_at`` on each source surfaces any snapshot-timing skew.
+    """
+    from .. import db
+
+    today = datetime.now(timezone.utc).date()
+    try:
+        d = date.fromisoformat(day) if day else today - timedelta(days=1)
+    except ValueError:
+        return JSONResponse({"error": "day must be YYYY-MM-DD"}, status_code=400)
+
+    # --- ribbon source: per-(person, wc) rows from production_daily ---
+    pd_sql = (
+        "SELECT name, wc_name, units, hours, downtime, computed_at "
+        "FROM production_daily WHERE day = %s"
+    )
+    pd_params: list = [d]
+    if name:
+        pd_sql += " AND lower(name) LIKE lower(%s)"
+        pd_params.append(f"%{name}%")
+    pd_rows = db.query(pd_sql, pd_params)
+
+    by_person: dict[str, dict] = {}
+    for r in pd_rows:
+        p = by_person.setdefault(
+            r["name"],
+            {
+                "name": r["name"],
+                "ribbon_total_units": 0.0,
+                "per_wc": [],
+                "computed_at": None,
+            },
+        )
+        units = float(r["units"] or 0)
+        p["ribbon_total_units"] += units
+        p["per_wc"].append({
+            "wc_name": r["wc_name"],
+            "units": round(units, 1),
+            "hours": round(float(r["hours"] or 0), 2),
+            "downtime": round(float(r["downtime"] or 0), 1),
+        })
+        ca = r.get("computed_at")
+        if ca is not None:
+            ca_s = str(ca)
+            if p["computed_at"] is None or ca_s > p["computed_at"]:
+                p["computed_at"] = ca_s
+
+    people = sorted(by_person.values(), key=lambda x: -x["ribbon_total_units"])
+    for p in people:
+        p["ribbon_total_units"] = round(p["ribbon_total_units"], 1)
+        p["per_wc"].sort(key=lambda w: -w["units"])
+
+    # --- widget source: per-WC raw meter totals from zira_daily_cache ---
+    cache_rows = db.query(
+        "SELECT meter_id, payload, computed_at FROM zira_daily_cache WHERE day = %s",
+        (d,),
+    )
+    widget_by_wc: list[dict] = []
+    for r in cache_rows:
+        payload = r["payload"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        payload = payload or {}
+        station = payload.get("station") or {}
+        widget_by_wc.append({
+            "wc_name": station.get("name"),
+            "category": station.get("category"),
+            "meter_id": r["meter_id"],
+            "units": payload.get("units"),
+            "computed_at": str(r["computed_at"]) if r.get("computed_at") else None,
+        })
+    widget_by_wc.sort(key=lambda w: (w["units"] is None, -(w["units"] or 0)))
+
+    return JSONResponse({
+        "day": d.isoformat(),
+        "what": {
+            "ribbon": "per-PERSON total across all WCs (production_daily; units "
+                      "split per operator, testing windows removed) — what "
+                      "Monthly Ribbons ranks",
+            "widget": "per-WORK-CENTER raw meter total (zira_daily_cache) — what "
+                      "the recycling Repairs / Dismantler bars show",
+            "gap": "a person's ribbon_total_units > their home-WC widget bar means "
+                   "they were credited production on >1 station that day; per_wc "
+                   "shows where the extra units came from",
+        },
+        "ribbon_by_person": people,
+        "widget_by_wc": widget_by_wc,
     })
 
 
