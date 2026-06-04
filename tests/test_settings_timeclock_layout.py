@@ -67,9 +67,15 @@ def test_timeclock_panel_preserves_per_schedule_contract(monkeypatch):
         assert r.status_code == 200
         html = r.text
         assert 'name="resource_calendar_id"' in html
-        for action in ("/settings/work_schedule_rounding",
-                       "/settings/work_schedule_rounding/add",
-                       "/settings/work_schedule_rounding/remove"):
+        # The bare /settings/work_schedule_rounding SAVE form was removed when
+        # punch rounding moved from per-schedule to department-driven systems:
+        # the per-schedule block is now hours-only ("Custom shift hours"), so
+        # only its add/remove endpoints remain. The rounding windows now live
+        # under the rounding-system + department-mapping endpoints.
+        for action in ("/settings/work_schedule_rounding/add",
+                       "/settings/work_schedule_rounding/remove",
+                       "/settings/rounding_system/add",
+                       "/settings/department_rounding"):
             assert f'action="{action}"' in html, action
     finally:
         _drop_override()
@@ -93,10 +99,12 @@ def test_rules_tab_orders_autolunch_after_per_schedule():
     r = client.get("/settings?section=timeclock")
     assert r.status_code == 200
     html = r.text
-    assert "Per-schedule rounding" in html
+    # "Per-schedule rounding" was renamed "Custom shift hours" when rounding
+    # became department-driven; it's the last rounding block before Auto-Lunch.
+    assert "Custom shift hours" in html
     assert "Auto-Lunch" in html
-    assert html.index("Per-schedule rounding") < html.index("Auto-Lunch"), \
-        "Auto-Lunch should sit below the rounding block"
+    assert html.index("Custom shift hours") < html.index("Auto-Lunch"), \
+        "Auto-Lunch should sit below the rounding blocks"
 
 
 def test_rules_forms_have_no_explicit_save_buttons(monkeypatch):
