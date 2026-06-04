@@ -669,3 +669,182 @@
   // or as snoozes expire, without a full page reload.
   setInterval(refreshCount, 60000);
 })();
+
+// Global "Missing Work Center" badge + modal — present on every page.
+// Mirrors the Late/Absence badge/modal above and reuses its .late-* styling.
+(function () {
+  var navBadge = null;
+  var modal = null;
+  var data = null;
+  var ENDPOINT = '/api/missing-wc';
+
+  function settingsLink() {
+    return document.querySelector('header nav a[href="/settings"]')
+        || document.querySelector('header.app nav a[href="/settings"]');
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  function refreshCount() {
+    fetch(ENDPOINT).then(function (r) { return r.json(); }).then(function (d) {
+      data = d;
+      injectOrUpdateBadge();
+    }).catch(function () {});
+  }
+
+  function injectOrUpdateBadge() {
+    if (!data || !data.count) {
+      if (navBadge) { navBadge.remove(); navBadge = null; }
+      return;
+    }
+    var anchor = settingsLink();
+    if (!anchor) return;
+    if (!navBadge) {
+      navBadge = document.createElement('a');
+      navBadge.href = '#';
+      navBadge.className = 'late-nav-badge mwc-nav-badge';
+      navBadge.title = 'Attendance records with no work center — click to assign';
+      navBadge.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
+      anchor.parentNode.insertBefore(navBadge, anchor.nextSibling);
+    }
+    navBadge.innerHTML = '📍 <span class="cnt">' + data.count + '</span> No Work Center';
+    navBadge.style.display = '';
+  }
+
+  function openModal() {
+    closeModal();
+    modal = document.createElement('div');
+    modal.className = 'late-modal mwc-modal';
+    modal.innerHTML = ''
+      + '<div class="late-backdrop"></div>'
+      + '<div class="late-card" role="dialog" aria-modal="true" aria-label="Missing work center">'
+      + '  <div class="late-head"><h3>Missing Work Center</h3>'
+      + '    <button type="button" class="late-close" aria-label="Close">×</button></div>'
+      + '  <div class="late-body">Loading…</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    document.documentElement.style.overflow = 'hidden';
+    modal.querySelector('.late-backdrop').addEventListener('click', closeModal);
+    modal.querySelector('.late-close').addEventListener('click', closeModal);
+    document.addEventListener('keydown', escClose);
+    fetch(ENDPOINT).then(function (r) { return r.json(); }).then(renderModal);
+  }
+
+  function closeModal() {
+    if (modal) { modal.remove(); modal = null; }
+    document.documentElement.style.overflow = '';
+    document.removeEventListener('keydown', escClose);
+  }
+
+  function escClose(e) { if (e.key === 'Escape') closeModal(); }
+
+  function wcOptions(wcs) {
+    var opts = '<option value="">Pick work center…</option>';
+    (wcs || []).forEach(function (w) {
+      opts += '<option value="' + escapeHtml(w) + '">' + escapeHtml(w) + '</option>';
+    });
+    return opts;
+  }
+
+  function postJson(url, payload) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); });
+  }
+
+  function finishRow(li, label, ok) {
+    var status = li.querySelector('.late-status');
+    status.textContent = label;
+    status.hidden = false;
+    if (ok) {
+      li.querySelectorAll('button, select').forEach(function (el) { el.disabled = true; });
+      li.style.opacity = '0.6';
+      refreshCount();
+    }
+  }
+
+  function wireActions(body) {
+    body.querySelectorAll('.mwc-assign-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        btn.closest('.late-item').querySelector('.mwc-assign-row').hidden = false;
+      });
+    });
+    body.querySelectorAll('.mwc-wc-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        sel.parentElement.querySelector('.mwc-save-btn').disabled = !sel.value;
+      });
+    });
+    body.querySelectorAll('.mwc-save-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var li = btn.closest('.late-item');
+        var sel = li.querySelector('.mwc-wc-select');
+        if (!sel.value) return;
+        btn.disabled = true;
+        postJson('/missing-wc/assign', {
+          attendance_id: parseInt(li.getAttribute('data-att'), 10),
+          wc_name: sel.value,
+          name: li.querySelector('.late-item-name').textContent,
+        }).then(function (res) {
+          finishRow(li, res && res.ok ? 'Assigned ✓' : 'Error', !!(res && res.ok));
+        }).catch(function () { finishRow(li, 'Error', false); btn.disabled = false; });
+      });
+    });
+    body.querySelectorAll('.mwc-dismiss-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var li = btn.closest('.late-item');
+        btn.disabled = true;
+        postJson('/missing-wc/dismiss', {
+          attendance_id: parseInt(li.getAttribute('data-att'), 10),
+          name: li.querySelector('.late-item-name').textContent,
+        }).then(function (res) {
+          finishRow(li, res && res.ok ? 'Dismissed' : 'Error', !!(res && res.ok));
+        }).catch(function () { finishRow(li, 'Error', false); btn.disabled = false; });
+      });
+    });
+  }
+
+  function renderModal(d) {
+    data = d;
+    if (!modal) return;
+    var body = modal.querySelector('.late-body');
+    var rows = (d && d.rows) || [];
+    if (!rows.length) {
+      body.innerHTML = '<p class="late-help">No attendance records are missing a work center. '
+        + 'Any hourly employee with an attendance record in the last 14 days that has no '
+        + 'work center will appear here.</p>';
+      return;
+    }
+    var html = '<ul class="late-list">';
+    rows.forEach(function (item) {
+      html += '<li class="late-item" data-att="' + item.attendance_id + '">'
+        + '<span class="late-item-name">' + escapeHtml(item.name) + '</span>'
+        + '<span class="late-item-mins">clocked in ' + escapeHtml(item.check_in_label) + '</span>'
+        + '<span class="late-item-actions">'
+        + '  <button type="button" class="mwc-assign-btn">Assign</button>'
+        + '  <button type="button" class="mwc-dismiss-btn">Dismiss</button>'
+        + '</span>'
+        + '<div class="late-reason-row mwc-assign-row" hidden>'
+        + '  <select class="mwc-wc-select">' + wcOptions(d.work_centers) + '</select>'
+        + '  <button type="button" class="mwc-save-btn" disabled>Save</button>'
+        + '</div>'
+        + '<span class="late-status" hidden></span>'
+        + '</li>';
+    });
+    html += '</ul>';
+    body.innerHTML = html;
+    wireActions(body);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', refreshCount);
+  } else {
+    refreshCount();
+  }
+  setInterval(refreshCount, 60000);
+})();
