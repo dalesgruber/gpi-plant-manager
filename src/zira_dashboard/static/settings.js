@@ -289,10 +289,9 @@
   attachAutosaver(document.getElementById('schedule-form'), '/settings/schedule');
   attachAutosaver(document.getElementById('saturday-schedule-form'), '/settings/saturday_schedule');
   attachAutosaver(document.getElementById('wc-form'), '/settings/work_centers');
-  attachAutosaver(document.getElementById('rounding-form'), '/settings/rounding');
   attachAutosaver(document.getElementById('auto-lunch-form'), '/settings/auto_lunch');
   document.querySelectorAll('form.ws-rounding-fields').forEach(f => {
-    attachAutosaver(f, '/settings/work_schedule_rounding');
+    attachAutosaver(f, '/settings/rounding_system');
   });
 
   // ---------- Picker helpers: summary refresh, × clear, max/min guards ----------

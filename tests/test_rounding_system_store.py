@@ -60,14 +60,6 @@ def test_delete_system_unsets_mapping():
     assert rounding_system_store.windows_for_department(DEPT) is None
 
 
-def test_rename_system():
-    rounding_system_store.add_system(SYS_NAME)
-    sid = _sid()
-    rounding_system_store.rename_system(sid, "ZZ Test System Renamed")
-    names = {s.name for s in rounding_system_store.all_systems()}
-    assert "ZZ Test System Renamed" in names
-
-
 def test_department_map_includes_unset_as_none():
     rounding_system_store.set_department_system(DEPT, None)
     assert rounding_system_store.department_map().get(DEPT) is None

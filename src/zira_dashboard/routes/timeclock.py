@@ -286,13 +286,15 @@ def _effective_punch_wc(action, wc_name, person_odoo_id):
 def _windows_for_day(person_name, local_date, effective_wc, is_flexible=False):
     """Resolve the four rounding windows by the static department the employee
     works `local_date`: their first scheduled WC's department, else the WC they
-    clock into, else the plant default. Never raises a config error past the
-    fallback.
+    clock into. Returns no rounding (all-zero windows) when nothing resolves.
 
-    Flexible-schedule employees (Odoo "Schedule Type" = flexible) have no fixed
-    start/end to round toward, so they're exempt from rounding entirely:
-    all-zero windows make apply_rounding a no-op and the raw punch is kept."""
-    from .. import rounding_store, rounding_system_store
+    Every normal punch carries a work center — the scheduled one, or the one
+    picked at clock-in (clock-out reuses the open WC) — so it resolves to a
+    department and that department's rounding system. No rounding is applied
+    when the employee is flexible (no fixed start/end), the department is
+    deliberately mapped to "No rounding", or the punch's work center is unknown
+    (a misconfig, which we log)."""
+    from .. import rounding_system_store
     from ..rounding import RoundingSettings
     if is_flexible:
         return RoundingSettings(0, 0, 0, 0)
@@ -306,11 +308,16 @@ def _windows_for_day(person_name, local_date, effective_wc, is_flexible=False):
                     break
     if dept is None and effective_wc:
         dept = staffing.department_for_wc(effective_wc)
-    if dept:
+        if dept is None:
+            _log.warning(
+                "Punch work center %r is not a known location; not rounded",
+                effective_wc,
+            )
+    if dept is not None:
         win = rounding_system_store.windows_for_department(dept)
         if win is not None:
             return win
-    return rounding_store.current()
+    return RoundingSettings(0, 0, 0, 0)
 
 
 def _open_log_row(

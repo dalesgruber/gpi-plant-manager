@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from zira_dashboard import staffing, rounding_store, rounding_system_store
+from zira_dashboard import staffing, rounding_system_store
 from zira_dashboard.rounding import RoundingSettings
 from zira_dashboard.routes import timeclock
 
@@ -19,7 +19,6 @@ def test_scheduled_dept_selects_system(monkeypatch):
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({"Dismantler 1": ["Alice"]}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department",
                         lambda dept: RoundingSettings(20, 0, 0, 0) if dept == "Recycled" else None)
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(0, 0, 0, 0))
     assert timeclock._windows_for_day("Alice", MONDAY, None) == RoundingSettings(20, 0, 0, 0)
 
 
@@ -27,7 +26,6 @@ def test_tablets_resolves_supervisor_system(monkeypatch):
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({"Tablets": ["Bob"]}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department",
                         lambda dept: RoundingSettings(5, 5, 5, 5) if dept == "Supervisor" else None)
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(0, 0, 0, 0))
     assert timeclock._windows_for_day("Bob", MONDAY, None) == RoundingSettings(5, 5, 5, 5)
 
 
@@ -35,22 +33,31 @@ def test_unscheduled_falls_back_to_clock_in_wc(monkeypatch):
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department",
                         lambda dept: RoundingSettings(20, 0, 0, 0) if dept == "Transportation" else None)
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(0, 0, 0, 0))
     assert timeclock._windows_for_day("Carlos", MONDAY, "Truck Driver") == RoundingSettings(20, 0, 0, 0)
 
 
-def test_no_schedule_no_wc_uses_plant_default(monkeypatch):
+def test_no_schedule_no_wc_is_not_rounded(monkeypatch):
+    # No scheduler entry and no clock-in WC → nothing resolves → no rounding.
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department", lambda dept: None)
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(7, 7, 7, 7))
-    assert timeclock._windows_for_day("Dee", MONDAY, None) == RoundingSettings(7, 7, 7, 7)
+    assert timeclock._windows_for_day("Dee", MONDAY, None) == RoundingSettings(0, 0, 0, 0)
 
 
-def test_unmapped_department_uses_plant_default(monkeypatch):
+def test_unmapped_department_is_not_rounded(monkeypatch):
+    # Scheduled into a department with no rounding system mapped → no rounding
+    # (no plant default anymore).
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({"Work Orders": ["Eve"]}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department", lambda dept: None)
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(1, 2, 3, 4))
-    assert timeclock._windows_for_day("Eve", MONDAY, None) == RoundingSettings(1, 2, 3, 4)
+    assert timeclock._windows_for_day("Eve", MONDAY, None) == RoundingSettings(0, 0, 0, 0)
+
+
+def test_unknown_clock_in_wc_is_not_rounded(monkeypatch):
+    # Not scheduled, and the clock-in WC isn't a known location → no department
+    # resolves → no rounding (the misconfig path, which logs).
+    monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({}))
+    monkeypatch.setattr(rounding_system_store, "windows_for_department",
+                        lambda dept: RoundingSettings(20, 0, 0, 0))
+    assert timeclock._windows_for_day("Hank", MONDAY, "Nonexistent WC") == RoundingSettings(0, 0, 0, 0)
 
 
 def test_multi_dept_first_scheduled_wins(monkeypatch):
@@ -59,18 +66,15 @@ def test_multi_dept_first_scheduled_wins(monkeypatch):
     monkeypatch.setattr(rounding_system_store, "windows_for_department",
                         lambda dept: {"Supervisor": RoundingSettings(9, 0, 0, 0),
                                       "Recycled": RoundingSettings(1, 0, 0, 0)}.get(dept))
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(0, 0, 0, 0))
     assert timeclock._windows_for_day("Frank", MONDAY, None) == RoundingSettings(9, 0, 0, 0)
 
 
 def test_flexible_employee_is_exempt(monkeypatch):
     # A flex-schedule employee has no fixed start/end, so they're exempt from
-    # rounding even when scheduled into a department that would round (and even
-    # vs. the plant default) — resolves to all-zero windows (apply_rounding no-op).
+    # rounding even when scheduled into a department that would round.
     monkeypatch.setattr(staffing, "load_schedule", lambda d: _sched({"Dismantler 1": ["Gina"]}))
     monkeypatch.setattr(rounding_system_store, "windows_for_department",
                         lambda dept: RoundingSettings(20, 0, 0, 0))
-    monkeypatch.setattr(rounding_store, "current", lambda: RoundingSettings(5, 5, 5, 5))
     assert timeclock._windows_for_day(
         "Gina", MONDAY, "Dismantler 1", is_flexible=True
     ) == RoundingSettings(0, 0, 0, 0)

@@ -295,14 +295,6 @@ def settings_page(
             for b in sched.breaks
         ],
     }
-    from .. import rounding_store
-    rounding_settings = rounding_store.current()
-    rounding_ctx = {
-        "in_before_min": rounding_settings.in_before_min,
-        "in_after_min": rounding_settings.in_after_min,
-        "out_before_min": rounding_settings.out_before_min,
-        "out_after_min": rounding_settings.out_after_min,
-    }
     from .. import work_schedule_store
     work_schedules_ctx = [
         {
@@ -383,7 +375,6 @@ def settings_page(
             "productive_minutes": productive_min,
             "schedule": schedule_ctx,
             "saturday_schedule": saturday_schedule_ctx,
-            "rounding": rounding_ctx,
             "rounding_systems": rounding_systems_ctx,
             "department_rounding": department_rounding_ctx,
             "auto_lunch": auto_lunch_ctx,
@@ -479,38 +470,6 @@ async def settings_save_saturday_schedule(request: Request):
     return RedirectResponse(url="/settings?saved=1&section=timeclock", status_code=303)
 
 
-@router.post("/settings/rounding")
-async def settings_save_rounding(request: Request):
-    """Save the four rounding-window values. Each must be 0 <= v <= 60.
-    Out-of-range or unparseable values fall back to 0 (no rounding on
-    that side) rather than rejecting the whole submission."""
-    from .. import rounding_store
-    from ..rounding import RoundingSettings
-    form = await request.form()
-
-    def _clamp(raw) -> int:
-        try:
-            v = int(raw)
-        except (TypeError, ValueError):
-            return 0
-        if v < 0:
-            return 0
-        if v > 60:
-            return 60
-        return v
-
-    settings = RoundingSettings(
-        in_before_min=_clamp(form.get("in_before_min")),
-        in_after_min=_clamp(form.get("in_after_min")),
-        out_before_min=_clamp(form.get("out_before_min")),
-        out_after_min=_clamp(form.get("out_after_min")),
-    )
-    rounding_store.save(settings)
-    if (request.headers.get("accept") or "").startswith("application/json"):
-        return JSONResponse({"ok": True})
-    return RedirectResponse(url="/settings?saved=1&section=timeclock", status_code=303)
-
-
 @router.post("/settings/rounding_system")
 async def settings_save_rounding_system(request: Request):
     """Save the four windows for ONE rounding system (by id). Same 0..60 clamp
@@ -553,25 +512,9 @@ async def settings_add_rounding_system(request: Request):
     return RedirectResponse(url="/settings?saved=1&section=timeclock#rules", status_code=303)
 
 
-@router.post("/settings/rounding_system/rename")
-async def settings_rename_rounding_system(request: Request):
-    """Rename one rounding system."""
-    from .. import rounding_system_store
-    form = await request.form()
-    try:
-        system_id = int(form.get("system_id"))
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": False, "error": "bad id"}, status_code=400)
-    name = (form.get("name") or "").strip()
-    if not name:
-        return JSONResponse({"ok": False, "error": "bad name"}, status_code=400)
-    rounding_system_store.rename_system(system_id, name)
-    return RedirectResponse(url="/settings?saved=1&section=timeclock#rules", status_code=303)
-
-
 @router.post("/settings/rounding_system/remove")
 async def settings_remove_rounding_system(request: Request):
-    """Delete a rounding system. Departments mapped to it revert to plant default."""
+    """Delete a rounding system. Departments mapped to it fall back to no rounding."""
     from .. import rounding_system_store
     form = await request.form()
     try:
@@ -584,7 +527,7 @@ async def settings_remove_rounding_system(request: Request):
 
 @router.post("/settings/department_rounding")
 async def settings_save_department_rounding(request: Request):
-    """Map one static department to a rounding system, or to the plant default
+    """Map one static department to a rounding system, or to no rounding
     (system_id 'none'/blank)."""
     from .. import rounding_system_store
     form = await request.form()

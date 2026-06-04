@@ -7,8 +7,8 @@ use the system of the department they work that day. Resolution at punch time
 reads the in-process cache, never the DB — same rationale as rounding_store /
 work_schedule_store.
 
-Anything that doesn't resolve to a mapped department + existing system falls
-back to the plant default (rounding_settings id=1, via rounding_store).
+Anything that doesn't resolve to a mapped department + existing system is not
+rounded — the punch path records the raw punch as-is.
 """
 
 from __future__ import annotations
@@ -110,18 +110,6 @@ def save_system_windows(system_id: int, r: RoundingSettings) -> None:
         "UPDATE rounding_systems SET in_before_min = %s, in_after_min = %s, "
         "out_before_min = %s, out_after_min = %s, updated_at = now() WHERE id = %s",
         (r.in_before_min, r.in_after_min, r.out_before_min, r.out_after_min, int(system_id)),
-    )
-    reload()
-
-
-def rename_system(system_id: int, new_name: str) -> None:
-    new_name = (new_name or "").strip()[:80]
-    if not new_name:
-        return
-    from . import db
-    db.execute(
-        "UPDATE rounding_systems SET name = %s, updated_at = now() WHERE id = %s",
-        (new_name, int(system_id)),
     )
     reload()
 

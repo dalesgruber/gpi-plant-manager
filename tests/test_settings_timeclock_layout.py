@@ -50,7 +50,7 @@ def test_timeclock_panel_preserves_core_field_contract():
         assert f'name="{name}"' in html, name
     # Always-rendered form endpoints
     for action in ("/settings/schedule", "/settings/saturday_schedule",
-                   "/settings/rounding", "/settings/auto_lunch"):
+                   "/settings/auto_lunch"):
         assert f'action="{action}"' in html, action
 
 

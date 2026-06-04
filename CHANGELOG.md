@@ -4,6 +4,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-06-04
 
+### 9:46 AM
+
+- **Dropped the plant-wide "Round To Schedule (default)" rounding — the work center now drives every punch** — every rounded punch already carries a work center (the kiosk requires one at clock-in; clock-out reuses the open one), so it always resolves to a department and that department's rounding system. The global default was only ever a safety net, so it's gone: Settings → Timeclock → Rules no longer shows the default windows, and a punch is left **unrounded** only when the employee is flexible, the punch's work center isn't a known location (logged as a misconfig), or a department is deliberately set to **"No rounding"** (the department dropdown's old "Plant default" option, relabeled). Also **removed the per-system Rename** (system names are fixed by department — Plant Operator / Supervisor / Transportation), and fixed an autosave bug where editing a rounding system's windows posted to the wrong endpoint (`/settings/work_schedule_rounding` → `/settings/rounding_system`). Resolution + contract tests updated; full local suite green (618 passed). The `rounding_settings` row is retained only to seed Plant Operator's initial windows on a fresh install.
+
 ### 9:21 AM
 
 - **Flexible-schedule employees are now exempt from punch rounding** — anyone whose Odoo work-schedule "Schedule Type" is flexible (`people.is_flexible`) now has their kiosk punches recorded **exactly as punched**, with no rounding, no matter which department/rounding system would otherwise apply. Flex employees have no fixed start/end to round toward, so the prior behavior could wrongly pull an early/late punch to the plant-default shift boundary (the same reason they're already excluded from the Late/Absence report). The exemption sits at the single punch choke point (`_open_log_row` → `_windows_for_day`), so it covers clock-in, clock-out, and transfers; auto-lunch punches were already stamped unrounded and are unaffected. +1 unit test; full local suite green (617 passed).
