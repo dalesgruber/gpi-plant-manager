@@ -245,36 +245,64 @@ def _fmt_time(dt: datetime) -> str:
     return dt.astimezone(shift_config.SITE_TZ).strftime(fmt)
 
 
-def _shift_for_punch(person_odoo_id: int, local_date):
-    """Resolve (shift_start, shift_end, RoundingSettings) for a punch.
-
-    An employee on an Odoo work schedule that has a configured override
-    (with hours for this weekday) gets that schedule's boundaries + windows;
-    everyone else — and any misconfiguration (no calendar, no override, or
-    an override missing this weekday's hours) — falls back to the plant
-    default. We never guess a boundary."""
-    from .. import rounding_store, work_schedule_store
-    rows = db.query(
-        "SELECT resource_calendar_id FROM people WHERE odoo_id = %s",
-        (person_odoo_id,),
-    )
-    cal_id = rows[0]["resource_calendar_id"] if rows else None
-    if cal_id is not None:
-        ws = work_schedule_store.get(cal_id)
+def _hours_for_punch(resource_calendar_id, local_date):
+    """Resolve (shift_start, shift_end) for a punch — unchanged from the prior
+    behavior. An employee on an Odoo work schedule with synced hours for this
+    weekday gets those boundaries; everyone else (and any missing hours) falls
+    back to the plant default. We never guess a boundary."""
+    from .. import work_schedule_store
+    if resource_calendar_id is not None:
+        ws = work_schedule_store.get(resource_calendar_id)
         if ws is not None:
             hours = ws.work_hours.get(local_date.weekday())
             if hours is not None:
-                return hours[0], hours[1], ws.rounding
+                return hours[0], hours[1]
             _log.warning(
-                "Work schedule override %s has no hours for weekday %s "
-                "(person %s); using plant default rounding",
-                cal_id, local_date.weekday(), person_odoo_id,
+                "Work schedule %s has no hours for weekday %s; using plant default hours",
+                resource_calendar_id, local_date.weekday(),
             )
     return (
         shift_config.shift_start_for(local_date),
         shift_config.shift_end_for(local_date),
-        rounding_store.current(),
     )
+
+
+def _effective_punch_wc(action, wc_name, person_odoo_id):
+    """The work center that anchors the clock-in-WC fallback for rounding:
+    the form WC on clock-in; the currently clocked-in WC on clock-out (which
+    carries no WC); None for transfers (never rounded). Fails safe to None."""
+    if action == "clock_in":
+        return wc_name
+    if action == "clock_out":
+        try:
+            return _current_state(person_odoo_id).get("current_wc")
+        except Exception:
+            _log.exception("current-WC lookup failed for person %s", person_odoo_id)
+            return None
+    return None
+
+
+def _windows_for_day(person_name, local_date, effective_wc):
+    """Resolve the four rounding windows by the static department the employee
+    works `local_date`: their first scheduled WC's department, else the WC they
+    clock into, else the plant default. Never raises a config error past the
+    fallback."""
+    from .. import rounding_store, rounding_system_store
+    dept = None
+    if person_name:
+        sched = staffing.load_schedule(local_date)
+        for wc_name, names in (sched.assignments or {}).items():
+            if person_name in names:
+                dept = staffing.department_for_wc(wc_name)
+                if dept:
+                    break
+    if dept is None and effective_wc:
+        dept = staffing.department_for_wc(effective_wc)
+    if dept:
+        win = rounding_system_store.windows_for_department(dept)
+        if win is not None:
+            return win
+    return rounding_store.current()
 
 
 def _open_log_row(
@@ -305,7 +333,15 @@ def _open_log_row(
 
     try:
         local_date = occurred_at.astimezone(shift_config.SITE_TZ).date()
-        shift_start, shift_end, windows = _shift_for_punch(person_odoo_id, local_date)
+        prow = db.query(
+            "SELECT name, resource_calendar_id FROM people WHERE odoo_id = %s",
+            (person_odoo_id,),
+        )
+        person_name = prow[0]["name"] if prow else None
+        cal_id = prow[0]["resource_calendar_id"] if prow else None
+        shift_start, shift_end = _hours_for_punch(cal_id, local_date)
+        effective_wc = _effective_punch_wc(action, wc_name, person_odoo_id)
+        windows = _windows_for_day(person_name, local_date, effective_wc)
         rounded = rounding.apply_rounding(
             action, occurred_at, shift_start, shift_end, windows,
         )
