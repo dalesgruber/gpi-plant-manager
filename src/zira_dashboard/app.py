@@ -141,6 +141,17 @@ async def _tick_staffing_stable():
     await asyncio.to_thread(page_warmer.warm_skills_once)
 
 
+async def _tick_missing_wc():
+    """Refresh the cache of Odoo hr.attendance lacking a work-center tag (last
+    14 days) for the Missing-Work-Center alert. No-ops (logs once) if the Odoo
+    kiosk WC field isn't configured."""
+    from datetime import timedelta
+    from . import missing_wc, odoo_client
+    since = datetime.now(timezone.utc) - timedelta(days=14)
+    rows = await asyncio.to_thread(odoo_client.fetch_attendances_missing_wc, since)
+    await asyncio.to_thread(missing_wc.write_cache, rows)
+
+
 # (name, tick coroutine, interval seconds). `name` is used only in the
 # "warmer tick failed" log line. Intervals are unchanged from the original
 # per-loop functions this registry replaced.
@@ -155,6 +166,7 @@ _WARMERS = [
     ("time-off balance", _tick_time_off_balance, 600),
     ("staffing pages", _tick_staffing_pages, 45),
     ("staffing stable", _tick_staffing_stable, 300),
+    ("missing WC", _tick_missing_wc, 180),
 ]
 
 
