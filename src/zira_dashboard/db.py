@@ -32,7 +32,7 @@ from ._schema import SCHEMA_DDL
 _pool: Optional[ThreadedConnectionPool] = None
 
 
-def init_pool(minconn: int = 1, maxconn: int = 20) -> None:
+def init_pool(minconn: int = 1, maxconn: int = 30) -> None:
     """Initialize the global connection pool. Idempotent — second call no-ops.
 
     Reads the connection string from the ``DATABASE_URL`` environment variable.
