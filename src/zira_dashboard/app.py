@@ -31,6 +31,7 @@ from .routes import (
     timeclock_time_off,
     late_report,
     missing_wc,
+    missed_punch_out,
     leaderboards,
     past_schedules,
     people,
@@ -341,6 +342,7 @@ app.include_router(tv_displays.router)
 app.include_router(staffing.router)
 app.include_router(late_report.router)
 app.include_router(missing_wc.router)
+app.include_router(missed_punch_out.router)
 app.include_router(share.router)
 app.include_router(skills.router)
 app.include_router(people.router)
