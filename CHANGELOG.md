@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-09
+
+### 8:38 AM
+
+- **New "⏰ Missed Punch Out" alert + automatic midnight clock-out.** If anyone is still clocked in when the day ends, they're now **automatically clocked out at midnight** (the end of that day) instead of staying open and accruing hours forever — which also cleaned up a stale punch that had been open across several days (Jesus Moreno). Each auto-clock-out shows up as a nav badge + modal on **every page**, the same look and behavior as the Late and No-Work-Center alerts: click it, type the time the employee **actually** left, and it rewrites that day's attendance record so it ends at your time instead of midnight (stored exactly as entered — no rounding). The badge keeps nagging until every missed punch is corrected; there's no dismiss. It covers **everyone** left clocked in across midnight (not just hourly), since an open record corrupts hours and production for any employee. The midnight close is computed from each record's own check-in day, so a punch left open for days is closed at the midnight that *should* have ended its shift, not tonight's. A background job (~every minute) does the close off the hot path; the badge polls a cheap local endpoint with no Odoo call on page load. Built spec → plan → 7 reviewed subagent tasks; design at `docs/superpowers/specs/2026-06-09-missed-punch-out-design.md`.
+
 ## 2026-06-08
 
 ### 3:11 PM
