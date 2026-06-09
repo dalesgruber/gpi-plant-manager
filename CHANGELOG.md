@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-09
+
+### 8:08 AM
+
+- **Time-off calendars now show a time only for genuine partial days — and color them like the scheduler.** On both the staffing **Time Off** calendar (`/staffing/time-off`) and the kiosk **Who's Out** calendar, a person who's off the *whole* day now shows as their **name alone** (staffing: green pill; kiosk: blue chip); only the three real partial-day shapes — **arrive late / leave mid-day / leave early** — show a time, and those now use the **gold** partial styling (`--warn`, matching the scheduler's partial bubbles) on the staffing calendar / the existing amber chip on the kiosk. Previously **every** unpaid entry showed a time and rendered green/amber, because a full unpaid day entered directly in Odoo syncs in tagged `midday_gap` with full-shift hour bounds (the sync can't tell a real partial from a full day off from Odoo alone). The fix recovers the distinction from the off-window span: a new `is_full_day()` treats a leave whose hour-bounds cover ≥ the whole company shift (minus a 30-min tolerance) as a full day, so it reads as full no matter how it was entered. The shift length comes from the global Company Schedule (`Schedule.shift_len`) — cheap, no per-person Odoo call on render. Kiosk full days no longer print "— full day" (the blue chip already says it). +12 DB-free tests; full local suite green (637 passed).
+
 ## 2026-06-08
 
 ### 3:11 PM
