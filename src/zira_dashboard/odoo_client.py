@@ -50,6 +50,38 @@ _uid_cache: int | None = None
 # stays a plain int — it's set-once and a benign re-auth race is harmless.
 _thread_local = threading.local()
 
+# Socket timeout for every Odoo XML-RPC connection, in seconds. Without one,
+# a hung TCP connection blocks its calling thread forever — for a background
+# warmer that means the loop silently stops ticking until the next deploy.
+_XMLRPC_TIMEOUT_SECONDS = 15
+
+
+class _TimeoutTransport(xmlrpc.client.Transport):
+    """http transport whose persistent connection gets a socket timeout."""
+
+    def make_connection(self, host):
+        conn = super().make_connection(host)
+        conn.timeout = _XMLRPC_TIMEOUT_SECONDS
+        return conn
+
+
+class _TimeoutSafeTransport(xmlrpc.client.SafeTransport):
+    """https transport whose persistent connection gets a socket timeout."""
+
+    def make_connection(self, host):
+        conn = super().make_connection(host)
+        conn.timeout = _XMLRPC_TIMEOUT_SECONDS
+        return conn
+
+
+def _server_proxy(url: str) -> xmlrpc.client.ServerProxy:
+    """ServerProxy with a socket timeout, picking Transport vs SafeTransport
+    to match the URL scheme (ODOO_URL is https in prod; http covers local
+    dev against a bare Odoo container)."""
+    transport = (_TimeoutSafeTransport() if url.startswith("https")
+                 else _TimeoutTransport())
+    return xmlrpc.client.ServerProxy(url, transport=transport)
+
 
 def _reset_cache_for_tests() -> None:
     """Clear cached uid + per-thread object proxy; tests call this between cases."""
@@ -68,7 +100,7 @@ def _object_proxy_for_thread() -> xmlrpc.client.ServerProxy:
     proxy = getattr(_thread_local, "object_proxy", None)
     if proxy is None:
         url, _db, _login, _key = _config()
-        proxy = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/object")
+        proxy = _server_proxy(f"{url}/xmlrpc/2/object")
         _thread_local.object_proxy = proxy
     return proxy
 
@@ -92,7 +124,7 @@ def authenticate() -> int:
     if _uid_cache is not None:
         return _uid_cache
     url, db, login, key = _config()
-    common = xmlrpc.client.ServerProxy(f"{url}/xmlrpc/2/common")
+    common = _server_proxy(f"{url}/xmlrpc/2/common")
     uid = common.authenticate(db, login, key, {})
     if not uid:
         raise OdooAuthError("Odoo rejected credentials")
@@ -778,17 +810,23 @@ def fetch_leave_types() -> list[dict]:
     return rows
 
 
-def fetch_leaves_for_range(start_d, end_d) -> list[dict]:
+def fetch_leaves_for_range(start_d, end_d, modified_since=None) -> list[dict]:
     """All hr.leave records overlapping [start_d, end_d] for active employees.
 
     Overlap rule: request_date_to >= start_d AND request_date_from <= end_d.
     Returns raw search_read dicts; caller normalizes Many2one fields.
+
+    ``modified_since`` (optional tz-aware datetime) additionally requires
+    ``write_date >`` it — the incremental poller's filter, so a normal tick
+    only pulls leaves that changed since the last poll.
     """
     domain = [
         ("request_date_to", ">=", start_d.isoformat()),
         ("request_date_from", "<=", end_d.isoformat()),
         ("employee_id.active", "=", True),
     ]
+    if modified_since is not None:
+        domain.append(("write_date", ">", _to_odoo_dt(modified_since)))
     return execute(
         "hr.leave", "search_read",
         domain,
@@ -805,13 +843,34 @@ def fetch_leaves_for_range(start_d, end_d) -> list[dict]:
     )
 
 
+_RESOURCE_CALENDAR_TTL_SECONDS = 10 * 60
+# {employee_odoo_id: (result_or_None, expires_at_epoch)} — same pattern as
+# _leave_types_cache. The kiosk details form calls fetch_resource_calendar on
+# every render (3 serial XML-RPC calls) and working schedules basically never
+# change intraday. None ("no calendar") is cached too.
+_resource_calendar_cache: dict[int, tuple[dict | None, float]] = {}
+
+
 def fetch_resource_calendar(employee_odoo_id: int) -> dict | None:
-    """Returns {hour_from, hour_to, lunch_from, lunch_to, tz} or None.
+    """Returns {hour_from, hour_to, lunch_from, lunch_to, tz} or None,
+    cached in-process for 10 minutes per employee.
 
     Derives hour_from/hour_to from min/max of resource.calendar.attendance
     rows (excluding lunch periods). If lunch periods are configured on the
     calendar, returns them as well. Tz comes from resource.calendar.
     """
+    now = time.time()
+    cached = _resource_calendar_cache.get(employee_odoo_id)
+    if cached and cached[1] > now:
+        return cached[0]
+    result = _fetch_resource_calendar_uncached(employee_odoo_id)
+    _resource_calendar_cache[employee_odoo_id] = (
+        result, now + _RESOURCE_CALENDAR_TTL_SECONDS)
+    return result
+
+
+def _fetch_resource_calendar_uncached(employee_odoo_id: int) -> dict | None:
+    """The actual 3-call Odoo fetch behind ``fetch_resource_calendar``."""
     emp_rows = execute(
         "hr.employee", "search_read",
         [("id", "=", employee_odoo_id)],
@@ -867,7 +926,25 @@ def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
     The `unit` field is 'days' when type.request_unit == 'day' or 'half_day',
     and 'hours' when type.request_unit == 'hour'. Numeric fields use the
     matching unit (days_display vs hours_display from Odoo).
+
+    Thin wrapper over ``fetch_balances_for_many`` for the single-employee
+    interactive path (kiosk wizard open / manual refresh).
     """
+    return fetch_balances_for_many([employee_odoo_id])[employee_odoo_id]
+
+
+def fetch_balances_for_many(employee_odoo_ids: list[int]) -> dict[int, list[dict]]:
+    """``fetch_balances_for`` for MANY employees in the same 2 XML-RPC calls.
+
+    The allocation and leave queries use ``("employee_id", "in", ids)`` and
+    rows are grouped by employee in Python, so the 10-min balance sweep costs
+    2 Odoo round-trips total instead of 2 per stale employee. Returns
+    {employee_odoo_id: [balance rows]} with an entry (possibly all-zero) for
+    every requested id.
+    """
+    ids = list(dict.fromkeys(employee_odoo_ids))   # de-dup, keep order
+    if not ids:
+        return {}
     types = fetch_leave_types()
     # NOTE on field-name asymmetry (Odoo 19): hr.leave.allocation still
     # exposes the *_display duration fields, but hr.leave dropped
@@ -875,18 +952,38 @@ def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
     # query keeps _display while the leave query uses number_of_hours.
     allocations = execute(
         "hr.leave.allocation", "search_read",
-        [("employee_id", "=", employee_odoo_id),
+        [("employee_id", "in", ids),
          ("state", "=", _ALLOCATION_STATE_VALIDATED)],
-        fields=["holiday_status_id", "number_of_days_display",
+        fields=["employee_id", "holiday_status_id", "number_of_days_display",
                 "number_of_hours_display"],
     )
     leaves = execute(
         "hr.leave", "search_read",
-        [("employee_id", "=", employee_odoo_id),
+        [("employee_id", "in", ids),
          ("state", "in", list(_LEAVE_STATES_OPEN))],
-        fields=["holiday_status_id", "state",
+        fields=["employee_id", "holiday_status_id", "state",
                 "number_of_days", "number_of_hours"],
     )
+    alloc_by_emp: dict[int, list[dict]] = {eid: [] for eid in ids}
+    leave_by_emp: dict[int, list[dict]] = {eid: [] for eid in ids}
+    for a in allocations:
+        eid = unwrap_m2o(a.get("employee_id"))
+        if eid in alloc_by_emp:
+            alloc_by_emp[eid].append(a)
+    for lv in leaves:
+        eid = unwrap_m2o(lv.get("employee_id"))
+        if eid in leave_by_emp:
+            leave_by_emp[eid].append(lv)
+    return {
+        eid: _aggregate_balances(types, alloc_by_emp[eid], leave_by_emp[eid])
+        for eid in ids
+    }
+
+
+def _aggregate_balances(
+    types: list[dict], allocations: list[dict], leaves: list[dict],
+) -> list[dict]:
+    """Reduce one employee's allocation + leave rows to per-type balances."""
 
     def _hsid(row: dict) -> int:
         """Many2one fields come as [id, name] from Odoo — unwrap to id."""
@@ -995,9 +1092,18 @@ def refuse_leave(leave_id: int) -> None:
     execute("hr.leave", "action_refuse", [leave_id])
 
 
+_PUBLIC_HOLIDAYS_TTL_SECONDS = 10 * 60
+# {(start_d, end_d): (rows, expires_at_epoch)} — same pattern as
+# _leave_types_cache, keyed by range because the Who's-Out calendar asks for
+# varying windows. Module-level so a process restart clears it.
+_public_holidays_cache: dict[tuple, tuple[list[dict], float]] = {}
+
+
 def fetch_public_holidays(start_d, end_d) -> list[dict]:
     """Company-wide public holidays from Odoo's resource.calendar.leaves
-    (rows with resource_id=False). Returns [{id, name, date_from, date_to}, ...]
+    (rows with resource_id=False), cached in-process for 10 minutes per
+    requested range (the Who's-Out calendar calls this on every render).
+    Returns [{id, name, date_from, date_to}, ...]
     for any holiday whose [date_from, date_to] overlaps the requested range.
 
     ``resource.calendar.leaves.date_from`` is a datetime field (not date), so
@@ -1006,16 +1112,26 @@ def fetch_public_holidays(start_d, end_d) -> list[dict]:
     Day", etc., as opposed to per-employee leaves which would set
     ``resource_id`` to a specific employee.
     """
+    now = time.time()
+    cached = _public_holidays_cache.get((start_d, end_d))
+    if cached and cached[1] > now:
+        return cached[0]
     domain = [
         ("resource_id", "=", False),
         ("date_to", ">=", start_d.isoformat() + " 00:00:00"),
         ("date_from", "<=", end_d.isoformat() + " 23:59:59"),
     ]
-    return execute(
+    rows = execute(
         "resource.calendar.leaves", "search_read",
         domain,
         fields=["id", "name", "date_from", "date_to"],
     )
+    # Drop expired entries so navigating many ranges can't grow the dict.
+    for k in [k for k, (_, exp) in _public_holidays_cache.items() if exp <= now]:
+        del _public_holidays_cache[k]
+    _public_holidays_cache[(start_d, end_d)] = (
+        rows, now + _PUBLIC_HOLIDAYS_TTL_SECONDS)
+    return rows
 
 
 def find_duplicate_leave(

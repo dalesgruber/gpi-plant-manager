@@ -73,3 +73,49 @@ def test_invalidate_one(monkeypatch, fake_db):
         if "DELETE FROM time_off_balances" in e[0]
     ]
     assert deletes
+
+
+def test_refresh_stale_batches_all_employees_into_one_fetch(monkeypatch, fake_db):
+    """The 10-min sweep fetches ALL stale employees via one
+    fetch_balances_for_many call (2 XML-RPC round-trips total) and reuses
+    the per-row upsert for each."""
+    monkeypatch.setattr(
+        time_off_balances.db, "query",
+        lambda sql, params=None: [{"person_odoo_id": 5},
+                                  {"person_odoo_id": 9}],
+    )
+    fetch_calls = []
+
+    def fake_many(ids):
+        fetch_calls.append(ids)
+        return {
+            5: [{"holiday_status_id": 1, "unit": "days",
+                 "allocated_total": 15.0, "taken": 3.0, "pending": 0.0,
+                 "available": 12.0, "available_practical": 12.0}],
+            9: [{"holiday_status_id": 1, "unit": "days",
+                 "allocated_total": 0.0, "taken": 0.0, "pending": 0.0,
+                 "available": 0.0, "available_practical": 0.0}],
+        }
+
+    monkeypatch.setattr(
+        time_off_balances.odoo_client, "fetch_balances_for_many", fake_many)
+    refreshed = time_off_balances.refresh_stale(600)
+    assert fetch_calls == [[5, 9]]  # ONE batched fetch for both employees
+    assert refreshed == 2
+    upserts = [e for e in fake_db["executes"]
+               if "INSERT INTO time_off_balances" in e[0]]
+    assert len(upserts) == 2
+
+
+def test_refresh_stale_swallows_odoo_errors(monkeypatch, fake_db):
+    """Odoo raising during the batched fetch must not propagate — the sweep
+    just retries in 10 minutes."""
+    monkeypatch.setattr(
+        time_off_balances.db, "query",
+        lambda sql, params=None: [{"person_odoo_id": 5}],
+    )
+    monkeypatch.setattr(
+        time_off_balances.odoo_client, "fetch_balances_for_many",
+        MagicMock(side_effect=RuntimeError("Odoo down")),
+    )
+    assert time_off_balances.refresh_stale(600) == 0

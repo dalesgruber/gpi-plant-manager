@@ -71,11 +71,13 @@ def test_fetch_balances_for_uses_number_of_hours_on_hr_leave(monkeypatch):
              "requires_allocation": True, "color": 2, "active": True},
         ],
         ("hr.leave.allocation", "search_read"): [
-            {"holiday_status_id": [1, "Paid Time Off"],
+            {"employee_id": [3, "Bob"],
+             "holiday_status_id": [1, "Paid Time Off"],
              "number_of_days_display": 10.0, "number_of_hours_display": 80.0},
         ],
         ("hr.leave", "search_read"): [
-            {"holiday_status_id": [1, "Paid Time Off"], "state": "validate",
+            {"employee_id": [3, "Bob"],
+             "holiday_status_id": [1, "Paid Time Off"], "state": "validate",
              "number_of_days": 2.0, "number_of_hours": 16.0},
         ],
     }
@@ -212,6 +214,7 @@ def test_fetch_leaves_for_range_extracts_id_from_many2one(monkeypatch):
 
 
 def test_fetch_resource_calendar_returns_shape(monkeypatch):
+    odoo_client._resource_calendar_cache = {}  # reset
     responses = {
         ("hr.employee", "search_read"): [
             {"id": 5, "resource_calendar_id": [3, "Standard 40h"]},
@@ -235,6 +238,7 @@ def test_fetch_resource_calendar_returns_shape(monkeypatch):
 
 
 def test_fetch_resource_calendar_returns_none_when_unset(monkeypatch):
+    odoo_client._resource_calendar_cache = {}  # reset
     responses = {
         ("hr.employee", "search_read"): [
             {"id": 5, "resource_calendar_id": False},
@@ -242,6 +246,31 @@ def test_fetch_resource_calendar_returns_none_when_unset(monkeypatch):
     }
     _stub_execute(monkeypatch, responses)
     assert odoo_client.fetch_resource_calendar(5) is None
+
+
+def test_fetch_resource_calendar_uses_cache_within_ttl(monkeypatch):
+    """The kiosk details form calls this per render (3 serial XML-RPC calls)
+    — a second call within the 10-min TTL must serve from cache. None ("no
+    calendar configured") is cached too."""
+    odoo_client._resource_calendar_cache = {}
+    responses = {
+        ("hr.employee", "search_read"): [
+            {"id": 5, "resource_calendar_id": [3, "Standard 40h"]},
+        ],
+        ("resource.calendar", "read"): [
+            {"id": 3, "tz": "America/Chicago"},
+        ],
+        ("resource.calendar.attendance", "search_read"): [
+            {"hour_from": 6.0, "hour_to": 14.5, "dayofweek": "0",
+             "day_period": "morning"},
+        ],
+    }
+    calls = _stub_execute(monkeypatch, responses)
+    first = odoo_client.fetch_resource_calendar(5)
+    assert len(calls) == 3
+    second = odoo_client.fetch_resource_calendar(5)
+    assert len(calls) == 3  # cache hit, no new XML-RPC calls
+    assert second == first
 
 
 def test_fetch_balances_uses_direct_aggregation(monkeypatch):
@@ -303,6 +332,63 @@ def test_fetch_balances_no_balance_for_no_allocation_types(monkeypatch):
     assert custom["allocated_total"] == 0
     assert custom["available"] == 0
     assert custom["unit"] == "hours"
+
+
+def test_fetch_balances_for_many_two_calls_grouped_by_employee(monkeypatch):
+    """The 10-min balance sweep batches ALL stale employees into one
+    allocation query + one leave query, grouped by employee in Python —
+    and every requested id gets an entry even with no Odoo rows."""
+    responses = {
+        ("hr.leave.allocation", "search_read"): [
+            {"employee_id": [5, "Bob"], "holiday_status_id": [1, "PTO"],
+             "number_of_days_display": 15.0, "number_of_hours_display": 120.0},
+        ],
+        ("hr.leave", "search_read"): [
+            {"employee_id": [5, "Bob"], "holiday_status_id": [1, "PTO"],
+             "state": "validate", "number_of_days": 3.0,
+             "number_of_hours": 24.0},
+        ],
+        ("hr.leave.type", "search_read"): [
+            {"id": 1, "name": "PTO", "request_unit": "day",
+             "requires_allocation": "yes", "color": 1, "active": True},
+        ],
+    }
+    calls = _stub_execute(monkeypatch, responses)
+    odoo_client._leave_types_cache = None
+    out = odoo_client.fetch_balances_for_many([5, 9])
+    # One allocation + one leave query regardless of employee count.
+    assert len([c for c in calls if c[0] == "hr.leave.allocation"]) == 1
+    assert len([c for c in calls if c[0] == "hr.leave"]) == 1
+    # Domains use ("employee_id", "in", ids).
+    alloc_domain = next(c for c in calls if c[0] == "hr.leave.allocation")[2][0]
+    assert ("employee_id", "in", [5, 9]) in alloc_domain
+    pto_5 = next(b for b in out[5] if b["holiday_status_id"] == 1)
+    assert pto_5["allocated_total"] == 15.0 and pto_5["taken"] == 3.0
+    # Employee 9 has no rows in Odoo → zeroed balance per type, not a KeyError.
+    pto_9 = next(b for b in out[9] if b["holiday_status_id"] == 1)
+    assert pto_9["allocated_total"] == 0.0 and pto_9["available"] == 0.0
+
+
+def test_fetch_public_holidays_uses_cache_within_ttl(monkeypatch):
+    """Called on every Who's-Out calendar render — a repeat call for the
+    same range within the 10-min TTL must not hit Odoo again. A different
+    range is a different cache key and does."""
+    odoo_client._public_holidays_cache = {}
+    responses = {
+        ("resource.calendar.leaves", "search_read"): [
+            {"id": 1, "name": "4th of July",
+             "date_from": "2026-07-04 00:00:00",
+             "date_to": "2026-07-04 23:59:59"},
+        ],
+    }
+    calls = _stub_execute(monkeypatch, responses)
+    first = odoo_client.fetch_public_holidays(date(2026, 7, 1), date(2026, 7, 31))
+    assert len(calls) == 1
+    second = odoo_client.fetch_public_holidays(date(2026, 7, 1), date(2026, 7, 31))
+    assert len(calls) == 1  # cache hit
+    assert second == first
+    odoo_client.fetch_public_holidays(date(2026, 8, 1), date(2026, 8, 31))
+    assert len(calls) == 2  # different range → fresh fetch
 
 
 def test_create_leave_full_day_no_hours(monkeypatch):

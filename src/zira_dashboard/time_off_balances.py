@@ -59,6 +59,12 @@ def refresh_for_employee(person_odoo_id: int) -> int:
             person_odoo_id, e,
         )
         return 0
+    return _upsert_balances(person_odoo_id, balances)
+
+
+def _upsert_balances(person_odoo_id: int, balances: list[dict]) -> int:
+    """Upsert one employee's balance rows into the cache table.
+    Returns the count of rows written."""
     count = 0
     for b in balances:
         db.execute(
@@ -97,17 +103,31 @@ def invalidate(person_odoo_id: int) -> None:
 def refresh_stale(older_than_seconds: int = _STALE_THRESHOLD_SECONDS) -> int:
     """Refresh any person whose cache is older than ``older_than_seconds``.
 
-    Used by the periodic safety-net sweep. Returns the total count of
-    balance rows refreshed across all stale employees.
+    Used by the periodic safety-net sweep. Fetches every stale employee in
+    2 XML-RPC calls total via ``fetch_balances_for_many`` (allocations +
+    leaves batched with an ``("employee_id", "in", ids)`` domain) instead
+    of 2 calls per employee. Returns the total count of balance rows
+    refreshed across all stale employees. Swallows Odoo errors like
+    ``refresh_for_employee`` — the sweep retries in 10 minutes.
     """
     rows = db.query(
         "SELECT DISTINCT person_odoo_id FROM time_off_balances "
         "WHERE last_pulled_at < now() - (%s || ' seconds')::interval",
         (str(older_than_seconds),),
     )
+    ids = [r["person_odoo_id"] for r in rows]
+    if not ids:
+        return 0
+    try:
+        by_emp = odoo_client.fetch_balances_for_many(ids)
+    except Exception as e:  # noqa: BLE001 — record and continue, never crash sweep
+        _log.info(
+            "Stale balance refresh for %d employees failed: %s", len(ids), e,
+        )
+        return 0
     refreshed = 0
-    for r in rows:
-        refreshed += refresh_for_employee(r["person_odoo_id"])
+    for person_odoo_id, balances in by_emp.items():
+        refreshed += _upsert_balances(person_odoo_id, balances)
     return refreshed
 
 

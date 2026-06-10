@@ -22,7 +22,10 @@ def test_authenticate_returns_uid_on_success(monkeypatch):
         odoo_client._reset_cache_for_tests()
         uid = odoo_client.authenticate()
     assert uid == 42
-    proxy.assert_called_with("https://example.odoo.com/xmlrpc/2/common")
+    args, kwargs = proxy.call_args
+    assert args[0] == "https://example.odoo.com/xmlrpc/2/common"
+    # https URL → SafeTransport subclass carrying the socket timeout.
+    assert isinstance(kwargs["transport"], odoo_client._TimeoutSafeTransport)
     fake_common.authenticate.assert_called_with("Production", "dale@example.com", "secret-key", {})
 
 
@@ -37,6 +40,36 @@ def test_authenticate_raises_on_failure(monkeypatch):
         odoo_client._reset_cache_for_tests()
         with pytest.raises(odoo_client.OdooAuthError):
             odoo_client.authenticate()
+
+
+def test_timeout_transports_set_socket_timeout():
+    """A hung TCP connection must not block a warmer thread forever — both
+    transports stamp the 15s socket timeout onto the connection they make.
+    (make_connection only constructs the http.client connection; no network.)"""
+    conn = odoo_client._TimeoutTransport().make_connection("example.invalid")
+    assert conn.timeout == odoo_client._XMLRPC_TIMEOUT_SECONDS
+    conn = odoo_client._TimeoutSafeTransport().make_connection("example.invalid")
+    assert conn.timeout == odoo_client._XMLRPC_TIMEOUT_SECONDS
+
+
+def test_server_proxy_picks_transport_for_scheme(monkeypatch):
+    """https → SafeTransport subclass, http → Transport subclass; both carry
+    the timeout. Mismatching transport to scheme breaks the TLS handshake."""
+    captured = {}
+
+    def fake_proxy(url, transport=None):
+        captured[url] = transport
+        return MagicMock()
+
+    monkeypatch.setattr("xmlrpc.client.ServerProxy", fake_proxy)
+    odoo_client._server_proxy("https://x/xmlrpc/2/object")
+    odoo_client._server_proxy("http://x/xmlrpc/2/object")
+    assert isinstance(captured["https://x/xmlrpc/2/object"],
+                      odoo_client._TimeoutSafeTransport)
+    assert isinstance(captured["http://x/xmlrpc/2/object"],
+                      odoo_client._TimeoutTransport)
+    assert not isinstance(captured["http://x/xmlrpc/2/object"],
+                          odoo_client._TimeoutSafeTransport)
 
 
 def _stub_execute(monkeypatch, responses):
@@ -155,7 +188,7 @@ def test_object_proxy_is_thread_local(monkeypatch):
     monkeypatch.setenv("ODOO_LOGIN", "dale@example.com")
     monkeypatch.setenv("ODOO_API_KEY", "secret-key")
 
-    def make_proxy(url):
+    def make_proxy(url, transport=None):
         m = MagicMock(name=url)
         m.authenticate.return_value = 7   # /common auth
         m.execute_kw.return_value = []    # /object call

@@ -131,12 +131,21 @@ def test_retry_unsynced_calls_push_one_per_row(monkeypatch, fake_db):
     assert pushed == [1, 2, 5]
 
 
+def _reset_poll_state():
+    """Module-level incremental-poll state persists across tests — reset so
+    every poll test starts on a deterministic first-tick FULL pass."""
+    time_off_sync._poll_tick_count = 0
+    time_off_sync._last_poll_started_at = None
+    time_off_sync._last_leave_types_written = None
+
+
 def test_poll_inserts_new_odoo_originated_row(monkeypatch, fake_db):
     """Leave found in Odoo but not in local mirror → INSERT with
     originating_kiosk_user=FALSE."""
+    _reset_poll_state()
     fake_db["query_result"] = []  # no existing local row by odoo_leave_id
     monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
-        lambda s, e: [{
+        lambda s, e, **kw: [{
             "id": 555, "employee_id": [5, "Bob"],
             "holiday_status_id": [1, "PTO"], "state": "validate",
             "request_date_from": "2026-06-01",
@@ -158,6 +167,7 @@ def test_poll_inserts_new_odoo_originated_row(monkeypatch, fake_db):
 def test_poll_updates_state_on_existing_row(monkeypatch, fake_db):
     """Leave exists locally in state='confirm' but Odoo says 'validate'
     → UPDATE state and trigger cascade."""
+    _reset_poll_state()
     existing_row = {
         "id": 1, "person_odoo_id": 5, "odoo_leave_id": 555,
         "state": "confirm", "shape": "full_day",
@@ -168,7 +178,7 @@ def test_poll_updates_state_on_existing_row(monkeypatch, fake_db):
     }
     fake_db["query_result"] = [existing_row]
     monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
-        lambda s, e: [{
+        lambda s, e, **kw: [{
             "id": 555, "employee_id": [5, "Bob"],
             "holiday_status_id": [1, "PTO"], "state": "validate",
             "request_date_from": "2026-06-01",
@@ -384,8 +394,9 @@ def test_cascade_invalidates_balances(monkeypatch, fake_db):
 
 
 def test_poll_refreshes_leave_types_cache(monkeypatch, fake_db):
+    _reset_poll_state()
     monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
-                        lambda s, e: [])
+                        lambda s, e, **kw: [])
     monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leave_types",
                         lambda: [
                             {"id": 1, "name": "PTO", "request_unit": "day",
@@ -396,6 +407,101 @@ def test_poll_refreshes_leave_types_cache(monkeypatch, fake_db):
     upserts = [e for e in fake_db["executes"]
                if "leave_types_cache" in e[0]]
     assert upserts
+
+
+def test_poll_skips_leave_types_writes_when_payload_unchanged(monkeypatch, fake_db):
+    """Identical leave-types payload on the next tick → no cache rewrites
+    (rewriting every row each 60s tick was pure churn)."""
+    _reset_poll_state()
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+                        lambda s, e, **kw: [])
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leave_types",
+                        lambda: [
+                            {"id": 1, "name": "PTO", "request_unit": "day",
+                             "requires_allocation": "yes", "color": 1,
+                             "active": True},
+                        ])
+    time_off_sync.poll_odoo_leaves()
+    first = len([e for e in fake_db["executes"]
+                 if "leave_types_cache" in e[0]])
+    assert first == 1
+    time_off_sync.poll_odoo_leaves()
+    second = len([e for e in fake_db["executes"]
+                  if "leave_types_cache" in e[0]])
+    assert second == first  # identical payload → writes skipped
+
+
+def test_poll_skips_update_when_row_unchanged(monkeypatch, fake_db):
+    """Existing local row already matches Odoo → NO UPDATE is issued and no
+    cascade fires; the typical 60s tick is read-only."""
+    _reset_poll_state()
+    existing_row = {
+        "id": 1, "person_odoo_id": 5, "odoo_leave_id": 555,
+        "state": "validate", "shape": "full_day",
+        "holiday_status_id": 1,
+        "date_from": date(2026, 6, 1), "date_to": date(2026, 6, 3),
+        "hour_from": None, "hour_to": None,
+        "working_hours_json": None,
+    }
+    fake_db["query_result"] = [existing_row]
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+        lambda s, e, **kw: [{
+            "id": 555, "employee_id": [5, "Bob"],
+            "holiday_status_id": [1, "PTO"], "state": "validate",
+            "request_date_from": "2026-06-01",
+            "request_date_to": "2026-06-03",
+            "request_hour_from": False, "request_hour_to": False,
+            "request_unit_hours": False, "name": "PTO",
+        }])
+    cascades = []
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change",
+                        lambda old, new: cascades.append((old, new)))
+    time_off_sync.poll_odoo_leaves()
+    assert not any("UPDATE time_off_requests" in e[0]
+                   for e in fake_db["executes"])
+    assert cascades == []
+
+
+def test_poll_incremental_tick_filters_by_write_date_and_skips_deletes(
+        monkeypatch, fake_db):
+    """Tick 1 after boot is a FULL pass (no write_date filter, deletion
+    detection runs); tick 2 is incremental (write_date filter, NO deletion
+    detection — diffing a subset would delete live rows)."""
+    _reset_poll_state()
+    fake_db["query_result"] = []
+    fetches = []
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+                        lambda s, e, **kw: (fetches.append(kw), [])[1])
+    deletes = []
+    monkeypatch.setattr(time_off_sync, "_delete_missing_from_odoo",
+                        lambda seen, s, e: deletes.append(seen))
+
+    time_off_sync.poll_odoo_leaves()
+    assert fetches[0].get("modified_since") is None  # full window
+    assert len(deletes) == 1  # deletion detection ran on the full pass
+
+    time_off_sync.poll_odoo_leaves()
+    assert fetches[1].get("modified_since") is not None  # incremental
+    assert len(deletes) == 1  # NOT run against the incremental result
+
+
+def test_poll_runs_full_pass_every_tenth_tick(monkeypatch, fake_db):
+    """Ticks 2..9 are incremental; tick 10 re-runs the full-window pass so
+    Odoo-side deletions are detected within ~10 minutes."""
+    _reset_poll_state()
+    fake_db["query_result"] = []
+    fetches = []
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+                        lambda s, e, **kw: (fetches.append(kw), [])[1])
+    deletes = []
+    monkeypatch.setattr(time_off_sync, "_delete_missing_from_odoo",
+                        lambda seen, s, e: deletes.append(seen))
+
+    for _ in range(10):
+        time_off_sync.poll_odoo_leaves()
+    full = [kw for kw in fetches if kw.get("modified_since") is None]
+    assert len(full) == 2      # tick 1 (boot) and tick 10
+    assert len(deletes) == 2   # deletion detection only on those two
 
 
 def test_delete_missing_hard_deletes_and_reverse_cascades(monkeypatch, fake_db):

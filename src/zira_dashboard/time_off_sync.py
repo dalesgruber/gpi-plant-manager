@@ -12,10 +12,13 @@ This module implements two sides of the sync:
     into ``odoo_client`` for the actual XML-RPC call, and updates the
     row's state + sync flags on success or its ``sync_error`` column on
     failure.
-  - **Pull** (``poll_odoo_leaves``): fetches all hr.leave in a rolling
-    window from Odoo and upserts each into the local mirror. Existing
-    rows whose state changed trigger ``cascade_on_state_change``; local
-    rows missing from Odoo are HARD DELETED (reverse cascade fires first).
+  - **Pull** (``poll_odoo_leaves``): fetches hr.leave in a rolling
+    window from Odoo and upserts each into the local mirror. Normal ticks
+    are incremental (only leaves whose ``write_date`` moved since the last
+    poll); every 10th tick — and the first after boot — re-pulls the FULL
+    window. Existing rows whose state changed trigger
+    ``cascade_on_state_change``; local rows missing from Odoo are HARD
+    DELETED (reverse cascade fires first), detected only on full passes.
 
 State routing
 -------------
@@ -51,7 +54,7 @@ row at ``synced_to_odoo=FALSE`` so the sweep retries it.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from . import db, odoo_client, time_off_balances
@@ -287,23 +290,49 @@ def retry_unsynced_requests() -> int:
 _POLL_PAST_DAYS = 60
 _POLL_FUTURE_DAYS = 365
 
+# Incremental-poll state (module-level; a process restart resets to a full
+# pass). ``_poll_tick_count`` counts poll_odoo_leaves() invocations; every
+# ``_FULL_POLL_EVERY_TICKS``-th tick — and the first after boot — re-pulls
+# the FULL window (the only pass allowed to detect Odoo-side deletions).
+# ``_last_poll_started_at`` is the start time of the last successful poll;
+# incremental ticks only pull leaves whose write_date moved past it, minus
+# ``_POLL_OVERLAP`` for clock skew and writes committed mid-poll.
+_FULL_POLL_EVERY_TICKS = 10
+_POLL_OVERLAP = timedelta(minutes=5)
+_poll_tick_count = 0
+_last_poll_started_at: datetime | None = None
+
+# Last leave-types payload actually written to leave_types_cache. The upsert
+# loop is skipped while Odoo keeps returning an identical list — the common
+# case on the 60s tick.
+_last_leave_types_written: list[dict] | None = None
+
 
 def poll_odoo_leaves() -> int:
-    """Pull all hr.leave for active employees in a rolling window and
+    """Pull hr.leave for active employees in a rolling window and
     upsert into ``time_off_requests``. Returns the count of leaves
     processed.
 
+    Normal ticks are incremental: the Odoo domain adds a ``write_date``
+    filter so only leaves changed since the last poll come back. Every
+    ``_FULL_POLL_EVERY_TICKS``-th tick (and the first after boot) pulls the
+    full window instead — that's the pass that detects deletions.
+
     For each Odoo leave:
 
-      - If we have a local row with that ``odoo_leave_id``: UPDATE if
-        state differs; trigger ``cascade_on_state_change``.
+      - If we have a local row with that ``odoo_leave_id``: UPDATE when
+        any mirrored field differs (skip the write otherwise); trigger
+        ``cascade_on_state_change`` on a state change.
       - If not: INSERT a new row with ``originating_kiosk_user=FALSE``.
 
-    Local rows whose ``odoo_leave_id`` is no longer returned by Odoo are
-    hard-deleted (Odoo-side deletion), after firing the reverse cascade —
-    regardless of local state, so a refused/cancelled ("denied") row also
-    disappears once its leave is deleted in Odoo.
+    On FULL passes only: local rows whose ``odoo_leave_id`` is no longer
+    returned by Odoo are hard-deleted (Odoo-side deletion), after firing
+    the reverse cascade — regardless of local state, so a refused/cancelled
+    ("denied") row also disappears once its leave is deleted in Odoo. An
+    incremental result is a subset by construction, so deletion detection
+    against it would wrongly delete live rows — hence full passes only.
     """
+    global _poll_tick_count, _last_poll_started_at
     # Refresh leave-types cache first so the kiosk picker stays current.
     try:
         types = odoo_client.fetch_leave_types()
@@ -317,12 +346,51 @@ def poll_odoo_leaves() -> int:
             "leave_types fetch for cache refresh failed: %s", e, exc_info=True,
         )
         types = []
+    _refresh_leave_types_cache(types)
+
+    _poll_tick_count += 1
+    full_pass = (_last_poll_started_at is None
+                 or _poll_tick_count % _FULL_POLL_EVERY_TICKS == 0)
+    poll_started_at = datetime.now(timezone.utc)
+    today = date.today()
+    start_d = today - timedelta(days=_POLL_PAST_DAYS)
+    end_d = today + timedelta(days=_POLL_FUTURE_DAYS)
+    if full_pass:
+        leaves = odoo_client.fetch_leaves_for_range(start_d, end_d)
+    else:
+        leaves = odoo_client.fetch_leaves_for_range(
+            start_d, end_d,
+            modified_since=_last_poll_started_at - _POLL_OVERLAP)
+    existing_by_leave_id = _existing_rows_by_leave_id(
+        [leave["id"] for leave in leaves])
+    seen_ids: set[int] = set()
+    for leave in leaves:
+        seen_ids.add(leave["id"])
+        _upsert_one(leave, existing_by_leave_id.get(leave["id"]))
+    if full_pass:
+        # ONLY here — never against an incremental result (see docstring).
+        _delete_missing_from_odoo(seen_ids, start_d, end_d)
+    _last_poll_started_at = poll_started_at
+    return len(leaves)
+
+
+def _refresh_leave_types_cache(types: list[dict]) -> None:
+    """Upsert fetched leave types into ``leave_types_cache``.
+
+    Skipped entirely when the payload is identical to the last one written
+    successfully — rewriting all rows every 60s tick was pure churn. A
+    failed row clears the memo so the next tick retries the writes.
+    """
+    global _last_leave_types_written
+    if not types or types == _last_leave_types_written:
+        return
     # Per-row upsert with per-row error isolation. A single bad row (e.g. a
     # type whose request_unit isn't in the cache CHECK set) must NOT abort
     # the whole refresh — that would silently freeze every *other* type's
     # cached attributes (this is exactly how a stale `requires_allocation`
     # left the kiosk showing "No allocation tracked" while Odoo was correct).
     # Mirrors the per-row tolerance in `_fallback_fetch_and_cache_leave_types`.
+    all_ok = True
     for t in types:
         try:
             db.execute(
@@ -339,6 +407,7 @@ def poll_odoo_leaves() -> int:
                  t["requires_allocation"], t.get("color"), t.get("active", True)),
             )
         except Exception as e:  # noqa: BLE001
+            all_ok = False
             _log.warning(
                 "leave_types_cache upsert failed for type id=%s name=%r "
                 "(request_unit=%r requires_allocation=%r color=%r): %s",
@@ -346,23 +415,44 @@ def poll_odoo_leaves() -> int:
                 t.get("requires_allocation"), t.get("color"), e,
                 exc_info=True,
             )
-
-    today = date.today()
-    start_d = today - timedelta(days=_POLL_PAST_DAYS)
-    end_d = today + timedelta(days=_POLL_FUTURE_DAYS)
-    leaves = odoo_client.fetch_leaves_for_range(start_d, end_d)
-    seen_ids: set[int] = set()
-    for leave in leaves:
-        seen_ids.add(leave["id"])
-        _upsert_one(leave)
-    _delete_missing_from_odoo(seen_ids, start_d, end_d)
-    return len(leaves)
+    # Copies, not the cached list odoo_client returns — the memo must compare
+    # by value on later ticks, immune to in-place mutation by callers.
+    _last_leave_types_written = [dict(t) for t in types] if all_ok else None
 
 
-def _upsert_one(leave: dict[str, Any]) -> None:
+def _existing_rows_by_leave_id(odoo_leave_ids: list[int]) -> dict[int, dict]:
+    """Local mirror rows for the given Odoo leave ids, keyed by
+    ``odoo_leave_id``. One batched SELECT instead of one per leave."""
+    if not odoo_leave_ids:
+        return {}
+    rows = db.query(
+        "SELECT id, person_odoo_id, state, shape, holiday_status_id, "
+        "date_from, date_to, hour_from, hour_to, working_hours_json, "
+        "odoo_leave_id "
+        "FROM time_off_requests WHERE odoo_leave_id = ANY(%s)",
+        (odoo_leave_ids,),
+    )
+    return {r["odoo_leave_id"]: r for r in rows}
+
+
+def _hours_eq(a: Any, b: Any) -> bool:
+    """Compare an hour bound from Postgres (NUMERIC(4,2) → Decimal) against
+    the float parsed from Odoo, at the column's 2-decimal precision.
+    None-safe: equal only when both are None or both round to the same value."""
+    if a is None or b is None:
+        return a is None and b is None
+    return round(float(a), 2) == round(float(b), 2)
+
+
+def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
     """Insert or update one Odoo hr.leave into the local mirror.
 
-    On UPDATE, if state changed, fires ``cascade_on_state_change``.
+    ``existing`` is the local row with this ``odoo_leave_id`` (pre-fetched
+    in one batch by the poller), or None when the leave is new to us.
+
+    On UPDATE, if nothing the poller mirrors actually changed, the write is
+    skipped entirely — a typical tick is read-only. If state changed, fires
+    ``cascade_on_state_change``.
     On INSERT of an already-validated leave, fires the cascade with a
     synthetic ``old`` row in ``state='draft'`` so the staffing side
     reacts as if the leave had been freshly approved.
@@ -386,15 +476,18 @@ def _upsert_one(leave: dict[str, Any]) -> None:
     )
     note = leave.get("name") or None
 
-    rows = db.query(
-        "SELECT id, person_odoo_id, state, shape, holiday_status_id, "
-        "date_from, date_to, hour_from, hour_to, working_hours_json, "
-        "odoo_leave_id "
-        "FROM time_off_requests WHERE odoo_leave_id = %s",
-        (odoo_leave_id,),
-    )
-    if rows:
-        existing = rows[0]
+    if existing is not None:
+        # Compare every field the UPDATE below writes; identical means the
+        # tick has nothing to do for this row — skip the write.
+        unchanged = (
+            existing["state"] == state
+            and existing["date_from"] == date_from
+            and existing["date_to"] == date_to
+            and _hours_eq(existing["hour_from"], hour_from)
+            and _hours_eq(existing["hour_to"], hour_to)
+        )
+        if unchanged:
+            return
         new_row = dict(existing)
         new_row["state"] = state
         new_row["date_from"] = date_from
