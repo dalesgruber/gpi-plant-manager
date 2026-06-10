@@ -240,12 +240,16 @@ def test_tv_wc_dashboard_omits_edit_bar(monkeypatch):
 
 
 def test_operator_dashboard_persists_to_operator_layout_endpoint(monkeypatch):
-    """The JS posts to /api/layout/operator (not the old /api/layout/wc:...)."""
+    """Persistence targets the shared "operator" page key (not the old
+    per-WC /api/layout/wc:... keys). The endpoint URLs are built by
+    dashboard-grid.js from the grid's data-layout-page attribute."""
     _stub_wc(monkeypatch)
     c = TestClient(app)
     r = c.get("/wc/repair-1")
-    assert "/api/layout/operator" in r.text
+    assert 'data-layout-page="operator"' in r.text
+    assert "/static/dashboard-grid.js" in r.text
     assert "/api/layout/wc:" not in r.text
+    assert 'data-layout-page="wc:' not in r.text
 
 
 def test_operator_dashboard_has_widget_edit_buttons(monkeypatch):
@@ -284,11 +288,14 @@ def test_operator_dashboard_applies_custom_titles(monkeypatch):
 
 
 def test_operator_dashboard_posts_widget_edits_to_operator_endpoint(monkeypatch):
-    """The JS save/reset handlers target /api/widget/operator/{id}."""
+    """Widget edits target /api/widget/operator/{id} — built by
+    dashboard-grid.js from the same data-layout-page="operator" attribute
+    (one segment drives both the layout and widget endpoints)."""
     _stub_wc(monkeypatch)
     c = TestClient(app)
     r = c.get("/wc/repair-1")
-    assert "/api/widget/operator/" in r.text
+    assert 'data-layout-page="operator"' in r.text
+    assert "/static/dashboard-grid.js" in r.text
 
 
 def test_pallets_banner_renders_start_and_now_ticks(monkeypatch):
