@@ -2,8 +2,8 @@
 
 Two concerns stored here:
   - Legacy: per-station + per-group production target overrides
-    (dict[str, int]-shaped via the ``_read`` / ``_write`` + ``station_target*`` /
-    ``group_target*`` helpers). Storage is pallets-per-day, kept in
+    (dict[str, int]-shaped via the ``_read`` / ``_write`` + ``station_target*``
+    helpers). Storage is pallets-per-day, kept in
     app_settings under two keys:
       - 'station_targets' → {meter_id: pallets_per_day, ...}
       - 'group_targets'   → {category: pallets_per_day, ...}
@@ -11,15 +11,13 @@ Two concerns stored here:
     newer ``_read_raw`` / ``_write_raw`` + typed ``get_*`` / ``set_*``
     getters at the bottom of this file).
 
-Per-day station targets come primarily from work_centers_store; this
-module exists for legacy callers that still reach for category-level
-group targets via STATIONS.category buckets.
+Per-day station targets come primarily from work_centers_store.
 """
 
 from __future__ import annotations
 
 from .shift_config import TARGET_PER_DAY, productive_minutes_per_day
-from .stations import STATIONS, Station
+from .stations import Station
 
 
 def _wc_store():
@@ -73,32 +71,9 @@ def station_target_per_day(station: Station) -> int:
     return int(TARGET_PER_DAY.get(station.category, 0))
 
 
-def group_target_per_day(category: str) -> int:
-    overrides = _read("group_targets")
-    override = overrides.get(category)
-    if override is not None:
-        return int(override)
-    members = [s for s in STATIONS if s.category == category]
-    if not members:
-        return 0
-    return sum(station_target_per_day(s) for s in members)
-
-
 def station_target(station: Station) -> float:
     hrs = _productive_hours()
     return (station_target_per_day(station) / hrs) if hrs else 0.0
-
-
-def group_target(category: str) -> float:
-    hrs = _productive_hours()
-    return (group_target_per_day(category) / hrs) if hrs else 0.0
-
-
-def snapshot() -> dict:
-    return {
-        "station_targets": _read("station_targets"),
-        "group_targets": _read("group_targets"),
-    }
 
 
 # ---- Time-off settings (2026-05-27) ----

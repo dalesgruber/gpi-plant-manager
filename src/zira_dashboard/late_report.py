@@ -9,6 +9,7 @@ Everything else is straightforward CRUD.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
@@ -17,6 +18,10 @@ from . import db
 
 LATE_THRESHOLD_MINUTES = 15
 DEFAULT_SNOOZE_MINUTES = 30
+
+# monotonic() of the last expired-snooze cleanup; 0.0 means run on the
+# first report read after boot.
+_last_snooze_cleanup: float = 0.0
 
 
 def declare_absent(day, emp_id: str, name: str, reason: str | None = None) -> None:
@@ -80,7 +85,19 @@ def snooze(day, emp_id: str, name: str, minutes: int = DEFAULT_SNOOZE_MINUTES) -
 
 
 def active_snoozes(day) -> list[dict]:
-    """Return list of {emp_id, name, until_utc} for snoozes that haven't expired."""
+    """Return list of {emp_id, name, until_utc} for snoozes that haven't expired.
+
+    Also runs cleanup_expired_snoozes at most once per hour — this is the
+    read path every report poll hits, so late_snoozes stays bounded without
+    a dedicated worker."""
+    global _last_snooze_cleanup
+    now = time.monotonic()
+    if now - _last_snooze_cleanup >= 3600:
+        _last_snooze_cleanup = now
+        try:
+            cleanup_expired_snoozes(day)
+        except Exception:
+            pass  # best-effort — never let cleanup break the report read
     return db.query(
         """
         SELECT emp_id, name, until_utc
@@ -150,18 +167,6 @@ def cleared_non_work_emp_ids_for_day(day) -> set[str]:
     return {str(r["emp_id"]) for r in rows}
 
 
-def cleared_non_work_for_day(day) -> list[dict]:
-    return db.query(
-        """
-        SELECT emp_id, declared_at
-        FROM cleared_non_work_shifts
-        WHERE day = %s
-        ORDER BY declared_at ASC
-        """,
-        (day,),
-    )
-
-
 def clear_partial_by_name(day, name: str) -> None:
     """Catch-all clear: hide a partial entry on `day` for `name`. Works
     regardless of whether the underlying entry has a request_id, emp_id,
@@ -190,81 +195,11 @@ def cleared_partial_names_for_day(day) -> set[str]:
     return {r["name"] for r in rows}
 
 
-def cleared_partial_names_for_range(start_d, end_d) -> dict:
-    rows = db.query(
-        "SELECT day, name FROM cleared_partials_by_name WHERE day BETWEEN %s AND %s",
-        (start_d, end_d),
-    )
-    out: dict = {}
-    for r in rows:
-        out.setdefault(r["day"], set()).add(r["name"])
-    return out
-
-
 def cleared_partial_names_today_list(day) -> list[dict]:
     return db.query(
         """
         SELECT name, declared_at
         FROM cleared_partials_by_name
-        WHERE day = %s
-        ORDER BY declared_at ASC
-        """,
-        (day,),
-    )
-
-
-def cleared_request_ids_for_range(start_d, end_d) -> dict:
-    """Bulk version of cleared_request_ids_for_day for [start_d, end_d].
-    Returns {date: set(request_id, ...)}. One DB query for the whole range."""
-    rows = db.query(
-        "SELECT day, request_id FROM cleared_time_off WHERE day BETWEEN %s AND %s",
-        (start_d, end_d),
-    )
-    out: dict = {}
-    for r in rows:
-        out.setdefault(r["day"], set()).add(int(r["request_id"]))
-    return out
-
-
-def cleared_non_work_emp_ids_for_range(start_d, end_d) -> dict:
-    rows = db.query(
-        "SELECT day, emp_id FROM cleared_non_work_shifts WHERE day BETWEEN %s AND %s",
-        (start_d, end_d),
-    )
-    out: dict = {}
-    for r in rows:
-        out.setdefault(r["day"], set()).add(str(r["emp_id"]))
-    return out
-
-
-def absences_for_range(start_d, end_d) -> dict:
-    """Bulk version of absences_for_day. {date: [{emp_id, name, declared_at}, ...]}.
-    Same active/excluded filter as absences_for_day."""
-    rows = db.query(
-        "SELECT m.day, m.emp_id, m.name, m.declared_at FROM manual_absences m "
-        "LEFT JOIN people p ON p.name = m.name "
-        "WHERE m.day BETWEEN %s AND %s "
-        "  AND (p.active IS NULL OR p.active = TRUE) "
-        "  AND (p.excluded IS NULL OR p.excluded = FALSE)",
-        (start_d, end_d),
-    )
-    out: dict = {}
-    for r in rows:
-        out.setdefault(r["day"], []).append({
-            "emp_id": r["emp_id"],
-            "name": r["name"],
-            "declared_at": r["declared_at"],
-        })
-    return out
-
-
-def cleared_partials_for_day(day) -> list[dict]:
-    """Return list of {request_id, declared_at} for the Time Off
-    'Cleared today' restore footer."""
-    return db.query(
-        """
-        SELECT request_id, declared_at
-        FROM cleared_time_off
         WHERE day = %s
         ORDER BY declared_at ASC
         """,

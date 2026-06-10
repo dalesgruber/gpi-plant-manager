@@ -145,15 +145,16 @@ def build_staffing_bays(roster, sched, time_off_entries, publish_blocked):
         # already historically assigned to this WC, so dirty data won't be
         # silently dropped.
         pool = [r for r in options_for(required) if r["name"] not in time_off_set]
-        # Reserves go last so the template can split them into the bottom group.
-        pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         assigned_set = {a["name"] for a in assigned}
         # Ensure currently-assigned people appear in pool even if below the filter.
         # (Assigned names are already in the pool since options_for returns everyone,
         # but inactive/deleted people might have been assigned historically.)
+        pool_names = {r["name"] for r in pool}
         for a in assigned:
-            if not any(r["name"] == a["name"] for r in pool):
+            if a["name"] not in pool_names:
                 pool.append({"name": a["name"], "level": a["level"], "color": a["color"], "trained": a["level"] >= 1, "reserve": False})
+                pool_names.add(a["name"])
+        # Reserves go last so the template can split them into the bottom group.
         pool.sort(key=lambda r: (r["reserve"], -r["level"], r["name"].lower()))
         # Full-day-off / absent people stay assigned in the saved data (picker
         # checkbox + form input below), but are pulled from the station's

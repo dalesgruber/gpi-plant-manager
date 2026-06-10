@@ -109,7 +109,7 @@ def derived_absent_names(day) -> set:
     time off. Today only (matches the old derived_absences_for_day) —
     past/future days return an empty set."""
     from datetime import datetime, timezone, timedelta
-    from . import shift_config, staffing, scheduler_time_off
+    from . import shift_config, staffing, scheduler_time_off, live_cache
     today = datetime.now(timezone.utc).date()
     if day != today:
         return set()
@@ -122,7 +122,12 @@ def derived_absent_names(day) -> set:
     except Exception:  # noqa: BLE001 — degrade to "nobody on leave"
         off = set()
     name_to_id = name_to_person_id()
-    punches = punches_for_day(day)
+    # Cache-first (same pattern as status_for_day): the warmer mirrors this
+    # exact payload into live_cache every ~45s, so don't hit Odoo per render.
+    punches, _refreshed = live_cache.read_attendance(day)
+    if punches is None:
+        punches = punches_for_day(day)
+    punches = punches or {}
     out: set = set()
     for p in staffing.load_roster():
         if not p.active or p.reserve or p.name in off:

@@ -15,6 +15,9 @@ from datetime import datetime
 from . import db, live_cache
 
 
+_UNSET = object()  # "not supplied" sentinel — None is a meaningful latest_punch value
+
+
 def latest_punch(person_odoo_id: int) -> dict | None:
     """Most-recent local punch row for this person, or None. Carries the
     sync bookkeeping (synced_to_odoo, synced_at) the reconciliation rule
@@ -28,6 +31,24 @@ def latest_punch(person_odoo_id: int) -> dict | None:
         (person_odoo_id,),
     )
     return rows[0] if rows else None
+
+
+def latest_punches_bulk(person_odoo_ids) -> dict[int, dict]:
+    """latest_punch for many people in ONE query: {person_odoo_id: row}.
+    People with no punches are simply absent from the map. Used by the
+    auto-lunch worker so a tick doesn't run one query per candidate."""
+    ids = [int(i) for i in person_odoo_ids]
+    if not ids:
+        return {}
+    rows = db.query(
+        "SELECT DISTINCT ON (person_odoo_id) person_odoo_id, action, wc_name, "
+        "COALESCE(rounded_at, occurred_at) AS occurred_at, "
+        "odoo_attendance_id, synced_to_odoo, synced_at "
+        "FROM timeclock_punches_log WHERE person_odoo_id = ANY(%s) "
+        "ORDER BY person_odoo_id, COALESCE(rounded_at, occurred_at) DESC, id DESC",
+        (ids,),
+    )
+    return {int(r["person_odoo_id"]): r for r in rows}
 
 
 def state_from_log(latest: dict | None) -> dict:
@@ -59,7 +80,8 @@ def trust_local(latest: dict | None, refreshed_at: datetime | None) -> bool:
     return refreshed_at <= synced_at
 
 
-def current_state(person_odoo_id: int) -> dict:
+def current_state(person_odoo_id: int, snapshot: dict | None = None,
+                  refreshed_at: datetime | None = None, latest=_UNSET) -> dict:
     """The kiosk's view of an employee's current attendance state, reconciled
     against Odoo. Still a fast all-local read — no XML-RPC on the hot path.
 
@@ -69,10 +91,16 @@ def current_state(person_odoo_id: int) -> dict:
     trust_local). If the snapshot is missing or stale, we degrade to the local
     log so an Odoo/warmer outage never blanks everyone to 'clocked out'.
 
+    Batch callers (the auto-lunch worker) pass the already-read ``snapshot`` +
+    ``refreshed_at`` and the person's pre-fetched ``latest`` punch row (from
+    latest_punches_bulk) so a sweep doesn't re-read both sources per person;
+    when omitted, both are read here (the kiosk's one-person path).
+
     See docs/superpowers/specs/2026-06-01-timeclock-odoo-state-reconciliation-design.md.
     """
-    snapshot, refreshed_at = live_cache.read_open_attendance()
-    latest = latest_punch(person_odoo_id)
+    if snapshot is None:
+        snapshot, refreshed_at = live_cache.read_open_attendance()
+    latest = latest_punch(person_odoo_id) if latest is _UNSET else latest
     if snapshot is None or live_cache.is_stale(refreshed_at):
         return state_from_log(latest)
     if trust_local(latest, refreshed_at):

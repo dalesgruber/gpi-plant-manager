@@ -6,9 +6,42 @@ yields an empty panel, not a 500. Extracted from routes/staffing.py.
 
 from __future__ import annotations
 
+import time as _time
 from datetime import datetime, timezone
+from threading import RLock
 
 from . import attendance, shift_config, staffing
+
+# One staffing render asks for the day's time-off entries 2-3 times
+# (_safe_time_off_entries from the route plus _timeoff_names_with_fallback
+# inside _safe_attendance, fired concurrently on the route's pool). Memoize
+# the fetch for a few seconds so a render does ONE query and both shapes
+# derive from it. The TTL is deliberately tiny: long enough to span a render,
+# short enough that a save-then-reload round trip always re-reads.
+_TIME_OFF_MEMO_TTL = 3.0
+_time_off_memo: dict = {}  # day -> (monotonic_ts, entries)
+_time_off_memo_lock = RLock()
+
+
+def _time_off_entries_cached(day):
+    """time_off_entries_for_day(day) with a render-scoped memo. The fetch
+    runs under the lock on purpose (single-flight): the render's concurrent
+    callers would otherwise race the miss and re-query anyway. Errors
+    propagate (and are never cached) so each caller keeps its own degrade
+    behavior."""
+    from . import scheduler_time_off
+    now = _time.monotonic()
+    with _time_off_memo_lock:
+        hit = _time_off_memo.get(day)
+        if hit is not None and now - hit[0] < _TIME_OFF_MEMO_TTL:
+            return hit[1]
+        entries = scheduler_time_off.time_off_entries_for_day(day)
+        stale = [k for k, (ts, _v) in _time_off_memo.items()
+                 if now - ts >= _TIME_OFF_MEMO_TTL]
+        for k in stale:
+            del _time_off_memo[k]
+        _time_off_memo[day] = (_time.monotonic(), entries)
+        return entries
 
 
 def _live_or_fallback(day, *, read, refresh, fallback, transform):
@@ -36,9 +69,8 @@ def _safe_time_off_entries(d):
     """Time-off entries for the scheduler, sourced from the Odoo-backed
     time_off_requests mirror (approved + pending). Never raises — a query
     failure degrades to an empty panel rather than a 500."""
-    from . import scheduler_time_off
     try:
-        return scheduler_time_off.time_off_entries_for_day(d)
+        return _time_off_entries_cached(d)
     except Exception:  # noqa: BLE001 — empty panel beats a broken scheduler
         return []
 
@@ -70,11 +102,10 @@ def _timeoff_names_with_fallback(day):
     from the late/absence report — a partial (e.g. an approved late arrival)
     must still count as excused, so this returns ALL off names, not just the
     full-day ones the scheduler pool excludes."""
-    from . import scheduler_time_off
     try:
         return {
             e["name"]
-            for e in scheduler_time_off.time_off_entries_for_day(day)
+            for e in _time_off_entries_cached(day)
             if e.get("name")
         }
     except Exception:  # noqa: BLE001 — degrade to "nobody excused" rather than 500

@@ -50,18 +50,20 @@ def for_day(day: date) -> list[dict]:
     )
 
 
-def people_by_wc(day: date) -> dict[str, list[str]]:
+def people_by_wc(day: date, rows: list[dict] | None = None) -> dict[str, list[str]]:
     """Aggregated view: ``{wc_name: [person, ...]}`` -- convenience for joining
     into ``attribute_for_day``'s assignments dict. Excludes ``source='testing'``
     rows so a testing window never becomes a credited operator.
 
     Swallows DB errors (e.g. Postgres unreachable) so callers in hot paths
-    like leaderboards keep working.
+    like leaderboards keep working. Pass already-fetched ``rows`` (from
+    ``for_day``) to skip the re-query (see ``unattributed_for_day``).
     """
-    try:
-        rows = for_day(day)
-    except Exception:
-        return {}
+    if rows is None:
+        try:
+            rows = for_day(day)
+        except Exception:
+            return {}
     out: dict[str, list[str]] = {}
     for r in rows:
         if r.get("source") == TESTING_SOURCE:
@@ -70,13 +72,14 @@ def people_by_wc(day: date) -> dict[str, list[str]]:
     return out
 
 
-def testing_windows_for_day(day: date) -> dict[str, list[tuple]]:
+def testing_windows_for_day(day: date, rows: list[dict] | None = None) -> dict[str, list[tuple]]:
     """``{wc_name: [(start_utc, end_utc), ...]}`` for ``source='testing'``
-    rows. Swallows DB errors like ``people_by_wc``."""
-    try:
-        rows = for_day(day)
-    except Exception:
-        return {}
+    rows. Swallows DB errors like ``people_by_wc``; same optional ``rows``."""
+    if rows is None:
+        try:
+            rows = for_day(day)
+        except Exception:
+            return {}
     out: dict[str, list[tuple]] = {}
     for r in rows:
         if r.get("source") != TESTING_SOURCE:
@@ -121,9 +124,14 @@ def unattributed_for_day(day: date, client) -> list[dict]:
         wc for wc, ops in sched.assignments.items()
         if ops and wc != staffing.TIME_OFF_KEY
     }
+    # One for_day fetch shared by both shapes (each used to re-query).
+    try:
+        att_rows = for_day(day)
+    except Exception:
+        att_rows = []
     attributed_wcs = (
-        set(people_by_wc(day).keys())
-        | set(testing_windows_for_day(day).keys())
+        set(people_by_wc(day, rows=att_rows).keys())
+        | set(testing_windows_for_day(day, rows=att_rows).keys())
     )
 
     # STATIONS uses short names (e.g., "Trim Saw", "Junior 2") while

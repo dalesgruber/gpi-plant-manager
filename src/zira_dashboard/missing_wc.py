@@ -11,15 +11,24 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 
 from .shift_config import SITE_TZ
 
 _log = logging.getLogger(__name__)
 
+# monotonic() of the last retention DELETE in write_cache; 0.0 means run
+# on the first tick after boot.
+_last_retention_at: float = 0.0
+
 
 def write_cache(rows: list[dict]) -> None:
-    """Overwrite the single-row snapshot with the latest fetch (warmer-owned)."""
+    """Overwrite the single-row snapshot with the latest fetch (warmer-owned).
+
+    Also prunes missing_wc_resolved rows older than the snapshot window
+    (~once/hour) so the table doesn't grow forever."""
+    global _last_retention_at
     from . import db
     db.execute(
         "INSERT INTO missing_wc_cache (id, snapshot, refreshed_at) "
@@ -27,6 +36,13 @@ def write_cache(rows: list[dict]) -> None:
         "ON CONFLICT (id) DO UPDATE SET snapshot = EXCLUDED.snapshot, refreshed_at = now()",
         (json.dumps(rows or []),),
     )
+    now = time.monotonic()
+    if now - _last_retention_at >= 3600:
+        _last_retention_at = now
+        db.execute(
+            "DELETE FROM missing_wc_resolved "
+            "WHERE resolved_at < now() - interval '15 days'"
+        )
 
 
 def _read_cache() -> list[dict]:
@@ -57,9 +73,14 @@ def resolve(attendance_id, action: str, name: str | None = None,
 
 
 def resolved_ids() -> set[int]:
+    """Suppressed attendance ids. The snapshot only covers the last 14 days,
+    so older resolutions are irrelevant — the filter keeps this 60s badge-poll
+    read small as the table grows."""
     from . import db
     return {int(r["attendance_id"])
-            for r in db.query("SELECT attendance_id FROM missing_wc_resolved")}
+            for r in db.query(
+                "SELECT attendance_id FROM missing_wc_resolved "
+                "WHERE resolved_at > now() - interval '15 days'")}
 
 
 def _check_in_label(check_in_iso) -> str:

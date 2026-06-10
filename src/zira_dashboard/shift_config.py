@@ -48,18 +48,6 @@ def productive_minutes_per_day() -> int:
     return max(0, total)
 
 
-def in_shift(local_dt: datetime) -> bool:
-    if local_dt.weekday() not in work_weekdays():
-        return False
-    t = local_dt.time()
-    if t < shift_start() or t >= shift_end():
-        return False
-    for b in breaks():
-        if b.start <= t < b.end:
-            return False
-    return True
-
-
 SATURDAY = 5  # date.weekday(): Monday=0 .. Sunday=6
 
 
@@ -230,9 +218,9 @@ def productive_minutes_for(day: date) -> int:
 
 
 def in_shift_on(local_dt: datetime) -> bool:
-    """Day-aware twin of in_shift(): derives the day from local_dt and
-    consults per-day custom_hours. Honors published Saturdays via
-    is_workday()."""
+    """Whether local_dt falls inside the day's shift (and outside breaks).
+    Derives the day from local_dt and consults per-day custom_hours. Honors
+    published Saturdays via is_workday()."""
     day = local_dt.date()
     if not is_workday(day):
         return False

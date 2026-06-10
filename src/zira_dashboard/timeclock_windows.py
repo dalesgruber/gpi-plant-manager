@@ -10,7 +10,21 @@ schedule + manual attributions.
 """
 from __future__ import annotations
 
+import time as _time
+from collections import OrderedDict
 from datetime import date, datetime
+from threading import RLock
+
+# In-module cache for attendance_windows_for_day. Past days are immutable
+# (Odoo attendance edits to history are rare and a redeploy/restart clears
+# this), so they cache indefinitely with simple LRU bounding. Today (and any
+# future day) gets a short TTL matching the live-cache warmer cadence, so a
+# range render doesn't fire one XML-RPC call per day per request.
+_PAST_CACHE_MAX = 400
+_TODAY_TTL_SECONDS = 45.0
+_past_cache: OrderedDict[date, dict] = OrderedDict()
+_today_cache: dict[date, tuple[float, dict]] = {}
+_cache_lock = RLock()
 
 
 def _segments_from_rows(rows: list[dict]) -> list[tuple[str, datetime, datetime | None]]:
@@ -106,8 +120,25 @@ def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime,
     their whole clocked-in day instead of truncating at the auto-lunch split.
 
     Never raises -- returns {} on any error (Odoo down, etc.), in which case the
-    resolver falls back to the schedule.
+    resolver falls back to the schedule. Errors are NOT cached, so a transient
+    Odoo outage can't poison a past day's entry.
     """
+    try:
+        from . import shift_config
+        today = datetime.now(shift_config.SITE_TZ).date()
+    except Exception:
+        return {}
+    is_past = day < today
+    with _cache_lock:
+        if is_past:
+            cached = _past_cache.get(day)
+            if cached is not None:
+                _past_cache.move_to_end(day)
+                return cached
+        else:
+            hit = _today_cache.get(day)
+            if hit is not None and (_time.monotonic() - hit[0]) < _TODAY_TTL_SECONDS:
+                return hit[1]
     try:
         from . import odoo_client, attendance
         from datetime import datetime as _dt
@@ -135,4 +166,16 @@ def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime,
         wins = _windows_from_intervals(recs)
         if wins:
             out[name] = wins
+    with _cache_lock:
+        if is_past:
+            _past_cache[day] = out
+            while len(_past_cache) > _PAST_CACHE_MAX:
+                _past_cache.popitem(last=False)
+        else:
+            now_mono = _time.monotonic()
+            stale = [k for k, (ts, _v) in _today_cache.items()
+                     if now_mono - ts >= _TODAY_TTL_SECONDS]
+            for k in stale:
+                del _today_cache[k]
+            _today_cache[day] = (now_mono, out)
     return out

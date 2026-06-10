@@ -119,6 +119,8 @@ def test_windows_sorted_by_start():
 
 def test_attendance_windows_maps_names_and_drops_no_wc(monkeypatch):
     from zira_dashboard import timeclock_windows, odoo_client, attendance
+    timeclock_windows._past_cache.clear()  # 2026-06-02 is a past day -> cacheable
+    timeclock_windows._today_cache.clear()
     intervals = [
         {"employee_odoo_id": 101, "check_in": t(12).isoformat(),
          "check_out": t(16).isoformat(), "wc_name": "Dismantler 1"},
@@ -134,3 +136,22 @@ def test_attendance_windows_maps_names_and_drops_no_wc(monkeypatch):
     assert out == {"Jose Cabezas": [("Dismantler 1", t(12), t(16)),
                                     ("Dismantler 1", t(17), t(20, 30))]}
     assert "Ghost" not in out
+
+
+def test_attendance_windows_past_day_fetched_once(monkeypatch):
+    """Past days are immutable -> the Odoo pull is cached after the first call."""
+    from zira_dashboard import timeclock_windows, odoo_client, attendance
+    timeclock_windows._past_cache.clear()
+    timeclock_windows._today_cache.clear()
+    calls = {"n": 0}
+
+    def _fetch(day):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(odoo_client, "fetch_attendance_intervals_for_day", _fetch)
+    monkeypatch.setattr(attendance, "name_to_person_id", lambda: {})
+    d = date(2026, 6, 3)
+    assert timeclock_windows.attendance_windows_for_day(d) == {}
+    assert timeclock_windows.attendance_windows_for_day(d) == {}
+    assert calls["n"] == 1

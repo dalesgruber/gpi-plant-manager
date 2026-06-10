@@ -58,7 +58,57 @@ def _default_goal_for(loc: Location) -> int:
 # ---------- effective per-work-center ----------
 
 def effective(loc: Location) -> dict:
-    return _EFFECTIVE_CACHE.get_or_compute(loc.name, lambda: _effective_uncached(loc))
+    got = _effective_map().get(loc.name)
+    if got is not None:
+        return got
+    # Location unknown to the bulk map (shouldn't happen for LOCATIONS
+    # members) — fall back to the single-WC path, uncached.
+    return _effective_uncached(loc)
+
+
+def _effective_map() -> dict[str, dict]:
+    """{loc.name: effective dict} for every LOCATIONS member, built from 3
+    set-based queries and cached as ONE object (same TTL + the same
+    _invalidate_caches() hook every write path already calls). Replaces the
+    3-queries-per-WC pattern that burst ~69 queries on each TTL expiry."""
+    return _EFFECTIVE_CACHE.get_or_compute("__all__", _effective_map_uncached)
+
+
+def _effective_map_uncached() -> dict[str, dict]:
+    from . import db
+    wc_rows = db.query(
+        "SELECT name, goal_per_day_override, min_ops, max_ops, department, "
+        "       group_name, note FROM work_centers"
+    )
+    rec_by_name = {r["name"]: r for r in wc_rows}
+    req_rows = db.query(
+        "SELECT wc.name AS wc_name, s.name AS skill_name "
+        "FROM work_center_required_skills wrs "
+        "JOIN work_centers wc ON wc.id = wrs.wc_id "
+        "JOIN skills s ON s.id = wrs.skill_id"
+    )
+    req_by_name: dict[str, list[str]] = {}
+    for r in req_rows:
+        req_by_name.setdefault(r["wc_name"], []).append(r["skill_name"])
+    def_rows = db.query(
+        "SELECT wc.name AS wc_name, pe.name AS person_name "
+        "FROM work_center_default_people wcdp "
+        "JOIN work_centers wc ON wc.id = wcdp.wc_id "
+        "JOIN people pe ON pe.id = wcdp.person_id "
+        "ORDER BY wc.name, wcdp.sort_order"
+    )
+    defaults_by_name: dict[str, list[str]] = {}
+    for r in def_rows:
+        defaults_by_name.setdefault(r["wc_name"], []).append(r["person_name"])
+    return {
+        loc.name: _shape_effective(
+            loc,
+            rec_by_name.get(loc.name) or {},
+            req_by_name.get(loc.name) or [],
+            defaults_by_name.get(loc.name) or [],
+        )
+        for loc in LOCATIONS
+    }
 
 
 def _effective_uncached(loc: Location) -> dict:
@@ -77,14 +127,6 @@ def _effective_uncached(loc: Location) -> dict:
         "WHERE wc.name = %s",
         (loc.name,),
     )
-    if req_rows:
-        req = [r["name"] for r in req_rows]
-    elif not rec:
-        # No work_centers row at all → true bootstrap. Use hardcoded default.
-        req = list(required_skills_for(loc))
-    else:
-        # Row exists but no required-skill rows → user explicitly cleared.
-        req = []
     def_rows = db.query(
         "SELECT pe.name FROM work_center_default_people wcdp "
         "JOIN work_centers wc ON wc.id = wcdp.wc_id "
@@ -92,7 +134,23 @@ def _effective_uncached(loc: Location) -> dict:
         "WHERE wc.name = %s ORDER BY wcdp.sort_order",
         (loc.name,),
     )
-    defaults = [r["name"] for r in def_rows]
+    return _shape_effective(
+        loc, rec, [r["name"] for r in req_rows], [r["name"] for r in def_rows]
+    )
+
+
+def _shape_effective(loc: Location, rec: dict, req: list[str],
+                     defaults: list[str]) -> dict:
+    """Assemble the effective dict from a work_centers row (``rec``, {} when
+    absent), its required-skill names and its default-people names. Shared by
+    the bulk map builder and the single-WC fallback so the required-skills
+    semantics can't drift: rows present → DB list; row exists but no skill
+    rows → user explicitly cleared ([]); no row at all → bootstrap default."""
+    if not req and not rec:
+        # No work_centers row at all → true bootstrap. Use hardcoded default.
+        # (Row exists but no required-skill rows → user explicitly cleared:
+        # keep the empty list.)
+        req = list(required_skills_for(loc))
     goal = rec.get("goal_per_day_override")
     return {
         "goal_per_day": int(goal) if goal is not None else _default_goal_for(loc),
@@ -370,40 +428,3 @@ def save_group_override(kind: str, name: str, value) -> None:
             (name, iv),
         )
     _invalidate_caches()
-
-
-def snapshot() -> dict:
-    """Compatibility shim — returns a dict that matches the old JSON
-    snapshot shape. Used by code that wanted the raw config blob."""
-    from . import db
-    wc_rows = db.query(
-        "SELECT name, meter_id, department, min_ops, max_ops, "
-        "       goal_per_day_override, group_name, note FROM work_centers"
-    )
-    wc_dict = {}
-    for r in wc_rows:
-        key = r["meter_id"] if r["meter_id"] else f"name:{r['name']}"
-        rec: dict = {}
-        if r["goal_per_day_override"] is not None:
-            rec["goal_per_day"] = int(r["goal_per_day_override"])
-        if r["min_ops"] is not None:
-            rec["min_ops"] = int(r["min_ops"])
-        if r["max_ops"] is not None:
-            rec["max_ops"] = int(r["max_ops"])
-        if r["department"]:
-            rec["department"] = r["department"]
-        if r["group_name"]:
-            rec["groups"] = [r["group_name"]]
-        if r["note"]:
-            rec["note"] = r["note"]
-        if rec:
-            wc_dict[key] = rec
-    g_rows = db.query("SELECT name, goal_per_day_override FROM groups WHERE goal_per_day_override IS NOT NULL")
-    vs_rows = db.query("SELECT name, goal_per_day_override FROM departments WHERE goal_per_day_override IS NOT NULL")
-    return {
-        "work_centers": wc_dict,
-        "group_overrides": {
-            "group": {r["name"]: int(r["goal_per_day_override"]) for r in g_rows},
-            "department": {r["name"]: int(r["goal_per_day_override"]) for r in vs_rows},
-        },
-    }

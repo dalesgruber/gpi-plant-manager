@@ -128,8 +128,6 @@ class Person:
 
 PLANT_SCHEDULER_CSV = Path("Plant Scheduler(Plant Scheduler).csv")
 
-_lock = RLock()
-
 
 # ---------- CSV bootstrap helper ----------
 
@@ -175,8 +173,8 @@ def load_roster() -> list[Person]:
     """Load all NON-EXCLUDED people from Postgres. Inactive people
     are returned too (sorted to the bottom). Excluded people are
     filtered out — they're hidden from current views via the
-    Settings → Roster Filter UI. Cached in-process for 60 s;
-    invalidated on save_roster()."""
+    Settings → Roster Filter UI. Cached in-process for 1 hour
+    (_ROSTER_CACHE_TTL_SECONDS); invalidated on save_roster()."""
     import time as _time
     global _ROSTER_CACHE
     with _ROSTER_CACHE_LOCK:
@@ -323,7 +321,6 @@ def iter_saved_schedules():
 
 
 def _load_schedule_from_db(day: date) -> "Schedule":
-    from concurrent.futures import ThreadPoolExecutor
     from . import db
     rows = db.query(
         "SELECT day, published, testing_day, notes, custom_hours, published_snapshot "
@@ -333,27 +330,20 @@ def _load_schedule_from_db(day: date) -> "Schedule":
     if not rows:
         return Schedule(day=day, published=False, assignments={})
     r = rows[0]
-    # Assignments + per-WC notes are independent reads; fan out so they
-    # overlap on the connection pool instead of running back-to-back.
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        f_assignments = pool.submit(
-            db.query,
-            "SELECT wc.name AS wc_name, pe.name AS person_name "
-            "FROM schedule_assignments sa "
-            "JOIN work_centers wc ON wc.id = sa.wc_id "
-            "JOIN people pe ON pe.id = sa.person_id "
-            "WHERE sa.day = %s ORDER BY sa.wc_id, sa.sort_order",
-            (day,),
-        )
-        f_notes = pool.submit(
-            db.query,
-            "SELECT wc.name AS wc_name, sn.note "
-            "FROM schedule_wc_notes sn JOIN work_centers wc ON wc.id = sn.wc_id "
-            "WHERE sn.day = %s",
-            (day,),
-        )
-        asg_rows = f_assignments.result()
-        notes_rows = f_notes.result()
+    asg_rows = db.query(
+        "SELECT wc.name AS wc_name, pe.name AS person_name "
+        "FROM schedule_assignments sa "
+        "JOIN work_centers wc ON wc.id = sa.wc_id "
+        "JOIN people pe ON pe.id = sa.person_id "
+        "WHERE sa.day = %s ORDER BY sa.wc_id, sa.sort_order",
+        (day,),
+    )
+    notes_rows = db.query(
+        "SELECT wc.name AS wc_name, sn.note "
+        "FROM schedule_wc_notes sn JOIN work_centers wc ON wc.id = sn.wc_id "
+        "WHERE sn.day = %s",
+        (day,),
+    )
     assignments: dict[str, list[str]] = {}
     for a in asg_rows:
         assignments.setdefault(a["wc_name"], []).append(a["person_name"])
@@ -369,6 +359,86 @@ def _load_schedule_from_db(day: date) -> "Schedule":
         custom_hours=r["custom_hours"],
         published_snapshot=r["published_snapshot"],
     )
+
+
+def load_schedules_bulk(
+    start: date | None = None,
+    end: date | None = None,
+    published_only: bool = False,
+) -> list[tuple[date, "Schedule"]]:
+    """Hydrate many saved schedules in ONE set-based pass (3 queries total:
+    schedules + schedule_assignments + schedule_wc_notes), newest first.
+    Optional date/published filters are pushed into SQL.
+
+    Built for history views (/staffing/past): per-day load_schedule() would
+    run 3 queries per day AND pin every day into the per-day cache forever,
+    so this deliberately does NOT touch _schedule_cache."""
+    from . import db
+    conds: list[str] = []
+    params: list = []
+    if start is not None:
+        conds.append("day >= %s")
+        params.append(start)
+    if end is not None:
+        conds.append("day <= %s")
+        params.append(end)
+    if published_only:
+        conds.append("published = TRUE")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    sched_rows = db.query(
+        "SELECT day, published, testing_day, notes, custom_hours, published_snapshot "
+        f"FROM schedules{where} ORDER BY day DESC",
+        tuple(params) if params else None,
+    )
+    days: list[date] = []
+    for r in sched_rows:
+        day_val = r["day"]
+        if not isinstance(day_val, date):
+            try:
+                day_val = date.fromisoformat(str(day_val))
+            except ValueError:
+                continue
+        r["day"] = day_val
+        days.append(day_val)
+    if not days:
+        return []
+    asg_rows = db.query(
+        "SELECT sa.day, wc.name AS wc_name, pe.name AS person_name "
+        "FROM schedule_assignments sa "
+        "JOIN work_centers wc ON wc.id = sa.wc_id "
+        "JOIN people pe ON pe.id = sa.person_id "
+        "WHERE sa.day = ANY(%s) ORDER BY sa.day, sa.wc_id, sa.sort_order",
+        (days,),
+    )
+    notes_rows = db.query(
+        "SELECT sn.day, wc.name AS wc_name, sn.note "
+        "FROM schedule_wc_notes sn JOIN work_centers wc ON wc.id = sn.wc_id "
+        "WHERE sn.day = ANY(%s)",
+        (days,),
+    )
+    assignments_by_day: dict[date, dict[str, list[str]]] = {}
+    for a in asg_rows:
+        assignments_by_day.setdefault(a["day"], {}).setdefault(
+            a["wc_name"], []).append(a["person_name"])
+    wc_notes_by_day: dict[date, dict[str, str]] = {}
+    for n in notes_rows:
+        wc_notes_by_day.setdefault(n["day"], {})[n["wc_name"]] = n["note"]
+    out: list[tuple[date, Schedule]] = []
+    for r in sched_rows:
+        if not isinstance(r["day"], date):
+            continue
+        d = r["day"]
+        out.append((d, Schedule(
+            day=d,
+            published=r["published"],
+            assignments=assignments_by_day.get(d, {}),
+            notes=r["notes"] or "",
+            wc_notes=wc_notes_by_day.get(d, {}),
+            testing_day=r["testing_day"],
+            custom_hours=r["custom_hours"],
+            published_snapshot=r["published_snapshot"],
+        )))
+    return out
 
 
 def save_schedule(schedule: Schedule) -> None:
@@ -460,7 +530,8 @@ def present_operators(assigned: list[dict], off_names) -> list[dict]:
     return [a for a in assigned if a["name"] not in off]
 
 
-def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -> int:
+def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc,
+                             partials: dict | None = None) -> int:
     """Minutes the person `name` was actually working in [window_start_utc, window_end_utc]
     on `day`. Subtracts:
 
@@ -473,6 +544,10 @@ def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -
     subtraction is skipped, but break subtraction still applies.
 
     `window_start_utc` and `window_end_utc` must be timezone-aware UTC datetimes.
+    Callers looping over many people on the same day should compute
+    ``attendance.partial_off_intervals(day)`` ONCE and pass it as ``partials``
+    so this doesn't re-query per person; omit it for the fetch-per-call
+    behavior.
     """
     from datetime import datetime, timezone
     from . import shift_config, attendance
@@ -497,10 +572,13 @@ def effective_minutes_worked(name: str, day, window_start_utc, window_end_utc) -
         pass
 
     # Subtract partial-day off intervals (Odoo time-off mirror).
-    try:
-        intervals_by_name = attendance.partial_off_intervals(day)
-    except Exception:
-        return max(0, base - break_minutes_in_window)
+    if partials is not None:
+        intervals_by_name = partials
+    else:
+        try:
+            intervals_by_name = attendance.partial_off_intervals(day)
+        except Exception:
+            return max(0, base - break_minutes_in_window)
     intervals = intervals_by_name.get(name) or []
     overlap_min = 0
     for s, e in intervals:

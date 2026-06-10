@@ -20,6 +20,10 @@ _log = logging.getLogger(__name__)
 
 TERMINAL = ("done", "skipped", "ended_by_employee")
 
+# Shared "not supplied" sentinel — the same object attendance_state.current_state
+# uses, so _advance_person can forward it untouched.
+_UNSET = attendance_state._UNSET
+
 
 @dataclass(frozen=True)
 class Window:
@@ -127,6 +131,22 @@ def _get_run(person_odoo_id: int, day: date) -> dict | None:
     return rows[0] if rows else None
 
 
+def _get_runs_bulk(day: date, person_ids) -> dict[int, dict]:
+    """_get_run for many people in ONE query: {person_odoo_id: run_row}.
+    People with no run row are absent from the map. Used by run_tick so a
+    sweep doesn't run one query per candidate."""
+    ids = [int(i) for i in person_ids]
+    if not ids:
+        return {}
+    rows = db.query(
+        "SELECT person_odoo_id, day, kind, state, target_out_at, target_in_at, "
+        "wc_name, out_punch_id, in_punch_id FROM auto_lunch_runs "
+        "WHERE day = %s AND person_odoo_id = ANY(%s)",
+        (day, ids),
+    )
+    return {int(r["person_odoo_id"]): r for r in rows}
+
+
 def _upsert_run(person_odoo_id, day, kind, state, *, target_out_at=None,
                 target_in_at=None, wc_name=None, out_punch_id=None,
                 in_punch_id=None, cur=None) -> None:
@@ -222,8 +242,13 @@ def _apply(person_odoo_id, today, kind, run, t, state, window, settings) -> None
                     target_out_at=window.out_at, target_in_at=window.in_at)
 
 
-def _advance_person(person_odoo_id, today, now, fixed_window, flex_ids, settings) -> None:
-    run = _get_run(person_odoo_id, today)
+def _advance_person(person_odoo_id, today, now, fixed_window, flex_ids, settings, *,
+                    run=_UNSET, snapshot=None, refreshed_at=None, latest=_UNSET) -> None:
+    # run_tick passes the per-person inputs it already batch-read (run row,
+    # open-attendance snapshot, latest punch); when omitted, each is fetched
+    # here so the per-person behavior is unchanged for direct callers.
+    if run is _UNSET:
+        run = _get_run(person_odoo_id, today)
     # Classify once: a run's kind is fixed when the row is first created, so a
     # mid-day is_flexible change in Odoo can't reclassify an in-progress run.
     kind = run["kind"] if run else ("flex" if person_odoo_id in flex_ids else "scheduled")
@@ -233,7 +258,8 @@ def _advance_person(person_odoo_id, today, now, fixed_window, flex_ids, settings
     run_state = run["state"] if run else "pending"
     if run_state in TERMINAL:
         return
-    state = attendance_state.current_state(person_odoo_id)
+    state = attendance_state.current_state(
+        person_odoo_id, snapshot=snapshot, refreshed_at=refreshed_at, latest=latest)
     is_in = state["is_clocked_in"]
     # Observe-only simulation: we never actually clocked them out, so the real
     # state still reads clocked-in. Pretend clocked-out after an observed
@@ -269,9 +295,18 @@ def run_tick(now: datetime | None = None) -> None:
     open_runs = {int(r["person_odoo_id"]) for r in db.query(
         "SELECT person_odoo_id FROM auto_lunch_runs WHERE day = %s "
         "AND state NOT IN ('done','skipped','ended_by_employee')", (today,))}
-    for pid in clocked_in | open_runs:
+    candidates = clocked_in | open_runs
+    # Batch the per-person reads (run rows + latest punches) into one query
+    # each, and reuse the snapshot read above — a sweep used to re-read all
+    # three sources per person.
+    runs = _get_runs_bulk(today, candidates)
+    latest_by_pid = attendance_state.latest_punches_bulk(candidates)
+    for pid in candidates:
         try:
-            _advance_person(pid, today, now, fixed_window, flex_ids, settings)
+            _advance_person(pid, today, now, fixed_window, flex_ids, settings,
+                            run=runs.get(pid), snapshot=snapshot,
+                            refreshed_at=refreshed_at,
+                            latest=latest_by_pid.get(pid))
         except Exception as e:  # noqa: BLE001 — one person never kills the tick
             _log.warning("auto-lunch: failed for person %s: %s", pid, e)
 
