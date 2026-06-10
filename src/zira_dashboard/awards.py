@@ -7,19 +7,14 @@ already does (postgres-backed). Override layer is in the same module
 """
 from __future__ import annotations
 
+import time as _time
 from collections import defaultdict
 from datetime import date
 from calendar import monthrange
 
-
-def _all_time_range() -> tuple[date, date]:
-    """Earliest day in zira_daily_cache (or today if empty) → today."""
-    from datetime import datetime, timezone
-    from . import db
-    today = datetime.now(timezone.utc).date()
-    rows = db.query("SELECT MIN(day) AS d FROM zira_daily_cache")
-    earliest = rows[0]["d"] if rows and rows[0].get("d") else today
-    return (earliest, today)
+# Earliest possible production data — production_daily starts in 2024. A
+# constant floor avoids a SELECT MIN(day) round-trip on every GOAT lookup.
+_ALL_TIME_FLOOR = date(2024, 1, 1)
 
 
 def _wc_names_for_group(group_name: str) -> set[str]:
@@ -27,17 +22,28 @@ def _wc_names_for_group(group_name: str) -> set[str]:
     return {loc.name for loc in work_centers_store.members("group", group_name)}
 
 
-def person_days_in_group(group_name: str, start: date, end: date) -> list[dict]:
+def _records_for(start: date, end: date, records: list[dict] | None) -> list[dict]:
+    """Daily records for [start, end]: sliced from `records` when a caller
+    already fetched a covering range, else fetched per call (the original
+    behavior for untouched callers)."""
+    if records is not None:
+        return [r for r in records if start <= r["day"] <= end]
+    from . import production_history
+    return production_history.daily_records(start, end)
+
+
+def person_days_in_group(
+    group_name: str, start: date, end: date, records: list[dict] | None = None,
+) -> list[dict]:
     """Returns one row per (person, day) summing units/hours across the
     group's WCs. Filters days where total units == 0.
 
     Each row: {"name": str, "day": date, "units": float, "hours": float}.
     """
-    from . import production_history
     wc_names = _wc_names_for_group(group_name)
     if not wc_names:
         return []
-    raw = production_history.daily_records(start, end)
+    raw = _records_for(start, end, records)
     agg: dict[tuple[str, date], dict] = defaultdict(lambda: {"units": 0.0, "hours": 0.0})
     for r in raw:
         if r["wc"] not in wc_names:
@@ -52,10 +58,11 @@ def person_days_in_group(group_name: str, start: date, end: date) -> list[dict]:
     ]
 
 
-def person_days_in_wc(wc_name: str, start: date, end: date) -> list[dict]:
+def person_days_in_wc(
+    wc_name: str, start: date, end: date, records: list[dict] | None = None,
+) -> list[dict]:
     """Same shape as person_days_in_group but for a single WC."""
-    from . import production_history
-    raw = production_history.daily_records(start, end)
+    raw = _records_for(start, end, records)
     return [
         {"name": r["person"], "day": r["day"], "units": r["units"], "hours": r["hours"]}
         for r in raw
@@ -92,32 +99,52 @@ def _year_range(year: int) -> tuple[date, date]:
     return (date(year, 1, 1), date(year, 12, 31))
 
 
-def monthly_badges(group_name: str, year: int, month: int) -> list[dict]:
+def monthly_badges(
+    group_name: str, year: int, month: int, records: list[dict] | None = None,
+) -> list[dict]:
     """Top-3 person-days in the group during [year, month]."""
     start, end = _month_range(year, month)
-    rows = person_days_in_group(group_name, start, end)
+    rows = person_days_in_group(group_name, start, end, records=records)
     return _rank_single_day(rows, top_n=3)
 
 
-def annual_top_days(group_name: str, year: int) -> list[dict]:
+def annual_top_days(
+    group_name: str, year: int, records: list[dict] | None = None,
+) -> list[dict]:
     """Top-3 person-days in the group during [year]."""
     start, end = _year_range(year)
-    rows = person_days_in_group(group_name, start, end)
+    rows = person_days_in_group(group_name, start, end, records=records)
     return _rank_single_day(rows, top_n=3)
+
+
+_GOAT_TTL_SECONDS = 300  # 5 minutes
+_GOAT_CACHE: dict = {}   # {group_name: (value, expires_at)}
 
 
 def goat(group_name: str) -> dict | None:
     """All-time best person-day in the group. Earliest day wins on tie.
     Returns {name, day, units, pph} or None when no data.
+
+    Cached in-process for 5 minutes (same pattern as goat_holders_map
+    below) — this is a full-history scan and gets called per-group /
+    per-WC on every TV render.
     """
-    start, end = _all_time_range()
-    rows = person_days_in_group(group_name, start, end)
+    now = _time.time()
+    cached = _GOAT_CACHE.get(group_name)
+    if cached is not None and now < cached[1]:
+        return cached[0]
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date()
+    rows = person_days_in_group(group_name, _ALL_TIME_FLOOR, today)
     if not rows:
-        return None
-    rows_sorted = sorted(rows, key=lambda r: (-r["units"], r["day"], r["name"]))
-    top = rows_sorted[0]
-    pph = round(top["units"] / top["hours"], 1) if top["hours"] > 0 else 0.0
-    return {"name": top["name"], "day": top["day"], "units": top["units"], "pph": pph}
+        result = None
+    else:
+        rows_sorted = sorted(rows, key=lambda r: (-r["units"], r["day"], r["name"]))
+        top = rows_sorted[0]
+        pph = round(top["units"] / top["hours"], 1) if top["hours"] > 0 else 0.0
+        result = {"name": top["name"], "day": top["day"], "units": top["units"], "pph": pph}
+    _GOAT_CACHE[group_name] = (result, now + _GOAT_TTL_SECONDS)
+    return result
 
 
 def _rank_avg(rows: list[dict], min_days: int) -> dict | None:
@@ -149,17 +176,21 @@ def _rank_avg(rows: list[dict], min_days: int) -> dict | None:
     return qualifiers[0]
 
 
-def annual_best_avg_group(group_name: str, year: int) -> dict | None:
+def annual_best_avg_group(
+    group_name: str, year: int, records: list[dict] | None = None,
+) -> dict | None:
     """Highest avg pph across the group's WCs in [year], gated days >= 30."""
     start, end = _year_range(year)
-    rows = person_days_in_group(group_name, start, end)
+    rows = person_days_in_group(group_name, start, end, records=records)
     return _rank_avg(rows, min_days=30)
 
 
-def annual_best_avg_wc(wc_name: str, year: int) -> dict | None:
+def annual_best_avg_wc(
+    wc_name: str, year: int, records: list[dict] | None = None,
+) -> dict | None:
     """Highest avg pph in this WC alone in [year], gated days >= 30."""
     start, end = _year_range(year)
-    rows = person_days_in_wc(wc_name, start, end)
+    rows = person_days_in_wc(wc_name, start, end, records=records)
     return _rank_avg(rows, min_days=30)
 
 
@@ -254,10 +285,17 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
       'goat' | 'trophy_top_day' | 'trophy_best_avg_group' |
       'trophy_best_avg_wc' | 'badge'.
     """
-    from . import work_centers_store
+    from . import production_history, work_centers_store
     overrides = _load_overrides()
     earned: list[dict] = []
     groups = work_centers_store.registered_groups()
+
+    # One fetch covering every annual/monthly window below; the helpers
+    # slice it in memory instead of issuing ~100+ range queries per render.
+    # GOAT lookups go through goat()'s own all-time TTL cache.
+    records = production_history.daily_records(
+        date(today.year - 2, 1, 1), date(today.year, 12, 31)
+    )
 
     # GOATs
     for g in groups:
@@ -276,7 +314,7 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
     for y in years:
         for g in groups:
             top = apply_overrides(
-                annual_top_days(g, y),
+                annual_top_days(g, y, records=records),
                 scope="trophy_top_day", group_name=g, year=y, overrides=overrides,
             )
             for s in top:
@@ -289,7 +327,7 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
                     })
 
             ba = apply_overrides_single(
-                annual_best_avg_group(g, y),
+                annual_best_avg_group(g, y, records=records),
                 scope="trophy_best_avg_group", group_name=g, year=y, overrides=overrides,
             )
             if ba and ba.get("name") == name:
@@ -308,7 +346,7 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
                     continue
                 seen_wcs.add(wc_name)
                 bw = apply_overrides_single(
-                    annual_best_avg_wc(wc_name, y),
+                    annual_best_avg_wc(wc_name, y, records=records),
                     scope="trophy_best_avg_wc", wc_name=wc_name, year=y, overrides=overrides,
                 )
                 if bw and bw.get("name") == name:
@@ -326,7 +364,7 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
                     continue
                 for g in groups:
                     badges = apply_overrides(
-                        monthly_badges(g, y, m),
+                        monthly_badges(g, y, m, records=records),
                         scope="badge", group_name=g, year=y, month=m, overrides=overrides,
                     )
                     for s in badges:
@@ -341,8 +379,6 @@ def awards_earned_by(name: str, today: date) -> list[dict]:
 
 
 # ---- GOAT holders lookup (used by the _goat_badges macro) ----------------
-
-import time as _time
 
 _GOAT_HOLDERS_TTL_SECONDS = 300  # 5 minutes
 _GOAT_HOLDERS_CACHE: dict = {}   # {"value": (map, expires_at)}

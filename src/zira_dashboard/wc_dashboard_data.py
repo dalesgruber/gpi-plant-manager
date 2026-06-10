@@ -104,21 +104,8 @@ def _units_today_for_wc(wc_name: str, day: date) -> int:
     leaderboard (shared with /recycling), so this is a fast lookup.
     Returns 0 if the WC has no meter or no data yet.
     """
-    from .deps import client
-    from .leaderboard import cached_leaderboard
-    from .stations import Station
-    loc = _load_wc(wc_name)
-    if loc is None or not loc.meter_id:
-        return 0
-    stations = [Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)]
-    try:
-        results = cached_leaderboard(client, stations, day)
-    except Exception:
-        return 0
-    for r in results:
-        if r.station.name == wc_name:
-            return int(r.units)
-    return 0
+    total = _station_total_for_wc(wc_name, day)
+    return int(total.units) if total is not None else 0
 
 
 def pallets_banner(wc_name: str, day: date) -> dict:
@@ -200,26 +187,19 @@ def goat_race(wc_name: str, day: date) -> dict:
 def _station_total_for_wc(wc_name: str, day: date):
     """Return the StationTotal for one WC + day, or None.
 
-    Reads via `cached_leaderboard` (in-process TODAY cache + Postgres
-    past-day cache via `_zira_persist`). Both paths return the same
-    StationTotal dataclass shape with `.samples`, `.active_intervals`,
-    `.units`, `.downtime_minutes`, etc.
+    Reads via `leaderboard.station_total_for` (in-process TODAY cache +
+    Postgres past-day cache via `_zira_persist`). Both paths return the
+    same StationTotal dataclass shape with `.samples`,
+    `.active_intervals`, `.units`, `.downtime_minutes`, etc.
     """
     from .deps import client
-    from .leaderboard import cached_leaderboard
+    from .leaderboard import station_total_for
     from .stations import Station
     loc = _load_wc(wc_name)
     if loc is None or not loc.meter_id:
         return None
-    stations = [Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)]
-    try:
-        results = cached_leaderboard(client, stations, day)
-    except Exception:
-        return None
-    for r in results:
-        if r.station.name == wc_name:
-            return r
-    return None
+    station = Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+    return station_total_for(client, station, day)
 
 
 def _readings_for_wc_today(wc_name: str, day: date) -> list[dict]:

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
+from time import monotonic as _monotonic
 from typing import Any
 
 from zira_probe.client import ZiraClient
 
 from ._cache import TTLCache
-from .shift_config import SITE_TZ, breaks_for, in_shift_on, shift_end_for
+from .shift_config import SITE_TZ, breaks_for, is_workday, shift_end_for, shift_start_for
 from .stations import Station
 
 PAGE_SIZE = 500
@@ -97,7 +98,11 @@ def _active_intervals(
     return intervals
 
 
-def _minutes_in_breaks(start_utc: datetime, end_utc: datetime) -> float:
+def _minutes_in_breaks(
+    start_utc: datetime,
+    end_utc: datetime,
+    breaks_by_day: dict[date, Any] | None = None,
+) -> float:
     """Sum minutes between [start_utc, end_utc] that fall inside a break
     window on the local date(s) covered. Returns 0 when start >= end.
 
@@ -105,6 +110,10 @@ def _minutes_in_breaks(start_utc: datetime, end_utc: datetime) -> float:
     event that bleeds into a break (or sits inside an active interval that
     spans a break) is subtracted off — the report should only credit
     productive minutes against downtime.
+
+    `breaks_by_day` is an optional {local_date: breaks} memo shared across
+    calls (see `_adjusted_downtime`) so the day's schedule isn't re-resolved
+    for every overlap window in a nested loop.
     """
     if end_utc <= start_utc:
         return 0.0
@@ -114,10 +123,15 @@ def _minutes_in_breaks(start_utc: datetime, end_utc: datetime) -> float:
     cur_day = s_local.date()
     last_day = e_local.date()
     while cur_day <= last_day:
-        try:
-            day_breaks = breaks_for(cur_day) or []
-        except Exception:
-            day_breaks = []
+        if breaks_by_day is not None and cur_day in breaks_by_day:
+            day_breaks = breaks_by_day[cur_day]
+        else:
+            try:
+                day_breaks = breaks_for(cur_day) or []
+            except Exception:
+                day_breaks = []
+            if breaks_by_day is not None:
+                breaks_by_day[cur_day] = day_breaks
         for b in day_breaks:
             b_start = datetime.combine(cur_day, b.start, tzinfo=SITE_TZ)
             b_end = datetime.combine(cur_day, b.end, tzinfo=SITE_TZ)
@@ -147,6 +161,7 @@ def _adjusted_downtime(
     intervals = _active_intervals(samples, end_of_day)
     if not intervals:
         return 0
+    breaks_by_day: dict[date, Any] = {}  # shared memo — one breaks_for() per local date
     total_minutes = 0.0
     for event_start, duration_min in downtime_rows:
         event_end = event_start + timedelta(minutes=duration_min)
@@ -155,7 +170,7 @@ def _adjusted_downtime(
             overlap_end = min(event_end, ai_end)
             if overlap_end > overlap_start:
                 window_min = (overlap_end - overlap_start).total_seconds() / 60.0
-                break_min = _minutes_in_breaks(overlap_start, overlap_end)
+                break_min = _minutes_in_breaks(overlap_start, overlap_end, breaks_by_day)
                 total_minutes += max(0.0, window_min - break_min)
     return int(total_minutes)
 
@@ -175,6 +190,31 @@ def fetch_station_day(
     truncated = False
     samples: list[tuple[datetime, int]] = []
     downtime_rows: list[tuple[datetime, int]] = []
+
+    # Resolve the shift window ONCE per local date (a UTC day window spans at
+    # most 2 local dates) instead of re-resolving the schedule for every
+    # reading row (up to PAGE_SIZE * MAX_PAGES rows, refetched every 30s).
+    # Mirrors shift_config.in_shift_on exactly, including the published-
+    # Saturday / per-day custom_hours handling inside is_workday & friends.
+    shift_by_day: dict[date, tuple[bool, time, time, tuple]] = {}
+
+    def _in_shift_local(local_dt: datetime) -> bool:
+        d = local_dt.date()
+        info = shift_by_day.get(d)
+        if info is None:
+            info = (is_workday(d), shift_start_for(d), shift_end_for(d), breaks_for(d))
+            shift_by_day[d] = info
+        workday, s_start, s_end, s_breaks = info
+        if not workday:
+            return False
+        t = local_dt.time()
+        if t < s_start or t >= s_end:
+            return False
+        for b in s_breaks:
+            if b.start <= t < b.end:
+                return False
+        return True
+
     for _ in range(MAX_PAGES):
         payload = client.get_readings(
             meter_id=station.meter_id,
@@ -198,7 +238,7 @@ def fetch_station_day(
             duration = r.get("duration")
             event_dt = _parse_event_date(r.get("event_date"))
             event_local = event_dt.astimezone(SITE_TZ) if event_dt else None
-            in_shift_now = event_local is not None and in_shift_on(event_local)
+            in_shift_now = event_local is not None and _in_shift_local(event_local)
             if status and status != WORKING_STATUS and isinstance(duration, (int, float)) and in_shift_now:
                 downtime_rows.append((event_dt, int(duration)))
             if u_int > 0 and event_dt is not None and in_shift_now:
@@ -239,6 +279,13 @@ def fetch_station_day(
     )
 
 
+# Module-level pool shared by every leaderboard fetch. Persistent worker
+# threads mean the Zira client's thread-local requests.Sessions (and their
+# TLS connections) are reused across calls instead of being rebuilt by a
+# per-call executor every 30s.
+_FETCH_POOL = ThreadPoolExecutor(max_workers=10, thread_name_prefix="zira-fetch")
+
+
 def leaderboard(
     client: ZiraClient,
     stations: list[Station],
@@ -246,24 +293,62 @@ def leaderboard(
     now_utc: datetime | None = None,
 ) -> list[StationTotal]:
     start_iso, end_iso = day_window_utc(day)
-    with ThreadPoolExecutor(max_workers=min(10, len(stations) or 1)) as pool:
-        results = list(
-            pool.map(
-                lambda s: fetch_station_day(client, s, start_iso, end_iso, now_utc),
-                stations,
-            )
+    results = list(
+        _FETCH_POOL.map(
+            lambda s: fetch_station_day(client, s, start_iso, end_iso, now_utc),
+            stations,
         )
+    )
     results.sort(key=lambda r: (-r.units, r.station.name))
     return results
 
 
-# In-process cache for full leaderboard results, keyed by
-# (sorted meter ids, day, is_today). For today, TTL is short (30s)
-# so up-to-the-minute production stays visible. For past days,
-# results are immutable; we still TTL them to bound cache size, but
-# longer (1h). Cache is per-process — a Railway redeploy resets it.
-_TODAY_CACHE = TTLCache(ttl_seconds=30.0, max_entries=16)
-_PAST_CACHE = TTLCache(ttl_seconds=3600.0, max_entries=64)
+# In-process cache for per-station day totals, keyed by (meter_id, day).
+# Per-meter keying lets overlapping station sets (the recycling set, the
+# all-metered set, per-WC singletons) share one Zira fetch per meter
+# instead of each set refetching the same meters independently. For today,
+# TTL is short (30s) so up-to-the-minute production stays visible. For
+# past days, results are immutable; we still TTL them to bound cache size,
+# but longer (1h). Cache is per-process — a Railway redeploy resets it.
+_TODAY_CACHE = TTLCache(ttl_seconds=30.0, max_entries=64)
+_PAST_CACHE = TTLCache(ttl_seconds=3600.0, max_entries=256)
+
+# Throttle for persisting TODAY's rows to Postgres: a given (meter, day) is
+# upserted at most every _PERSIST_INTERVAL_SECONDS. Today's snapshot only
+# needs to survive a redeploy / the midnight rollover — not mirror every
+# 30s cache refresh. Past-day persists are not throttled (they happen once,
+# on first fetch).
+_PERSIST_INTERVAL_SECONDS = 300.0
+_LAST_PERSIST: dict[tuple[str, str], float] = {}  # (meter_id, day_iso) -> monotonic ts
+
+
+def _persist_day(totals: list[StationTotal], day: date, is_today: bool) -> None:
+    """Persist freshly fetched rows — past (so next time we don't re-pay
+    the Zira round-trip) AND today (so a Railway redeploy or the midnight
+    day-rollover doesn't lose the snapshot). save_day is idempotent
+    (ON CONFLICT DO UPDATE), so the most recent today-fetch becomes the
+    eventual past-day record without any extra orchestration."""
+    day_key = day.isoformat()
+    now_mono = _monotonic()
+    if is_today:
+        totals = [
+            t for t in totals
+            if now_mono - _LAST_PERSIST.get((t.station.meter_id, day_key), float("-inf"))
+            >= _PERSIST_INTERVAL_SECONDS
+        ]
+        if not totals:
+            return
+    try:
+        from . import _zira_persist
+        _zira_persist.save_day(totals, day)
+    except Exception:
+        return
+    if is_today:
+        for t in totals:
+            _LAST_PERSIST[(t.station.meter_id, day_key)] = now_mono
+        # Prune entries from previous days so the map stays bounded.
+        for k in [k for k in _LAST_PERSIST if k[1] != day_key]:
+            _LAST_PERSIST.pop(k, None)
 
 
 def cached_leaderboard(
@@ -272,42 +357,81 @@ def cached_leaderboard(
     day: date,
     now_utc: datetime | None = None,
 ) -> list[StationTotal]:
-    """Same contract as `leaderboard()`, but caches results so
+    """Same contract as `leaderboard()`, but caches per-station results so
     repeated requests within the TTL skip the Zira API round-trip
-    (~1 call per station, paginated). For 'today' the TTL is 30s;
-    for past days it's 1h. Past-day results are also persisted to
-    Postgres so they survive Railway redeploys."""
+    (~1 call per station, paginated). Entries are keyed per (meter_id, day),
+    so only the missing/expired meters of a request are fetched. For 'today'
+    the TTL is 30s; for past days it's 1h. Past-day results are also
+    persisted to Postgres so they survive Railway redeploys."""
     today = datetime.now(timezone.utc).date()
     is_today = day == today
-    key = (tuple(sorted(s.meter_id for s in stations)), day.isoformat(), is_today)
     cache = _TODAY_CACHE if is_today else _PAST_CACHE
+    day_key = day.isoformat()
 
-    def _fetch_or_load():
+    by_meter: dict[str, StationTotal] = {}
+    missing: list[Station] = []
+    for s in stations:
+        if s.meter_id in by_meter or any(m.meter_id == s.meter_id for m in missing):
+            continue
+        hit = cache.peek((s.meter_id, day_key))
+        if hit is not None:
+            by_meter[s.meter_id] = hit
+        else:
+            missing.append(s)
+
+    if missing:
+        fetched: list[StationTotal] | None = None
         # For past days, check Postgres first.
         if not is_today:
             try:
                 from . import _zira_persist
-                hit = _zira_persist.load_day(stations, day)
-                if hit is not None:
-                    return hit
+                fetched = _zira_persist.load_day(missing, day)
             except Exception:
                 # If Postgres is unavailable or the table doesn't exist
                 # yet, fall through to the API. Don't fail the request.
-                pass
-        # Cache miss — call Zira.
-        result = leaderboard(client, stations, day, now_utc)
-        # Persist results for ANY day with data — past (so next time we
-        # don't re-pay the Zira round-trip) AND today (so a Railway
-        # redeploy or the midnight day-rollover doesn't lose the
-        # snapshot). save_day is idempotent (ON CONFLICT DO UPDATE), so
-        # the most recent today-fetch becomes the eventual past-day
-        # record without any extra orchestration.
-        if result:
-            try:
-                from . import _zira_persist
-                _zira_persist.save_day(result, day)
-            except Exception:
-                pass
-        return result
+                fetched = None
+        if fetched is None:
+            # Cache miss — call Zira for ONLY the missing meters.
+            fetched = leaderboard(client, missing, day, now_utc)
+            if fetched:
+                _persist_day(fetched, day, is_today)
+        for r in fetched:
+            cache.set((r.station.meter_id, day_key), r)
+            by_meter[r.station.meter_id] = r
 
-    return cache.get_or_compute(key, _fetch_or_load)
+    out: list[StationTotal] = []
+    for s in stations:
+        r = by_meter.get(s.meter_id)
+        if r is None:
+            continue
+        # A cached entry may have been fetched via a different call site's
+        # Station object (same meter; possibly different category/cell
+        # labels). Return it under the *requested* station so callers'
+        # name-matching and grouping are unaffected by who warmed the cache.
+        if r.station != s:
+            r = replace(r, station=s)
+        out.append(r)
+    out.sort(key=lambda r: (-r.units, r.station.name))
+    return out
+
+
+def station_total_for(
+    client: ZiraClient,
+    station: Station,
+    day: date,
+    now_utc: datetime | None = None,
+) -> StationTotal | None:
+    """StationTotal for a single station via `cached_leaderboard`, or None
+    when the fetch fails or the station is absent.
+
+    Shared by the per-WC dashboards and GOAT watch — with per-meter cache
+    keying this is a dict hit whenever any other page already fetched the
+    meter within the TTL."""
+    try:
+        results = cached_leaderboard(client, [station], day, now_utc)
+    except Exception:
+        return None
+    for r in results:
+        if r.station.name == station.name:
+            return r
+    return None

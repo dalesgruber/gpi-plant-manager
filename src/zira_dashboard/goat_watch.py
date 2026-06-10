@@ -117,21 +117,15 @@ def _group_names_today() -> list[str]:
 def _wc_units_today(wc_name: str, day: date) -> int:
     """Today's pallet count for one WC from the cached leaderboard."""
     from .deps import client
-    from .leaderboard import cached_leaderboard
+    from .leaderboard import station_total_for
     from .stations import Station
     from . import staffing
     loc = next((l for l in staffing.LOCATIONS if l.name == wc_name), None)
     if loc is None or not loc.meter_id:
         return 0
-    stations = [Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)]
-    try:
-        results = cached_leaderboard(client, stations, day)
-    except Exception:
-        return 0
-    for r in results:
-        if r.station.name == wc_name:
-            return int(r.units)
-    return 0
+    station = Station(meter_id=loc.meter_id, name=loc.name, category=loc.skill, cell=loc.bay)
+    total = station_total_for(client, station, day)
+    return int(total.units) if total is not None else 0
 
 
 def _primary_operator(wc_name: str, day: date) -> str | None:

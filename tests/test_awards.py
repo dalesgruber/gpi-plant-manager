@@ -8,6 +8,18 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_goat_cache():
+    """goat() carries a 5-min in-process TTL cache; clear it so each test
+    sees its own stubbed records."""
+    from zira_dashboard import awards
+    awards._GOAT_CACHE.clear()
+    yield
+    awards._GOAT_CACHE.clear()
+
 
 def _stub_data(monkeypatch, *, records, members_map):
     """records: list of dicts (day, person, wc, units, hours, downtime)
@@ -173,7 +185,6 @@ def test_goat_returns_max_single_day(monkeypatch):
         members_map={"Repairs": ["Repair 1"]},
     )
     from zira_dashboard import awards
-    monkeypatch.setattr(awards, "_all_time_range", lambda: (date(2025, 1, 1), date(2026, 4, 1)))
     g = awards.goat("Repairs")
     assert g["name"] == "New"
     assert g["units"] == 250.0
@@ -191,7 +202,6 @@ def test_goat_first_to_set_on_tie(monkeypatch):
         members_map={"Repairs": ["Repair 1"]},
     )
     from zira_dashboard import awards
-    monkeypatch.setattr(awards, "_all_time_range", lambda: (date(2025, 1, 1), date(2026, 12, 31)))
     g = awards.goat("Repairs")
     assert g["name"] == "First"
 
@@ -199,7 +209,6 @@ def test_goat_first_to_set_on_tie(monkeypatch):
 def test_goat_returns_none_when_no_data(monkeypatch):
     _stub_data(monkeypatch, records=[], members_map={"Repairs": ["Repair 1"]})
     from zira_dashboard import awards
-    monkeypatch.setattr(awards, "_all_time_range", lambda: (date(2026, 1, 1), date(2026, 1, 1)))
     assert awards.goat("Repairs") is None
 
 
@@ -365,7 +374,6 @@ def test_awards_earned_by_aggregates_across_types(monkeypatch):
         members_map={"Repairs": ["Repair 1"]},
     )
     from zira_dashboard import awards, work_centers_store
-    monkeypatch.setattr(awards, "_all_time_range", lambda: (date(2026, 1, 1), date(2026, 4, 30)))
     monkeypatch.setattr(work_centers_store, "registered_groups", lambda: ["Repairs"])
     monkeypatch.setattr(awards, "_load_overrides", lambda: [])
 

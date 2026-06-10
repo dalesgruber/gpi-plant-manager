@@ -14,7 +14,7 @@ requires_db = pytest.mark.skipif(
 def _client(monkeypatch):
     """Stub awards.py so the trophy case page renders without DB."""
     from fastapi.testclient import TestClient
-    from zira_dashboard import awards, work_centers_store
+    from zira_dashboard import _http_cache, awards, production_history, work_centers_store
     from zira_dashboard.app import app
     monkeypatch.setattr(awards, "monthly_badges", lambda *a, **k: [])
     monkeypatch.setattr(awards, "annual_top_days", lambda *a, **k: [])
@@ -22,8 +22,12 @@ def _client(monkeypatch):
     monkeypatch.setattr(awards, "annual_best_avg_wc", lambda *a, **k: None)
     monkeypatch.setattr(awards, "goat", lambda *a, **k: None)
     monkeypatch.setattr(awards, "_load_overrides", lambda: [])
+    monkeypatch.setattr(production_history, "daily_records", lambda *a, **k: [])
     monkeypatch.setattr(work_centers_store, "registered_groups", lambda: ["Repairs"])
     monkeypatch.setattr(work_centers_store, "members", lambda *a, **k: [])
+    # The page is served from the response cache on repeat renders — start
+    # each test cold so the stubs above are what actually renders.
+    _http_cache.invalidate_all_cache()
     return TestClient(app)
 
 
