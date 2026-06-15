@@ -391,19 +391,34 @@ def _wc_list() -> list[dict]:
     ]
 
 
+def _expired_redirect(request: Request) -> RedirectResponse:
+    """A kiosk token was missing/expired/invalid. Log it (these rejections
+    were previously invisible — that silence is what masked the Saturday
+    "couldn't clock out" incident) and bounce to the name list with a
+    visible "tap your name again" banner instead of a dead-silent redirect."""
+    _log.warning(
+        "kiosk token rejected on %s; returning user to the name list",
+        request.url.path,
+    )
+    return RedirectResponse(url="/timeclock?expired=1", status_code=303)
+
+
 # ---------- routes ----------
 
 @router.get("/timeclock", response_class=HTMLResponse)
-def timeclock_home(request: Request):
+def timeclock_home(request: Request, expired: int = Query(default=0)):
     """Searchable employee list. JS filters as the user types; tapping a
-    name navigates to the PIN screen."""
+    name navigates to the PIN screen. `expired=1` (set by _expired_redirect)
+    shows a 'your session timed out' banner so a rejected punch token is
+    visible to the employee instead of a silent bounce."""
     rows = db.query(
         "SELECT id, name FROM people "
         "WHERE active = TRUE AND NOT excluded "
         "ORDER BY lower(name)"
     )
     return templates.TemplateResponse(
-        request, "timeclock_home.html", {"people": rows}
+        request, "timeclock_home.html",
+        {"people": rows, "session_expired": bool(expired)},
     )
 
 
@@ -428,7 +443,7 @@ def kiosk_start(person_id: int):
 def timeclock_dashboard(request: Request, token: str):
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -506,7 +521,7 @@ def timeclock_pick_wc(
     URL the form submits to (clock-in vs transfer)."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -540,7 +555,7 @@ def kiosk_clock_in(
 ):
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -576,7 +591,7 @@ def kiosk_clock_out(
 ):
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -612,7 +627,7 @@ def kiosk_transfer(
 ):
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)

@@ -18,6 +18,11 @@
   </div>
 </div>
 <div class="k-main" style="padding-top: 0;">
+  {% if session_expired %}
+  <div class="k-warning" style="max-width: 720px; text-align: center; margin: 1rem auto 0;">
+    Your session timed out — tap your name again to clock in or out.
+  </div>
+  {% endif %}
   <input
     type="text" id="filter" placeholder="Search your name…"
     autocomplete="off" autofocus

@@ -2,6 +2,12 @@
 
 Latest updates to GPI Plant Manager. Newest first. Each day is split by deployment time so you can tell what shipped together.
 
+## 2026-06-15
+
+### 12:43 PM
+
+- **Fixed the kiosk silently rejecting clock-outs — and corrected Saturday's 8 missed punch-outs.** On Sat 6/13 the whole Saturday crew showed up as "missed punch out" and reported the kiosk wouldn't let them clock out. Investigation (read-only diagnostic against prod) found they all worked their full shift, were clocked in via auto-lunch's afternoon record, yet **not one clock-out tap reached the server** — every Sat 6/13 punch log shows the morning clock-in + auto-lunch out/in but **zero employee clock-outs**, while the prior Saturday (6/6) and weekdays 6/11–12 all clocked out normally. The kiosk's punch tokens are signed with `KIOSK_SESSION_SECRET`, which **was never set in production**, so the app minted a fresh signing secret on **every process restart** — silently invalidating all outstanding kiosk tokens — and a rejected token just **redirected to the name list with no message** (a 60s token TTL on top). The combination turns any restart/instability window into "nobody can clock out," invisibly. **Fixes shipped:** (1) `KIOSK_SESSION_SECRET` is now set in prod, so restarts no longer invalidate tokens; (2) a rejected kiosk token is now **logged** (it was previously invisible, which masked this incident) and the employee sees a **"Your session timed out — tap your name again"** banner instead of a dead-silent bounce. **Also corrected the 8 Saturday records** to the real punch-out times (most 12:00; Lauro 11:40 AM; Juan 1:00 PM), clearing the inflated midnight-to-midnight hours and resolving every missed-punch flag. Still queued (pending review): raising the 60s token TTL, and capping the midnight auto-close at scheduled shift end so a genuinely-forgotten punch closes at shift end, not midnight.
+
 ## 2026-06-10
 
 ### 12:25 PM
