@@ -53,6 +53,22 @@ def test_check_in_label_includes_date_in_site_local():
     assert label == "1:00 PM Mon Jun 8"
 
 
+def test_names_for_skips_bad_ids(monkeypatch):
+    from zira_dashboard import db
+
+    captured = []
+    monkeypatch.setattr(
+        db,
+        "query",
+        lambda _sql, params=None: captured.append(params[0]) or [
+            {"odoo_id": 10, "name": "Ana"},
+        ],
+    )
+
+    assert mpo._names_for(["bad", None, "10", 10]) == {10: "Ana"}
+    assert captured == [[10]]
+
+
 def test_run_close_closes_only_prior_day_and_records(monkeypatch):
     today = date(2026, 6, 9)
     monkeypatch.setattr(odoo_client, "fetch_open_attendances", lambda: [
@@ -62,8 +78,9 @@ def test_run_close_closes_only_prior_day_and_records(monkeypatch):
     closed, recorded = [], []
     monkeypatch.setattr(odoo_client, "clock_out",
                         lambda att, ts, **kw: closed.append((att, ts)))
+    monkeypatch.setattr(mpo, "_names_for", lambda _ids: {})
     monkeypatch.setattr(mpo, "record_close",
-                        lambda att, emp, ci, mid: recorded.append((att, emp, mid)))
+                        lambda att, emp, ci, mid, name=None: recorded.append((att, emp, mid)))
 
     n = mpo.run_close(today)
 
@@ -79,7 +96,8 @@ def test_run_close_noop_when_all_today(monkeypatch):
     ])
     monkeypatch.setattr(odoo_client, "clock_out",
                         lambda att, ts, **kw: (_ for _ in ()).throw(AssertionError("should not close")))
-    monkeypatch.setattr(mpo, "record_close", lambda *a: None)
+    monkeypatch.setattr(mpo, "_names_for", lambda _ids: {})
+    monkeypatch.setattr(mpo, "record_close", lambda *a, **kw: None)
     assert mpo.run_close(today) == 0
 
 
@@ -98,8 +116,9 @@ def test_run_close_isolates_per_record_failure(monkeypatch):
 
     flagged = []
     monkeypatch.setattr(odoo_client, "clock_out", _clock_out)
+    monkeypatch.setattr(mpo, "_names_for", lambda _ids: {})
     monkeypatch.setattr(mpo, "record_close",
-                        lambda att, emp, ci, mid: flagged.append(att))
+                        lambda att, emp, ci, mid, name=None: flagged.append(att))
 
     n = mpo.run_close(today)
 
@@ -117,11 +136,61 @@ def test_run_close_marks_odoo_checkout_as_automatic(monkeypatch):
         odoo_client, "clock_out",
         lambda att, ts, **kw: calls.append((att, ts, kw)),
     )
-    monkeypatch.setattr(mpo, "record_close", lambda *a: None)
+    monkeypatch.setattr(mpo, "_names_for", lambda _ids: {})
+    monkeypatch.setattr(mpo, "record_close", lambda *a, **kw: None)
 
     assert mpo.run_close(today) == 1
 
     assert calls and calls[0][2] == {"mode": "auto_check_out"}
+
+
+def test_run_close_prefetches_names_once(monkeypatch):
+    today = date(2026, 6, 9)
+    monkeypatch.setattr(odoo_client, "fetch_open_attendances", lambda: [
+        {"att_id": 1, "employee_odoo_id": 10, "check_in": _iso(2026, 6, 7, 18, 0)},
+        {"att_id": 2, "employee_odoo_id": 20, "check_in": _iso(2026, 6, 8, 18, 0)},
+    ])
+    monkeypatch.setattr(odoo_client, "clock_out", lambda *a, **kw: None)
+    name_calls = []
+
+    def fake_names(ids):
+        seen = list(ids)
+        name_calls.append(seen)
+        return {10: "Ana", 20: "Ben"}
+
+    recorded = []
+    monkeypatch.setattr(mpo, "_names_for", fake_names)
+    monkeypatch.setattr(
+        mpo,
+        "record_close",
+        lambda att, emp, ci, mid, name=None: recorded.append((att, emp, name)),
+    )
+
+    assert mpo.run_close(today) == 2
+
+    assert name_calls == [[10, 20]]
+    assert recorded == [(1, 10, "Ana"), (2, 20, "Ben")]
+
+
+def test_run_close_continues_if_name_prefetch_fails(monkeypatch):
+    today = date(2026, 6, 9)
+    monkeypatch.setattr(odoo_client, "fetch_open_attendances", lambda: [
+        {"att_id": 1, "employee_odoo_id": 10, "check_in": _iso(2026, 6, 8, 18, 0)},
+    ])
+    closed = []
+    recorded = []
+    monkeypatch.setattr(odoo_client, "clock_out", lambda att, ts, **kw: closed.append(att))
+    monkeypatch.setattr(mpo, "_names_for", lambda _ids: (_ for _ in ()).throw(RuntimeError("db boom")))
+    monkeypatch.setattr(
+        mpo,
+        "record_close",
+        lambda att, emp, ci, mid, name=None: recorded.append((att, name)),
+    )
+
+    assert mpo.run_close(today) == 1
+
+    assert closed == [1]
+    assert recorded == [(1, None)]
 
 
 def test_tick_calls_run_close_with_site_local_today(monkeypatch):

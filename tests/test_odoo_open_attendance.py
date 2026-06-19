@@ -5,7 +5,7 @@ cache writer are stubbed, so no Odoo and no Postgres are needed.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from zira_dashboard import odoo_client
@@ -209,3 +209,96 @@ def test_refresh_swallows_errors(monkeypatch):
     # Must not raise — the warmer relies on this.
     live_cache.refresh_odoo_open_attendance()
     assert wrote == []  # nothing written on failure
+
+
+def test_transfer_uses_fresh_open_attendance_cache_positive_hit(monkeypatch):
+    from zira_dashboard import live_cache
+
+    ts = datetime(2026, 6, 16, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        live_cache,
+        "read_open_attendance",
+        lambda: (
+            {"5": {"att_id": 88, "check_in": "2026-06-16T12:00:00+00:00"}},
+            datetime.now(timezone.utc),
+        ),
+    )
+    monkeypatch.setattr(
+        odoo_client,
+        "get_current_attendance",
+        lambda eid: (_ for _ in ()).throw(AssertionError("live lookup not needed")),
+    )
+    calls = []
+    monkeypatch.setattr(
+        odoo_client,
+        "clock_out",
+        lambda att_id, at: calls.append(("out", att_id, at)),
+    )
+    monkeypatch.setattr(
+        odoo_client,
+        "clock_in",
+        lambda eid, wc, at: calls.append(("in", eid, wc, at)) or 99,
+    )
+
+    closed_id, new_id = odoo_client.transfer(5, "Repair 1", ts)
+
+    assert (closed_id, new_id) == (88, 99)
+    assert calls == [
+        ("out", 88, ts),
+        ("in", 5, "Repair 1", ts),
+    ]
+
+
+def test_transfer_falls_back_when_open_attendance_cache_misses_employee(monkeypatch):
+    from zira_dashboard import live_cache
+
+    ts = datetime(2026, 6, 16, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        live_cache,
+        "read_open_attendance",
+        lambda: ({}, datetime.now(timezone.utc)),
+    )
+    live_calls = []
+    monkeypatch.setattr(
+        odoo_client,
+        "get_current_attendance",
+        lambda eid: live_calls.append(eid) or {"id": 77},
+    )
+    monkeypatch.setattr(odoo_client, "clock_out", lambda att_id, at: None)
+    monkeypatch.setattr(odoo_client, "clock_in", lambda eid, wc, at: 100)
+
+    closed_id, new_id = odoo_client.transfer(5, "Repair 1", ts)
+
+    assert live_calls == [5]
+    assert (closed_id, new_id) == (77, 100)
+
+
+def test_transfer_falls_back_when_open_attendance_cache_is_stale(monkeypatch):
+    from zira_dashboard import live_cache
+
+    ts = datetime(2026, 6, 16, 16, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        live_cache,
+        "read_open_attendance",
+        lambda: (
+            {"5": {"att_id": 88, "check_in": "2026-06-16T12:00:00+00:00"}},
+            datetime.now(timezone.utc) - timedelta(minutes=10),
+        ),
+    )
+    live_calls = []
+    monkeypatch.setattr(
+        odoo_client,
+        "get_current_attendance",
+        lambda eid: live_calls.append(eid) or None,
+    )
+    monkeypatch.setattr(
+        odoo_client,
+        "clock_out",
+        lambda att_id, at: (_ for _ in ()).throw(AssertionError("nothing to close")),
+    )
+    monkeypatch.setattr(odoo_client, "clock_in", lambda eid, wc, at: 101)
+
+    closed_id, new_id = odoo_client.transfer(5, "Repair 1", ts)
+
+    assert live_calls == [5]
+    assert (closed_id, new_id) == (None, 101)

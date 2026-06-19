@@ -786,19 +786,58 @@ def clock_out(attendance_id: int, ts: datetime, *, mode: str = "kiosk") -> None:
 
 
 def transfer(
-    employee_odoo_id: int, new_wc_name: str | None, ts: datetime
+    employee_odoo_id: int,
+    new_wc_name: str | None,
+    ts: datetime,
+    current: dict | None = None,
 ) -> tuple[int | None, int]:
     """Close the employee's current open hr.attendance and open a new one
     at the new WC. Returns (closed_id, new_id). If the employee has no
     open attendance, closed_id is None — the new one is still opened so
-    the kiosk fails gracefully when local state and Odoo state disagree."""
-    current = get_current_attendance(employee_odoo_id)
+    the kiosk fails gracefully when local state and Odoo state disagree.
+
+    Callers that just fetched the live current row may pass it as ``current``
+    to avoid a second XML-RPC lookup and guarantee the same row is closed."""
+    if current is None:
+        current = (
+            _cached_current_attendance_for_transfer(employee_odoo_id)
+            or get_current_attendance(employee_odoo_id)
+        )
     closed_id: int | None = None
     if current:
         clock_out(current["id"], ts)
         closed_id = current["id"]
     new_id = clock_in(employee_odoo_id, new_wc_name, ts)
     return closed_id, new_id
+
+
+def _cached_current_attendance_for_transfer(employee_odoo_id: int) -> dict | None:
+    """Return a fresh positive open-attendance cache hit for transfer().
+
+    We only trust positive hits from the warmer snapshot. A missing employee
+    can be a normal warmer lag immediately after a kiosk clock-in, so transfer
+    falls back to the live Odoo lookup for misses, stale rows, and cache errors.
+    """
+    try:
+        from . import live_cache
+        snapshot, refreshed_at = live_cache.read_open_attendance()
+        if snapshot is None or live_cache.is_stale(refreshed_at):
+            return None
+        row = snapshot.get(str(employee_odoo_id))
+        if not row:
+            return None
+        att_id = row.get("att_id")
+        if not att_id:
+            return None
+        return {
+            "id": int(att_id),
+            "employee_id": employee_odoo_id,
+            "check_in": row.get("check_in"),
+            "department_id": None,
+            "department_name": None,
+        }
+    except Exception:
+        return None
 
 
 def undo_transfer(closed_id: int | None, new_id: int) -> None:

@@ -65,27 +65,51 @@ def refresh_for_employee(person_odoo_id: int) -> int:
 def _upsert_balances(person_odoo_id: int, balances: list[dict]) -> int:
     """Upsert one employee's balance rows into the cache table.
     Returns the count of rows written."""
-    count = 0
-    for b in balances:
-        db.execute(
-            "INSERT INTO time_off_balances "
-            "(person_odoo_id, holiday_status_id, unit, allocated_total, "
-            "taken, pending, available, available_practical, last_pulled_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now()) "
-            "ON CONFLICT (person_odoo_id, holiday_status_id) DO UPDATE SET "
-            "unit = EXCLUDED.unit, "
-            "allocated_total = EXCLUDED.allocated_total, "
-            "taken = EXCLUDED.taken, "
-            "pending = EXCLUDED.pending, "
-            "available = EXCLUDED.available, "
-            "available_practical = EXCLUDED.available_practical, "
-            "last_pulled_at = now()",
-            (person_odoo_id, b["holiday_status_id"], b["unit"],
-             b["allocated_total"], b["taken"], b["pending"],
-             b["available"], b["available_practical"]),
+    return _upsert_balance_rows(_balance_rows(person_odoo_id, balances))
+
+
+def _balance_rows(person_odoo_id: int, balances: list[dict]) -> list[tuple]:
+    return [
+        (
+            person_odoo_id,
+            b["holiday_status_id"],
+            b["unit"],
+            b["allocated_total"],
+            b["taken"],
+            b["pending"],
+            b["available"],
+            b["available_practical"],
         )
-        count += 1
-    return count
+        for b in balances
+    ]
+
+
+def _upsert_balance_rows(rows: list[tuple]) -> int:
+    """Bulk-upsert already flattened balance rows."""
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO time_off_balances (
+            person_odoo_id, holiday_status_id, unit, allocated_total,
+            taken, pending, available, available_practical, last_pulled_at
+        ) VALUES %s
+        ON CONFLICT (person_odoo_id, holiday_status_id) DO UPDATE SET
+            unit = EXCLUDED.unit,
+            allocated_total = EXCLUDED.allocated_total,
+            taken = EXCLUDED.taken,
+            pending = EXCLUDED.pending,
+            available = EXCLUDED.available,
+            available_practical = EXCLUDED.available_practical,
+            last_pulled_at = now()
+    """
+    with db.cursor() as cur:
+        db.execute_values(
+            cur,
+            sql,
+            rows,
+            template="(%s, %s, %s, %s, %s, %s, %s, %s, now())",
+        )
+    return len(rows)
 
 
 def invalidate(person_odoo_id: int) -> None:
@@ -110,12 +134,12 @@ def refresh_stale(older_than_seconds: int = _STALE_THRESHOLD_SECONDS) -> int:
     refreshed across all stale employees. Swallows Odoo errors like
     ``refresh_for_employee`` — the sweep retries in 10 minutes.
     """
-    rows = db.query(
+    stale_rows = db.query(
         "SELECT DISTINCT person_odoo_id FROM time_off_balances "
         "WHERE last_pulled_at < now() - (%s || ' seconds')::interval",
         (str(older_than_seconds),),
     )
-    ids = [r["person_odoo_id"] for r in rows]
+    ids = [r["person_odoo_id"] for r in stale_rows]
     if not ids:
         return 0
     try:
@@ -126,8 +150,11 @@ def refresh_stale(older_than_seconds: int = _STALE_THRESHOLD_SECONDS) -> int:
         )
         return 0
     refreshed = 0
+    rows: list[tuple] = []
     for person_odoo_id, balances in by_emp.items():
-        refreshed += _upsert_balances(person_odoo_id, balances)
+        refreshed += len(balances)
+        rows.extend(_balance_rows(person_odoo_id, balances))
+    _upsert_balance_rows(rows)
     return refreshed
 
 

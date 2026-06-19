@@ -45,13 +45,14 @@ def test_no_op_when_already_in_dept(roster, monkeypatch):
 
 def test_transfers_when_dept_differs(roster, monkeypatch):
     monkeypatch.setattr(odoo_client, "_department_id_for_wc", lambda wc: 9)
-    monkeypatch.setattr(odoo_client, "get_current_attendance", lambda eid: {
+    current = {
         "id": 1, "check_in": "2026-06-02 12:00:00",
         "department_id": 3, "department_name": "01 Recycled",
-    })
+    }
+    monkeypatch.setattr(odoo_client, "get_current_attendance", lambda eid: current)
     captured = {}
-    def fake_transfer(eid, wc, ts):
-        captured.update(eid=eid, wc=wc, ts=ts)
+    def fake_transfer(eid, wc, ts, current=None):
+        captured.update(eid=eid, wc=wc, ts=ts, current=current)
         return (100, 200)
     monkeypatch.setattr(odoo_client, "transfer", fake_transfer)
 
@@ -62,6 +63,7 @@ def test_transfers_when_dept_differs(roster, monkeypatch):
     assert out["from_dept"] == "01 Recycled"
     assert out["to_dept"] == "New"  # Junior #2's Location.department
     assert captured["ts"] == WIN_START
+    assert captured["current"] is current
 
 
 def test_transfer_ts_clamps_to_checkin(roster, monkeypatch):
@@ -71,8 +73,11 @@ def test_transfer_ts_clamps_to_checkin(roster, monkeypatch):
         "department_id": 3, "department_name": "01 Recycled",
     })
     captured = {}
-    monkeypatch.setattr(odoo_client, "transfer",
-                        lambda eid, wc, ts: captured.update(ts=ts) or (1, 2))
+    monkeypatch.setattr(
+        odoo_client,
+        "transfer",
+        lambda eid, wc, ts, current=None: captured.update(ts=ts) or (1, 2),
+    )
     staffing_transfer.decide_and_apply("Lauro", "Junior #2", WIN_START)
     assert captured["ts"] == datetime(2026, 6, 2, 14, 0, tzinfo=timezone.utc)
 
@@ -98,8 +103,11 @@ def test_transfers_when_current_dept_unknown(roster, monkeypatch):
         "department_id": None, "department_name": None,
     })
     captured = {}
-    monkeypatch.setattr(odoo_client, "transfer",
-                        lambda eid, wc, ts: captured.update(called=True) or (1, 2))
+    monkeypatch.setattr(
+        odoo_client,
+        "transfer",
+        lambda eid, wc, ts, current=None: captured.update(called=True) or (1, 2),
+    )
     out = staffing_transfer.decide_and_apply("Lauro", "Junior #2", WIN_START)
     assert out["transfer"] == "moved"
     assert captured.get("called") is True
@@ -113,6 +121,6 @@ def test_transfers_when_wc_dept_unknown(roster, monkeypatch):
         "id": 1, "check_in": "2026-06-02 12:00:00",
         "department_id": 3, "department_name": "01 Recycled",
     })
-    monkeypatch.setattr(odoo_client, "transfer", lambda eid, wc, ts: (1, 2))
+    monkeypatch.setattr(odoo_client, "transfer", lambda eid, wc, ts, current=None: (1, 2))
     out = staffing_transfer.decide_and_apply("Lauro", "Junior #2", WIN_START)
     assert out["transfer"] == "moved"

@@ -16,15 +16,34 @@ from zira_dashboard import time_off_balances
 
 @pytest.fixture
 def fake_db(monkeypatch):
-    """Capture all ``db.execute`` calls and stub ``db.query`` to empty.
+    """Capture all DB writes and stub ``db.query`` to empty.
 
-    Tests assert against ``captured["executes"]`` to verify which SQL ran
+    Tests assert against ``captured`` to verify which SQL path ran
     and with what params.
     """
-    captured: dict = {"executes": []}
+    captured: dict = {"executes": [], "execute_values": []}
+
+    class FakeCursor:
+        pass
+
+    class FakeCursorContext:
+        def __enter__(self):
+            return FakeCursor()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
     monkeypatch.setattr(
         time_off_balances.db, "execute",
         lambda sql, params=None: captured["executes"].append((sql, params)),
+    )
+    monkeypatch.setattr(time_off_balances.db, "cursor", lambda: FakeCursorContext())
+    monkeypatch.setattr(
+        time_off_balances.db,
+        "execute_values",
+        lambda cur, sql, rows, template=None: captured["execute_values"].append(
+            (sql, list(rows), template)
+        ),
     )
     monkeypatch.setattr(
         time_off_balances.db, "query",
@@ -34,7 +53,7 @@ def fake_db(monkeypatch):
 
 
 def test_refresh_for_employee_upserts_each_balance(monkeypatch, fake_db):
-    """One INSERT … ON CONFLICT DO UPDATE per balance row from Odoo."""
+    """One bulk INSERT … ON CONFLICT DO UPDATE for balance rows from Odoo."""
     monkeypatch.setattr(
         time_off_balances.odoo_client, "fetch_balances_for",
         MagicMock(return_value=[
@@ -47,12 +66,15 @@ def test_refresh_for_employee_upserts_each_balance(monkeypatch, fake_db):
         ]),
     )
     time_off_balances.refresh_for_employee(5)
-    upserts = [
-        e for e in fake_db["executes"]
-        if "INSERT INTO time_off_balances" in e[0]
-        or "UPDATE time_off_balances" in e[0]
+    assert len(fake_db["execute_values"]) == 1
+    sql, rows, template = fake_db["execute_values"][0]
+    assert "INSERT INTO time_off_balances" in sql
+    assert "ON CONFLICT (person_odoo_id, holiday_status_id)" in sql
+    assert template.endswith("now())")
+    assert rows == [
+        (5, 1, "days", 15.0, 3.0, 2.0, 12.0, 10.0),
+        (5, 2, "hours", 0.0, 0.0, 0.0, 0.0, 0.0),
     ]
-    assert len(upserts) >= 2  # one per balance
 
 
 def test_refresh_for_employee_swallows_odoo_errors(monkeypatch, fake_db):
@@ -77,8 +99,8 @@ def test_invalidate_one(monkeypatch, fake_db):
 
 def test_refresh_stale_batches_all_employees_into_one_fetch(monkeypatch, fake_db):
     """The 10-min sweep fetches ALL stale employees via one
-    fetch_balances_for_many call (2 XML-RPC round-trips total) and reuses
-    the per-row upsert for each."""
+    fetch_balances_for_many call (2 XML-RPC round-trips total) and writes
+    all returned balance rows in one bulk upsert."""
     monkeypatch.setattr(
         time_off_balances.db, "query",
         lambda sql, params=None: [{"person_odoo_id": 5},
@@ -102,9 +124,12 @@ def test_refresh_stale_batches_all_employees_into_one_fetch(monkeypatch, fake_db
     refreshed = time_off_balances.refresh_stale(600)
     assert fetch_calls == [[5, 9]]  # ONE batched fetch for both employees
     assert refreshed == 2
-    upserts = [e for e in fake_db["executes"]
-               if "INSERT INTO time_off_balances" in e[0]]
-    assert len(upserts) == 2
+    assert len(fake_db["execute_values"]) == 1
+    _sql, rows, _template = fake_db["execute_values"][0]
+    assert rows == [
+        (5, 1, "days", 15.0, 3.0, 0.0, 12.0, 12.0),
+        (9, 1, "days", 0.0, 0.0, 0.0, 0.0, 0.0),
+    ]
 
 
 def test_refresh_stale_swallows_odoo_errors(monkeypatch, fake_db):

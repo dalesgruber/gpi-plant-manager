@@ -83,6 +83,13 @@ def resolved_ids() -> set[int]:
                 "WHERE resolved_at > now() - interval '15 days'")}
 
 
+def _as_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _check_in_label(check_in_iso) -> str:
     """ISO UTC string -> 'H:MM AM/PM Ddd' in site-local time, '' on bad input."""
     if not check_in_iso:
@@ -104,10 +111,13 @@ def shape_rows(cached: list[dict], people_by_odoo_id: dict, resolved: set) -> li
     One row per attendance record (each needs its own work center)."""
     out: list[dict] = []
     for r in cached:
-        att_id = r.get("att_id")
+        att_id = _as_int(r.get("att_id"))
+        if att_id is None:
+            continue
         if att_id in resolved:
             continue
-        p = people_by_odoo_id.get(r.get("employee_odoo_id"))
+        employee_odoo_id = _as_int(r.get("employee_odoo_id"))
+        p = people_by_odoo_id.get(employee_odoo_id)
         if not p or p.get("wage_type") != "hourly":
             continue
         if not p.get("active") or p.get("excluded"):
@@ -115,7 +125,7 @@ def shape_rows(cached: list[dict], people_by_odoo_id: dict, resolved: set) -> li
         out.append({
             "attendance_id": att_id,
             "name": p.get("name") or r.get("employee_name") or "Unknown",
-            "employee_odoo_id": r.get("employee_odoo_id"),
+            "employee_odoo_id": employee_odoo_id,
             "check_in": r.get("check_in"),
             "check_in_label": _check_in_label(r.get("check_in")),
         })

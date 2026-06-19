@@ -40,6 +40,16 @@ def test_shape_sorts_newest_first():
     assert [r["attendance_id"] for r in rows] == [2, 1]
 
 
+def test_shape_normalizes_json_string_ids():
+    cached = [
+        {"att_id": "1", "employee_odoo_id": "7", "employee_name": "M", "check_in": "2026-06-01T06:00:00+00:00"},
+        {"att_id": "2", "employee_odoo_id": "7", "employee_name": "M", "check_in": "2026-06-02T06:00:00+00:00"},
+    ]
+    rows = missing_wc.shape_rows(cached, _people(), resolved={2})
+    assert [r["attendance_id"] for r in rows] == [1]
+    assert rows[0]["employee_odoo_id"] == 7
+
+
 # ---- DB-backed cache/resolve ----
 
 pg = pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")

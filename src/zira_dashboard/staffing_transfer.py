@@ -14,10 +14,7 @@ def _wc_department_label(wc_name: str) -> str | None:
     """The human department label for a WC (e.g. 'New'), from staffing
     LOCATIONS. None if the WC is unknown."""
     from . import staffing
-    for loc in staffing.LOCATIONS:
-        if loc.name == wc_name:
-            return loc.department
-    return None
+    return staffing.department_for_wc(wc_name)
 
 
 def _employee_id_for(person_name: str) -> int | None:
@@ -76,7 +73,9 @@ def decide_and_apply(
         return {"transfer": "already_in_dept", "person": person_name,
                 "to_dept": to_dept}
 
-    closed_id, new_id = odoo_client.transfer(emp_id, wc_name, transfer_ts)
+    closed_id, new_id = odoo_client.transfer(
+        emp_id, wc_name, transfer_ts, current=current
+    )
     return {"transfer": "moved", "person": person_name,
             "closed_id": closed_id, "new_id": new_id,
             "from_dept": current.get("department_name"), "to_dept": to_dept}

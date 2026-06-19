@@ -68,17 +68,41 @@ def _check_in_label(value) -> str:
     return local.strftime(fmt)
 
 
-def _name_for(employee_odoo_id) -> str:
-    """Person's name from `people`, or '#<odoo_id>' when not mapped."""
+def _as_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _names_for(employee_odoo_ids) -> dict[int, str]:
+    ids = sorted({
+        employee_id
+        for eid in employee_odoo_ids
+        if (employee_id := _as_int(eid)) is not None
+    })
+    if not ids:
+        return {}
     from . import db
     rows = db.query(
-        "SELECT name FROM people WHERE odoo_id = %s", (int(employee_odoo_id),))
-    if rows and rows[0].get("name"):
-        return rows[0]["name"]
+        "SELECT odoo_id, name FROM people WHERE odoo_id = ANY(%s)",
+        (ids,),
+    )
+    return {int(r["odoo_id"]): r["name"] for r in rows if r.get("name")}
+
+
+def _name_for(employee_odoo_id) -> str:
+    """Person's name from `people`, or '#<odoo_id>' when not mapped."""
+    names = _names_for([employee_odoo_id])
+    if names:
+        employee_id = _as_int(employee_odoo_id)
+        if employee_id is not None:
+            return names[employee_id]
     return f"#{employee_odoo_id}"
 
 
-def record_close(attendance_id, employee_odoo_id, check_in, auto_closed_at) -> None:
+def record_close(attendance_id, employee_odoo_id, check_in, auto_closed_at,
+                 name: str | None = None) -> None:
     """Flag an attendance auto-closed at midnight. Idempotent (PK conflict ->
     no-op), so re-running the warmer never duplicates a row. `check_in` may be
     an ISO string or datetime; `auto_closed_at` is the midnight datetime."""
@@ -89,7 +113,7 @@ def record_close(attendance_id, employee_odoo_id, check_in, auto_closed_at) -> N
         "VALUES (%s, %s, %s, %s, %s) "
         "ON CONFLICT (attendance_id) DO NOTHING",
         (int(attendance_id), int(employee_odoo_id),
-         _name_for(employee_odoo_id), check_in, auto_closed_at),
+         name or _name_for(employee_odoo_id), check_in, auto_closed_at),
     )
 
 
@@ -148,12 +172,19 @@ def run_close(today) -> int:
     from . import odoo_client
     open_rows = odoo_client.fetch_open_attendances()
     closures = overdue_closures(open_rows, today)
+    try:
+        names = _names_for(c["employee_odoo_id"] for c in closures)
+    except Exception as e:  # noqa: BLE001 -- name prefetch must not abort closes
+        _log.warning("missed-punch name prefetch failed: %s", e)
+        names = {}
     n = 0
     for c in closures:
         try:
             odoo_client.clock_out(c["att_id"], c["midnight"], mode="auto_check_out")
+            employee_id = _as_int(c.get("employee_odoo_id"))
             record_close(c["att_id"], c["employee_odoo_id"],
-                         c["check_in"], c["midnight"])
+                         c["check_in"], c["midnight"],
+                         name=names.get(employee_id) if employee_id is not None else None)
             n += 1
         except Exception as e:  # noqa: BLE001 — one record never kills the sweep
             _log.warning("missed-punch close failed for att %s: %s",

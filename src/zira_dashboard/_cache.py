@@ -42,6 +42,7 @@ class TTLCache:
                     return value
         # Compute outside the lock so concurrent misses don't serialize.
         value = compute()
+        now = time.monotonic()
         with self._lock:
             self._store[key] = (now, value)
             # Evict oldest if over capacity.
@@ -60,6 +61,7 @@ class TTLCache:
                 return None
             ts, value = entry
             if now - ts >= self._ttl:
+                self._store.pop(key, None)
                 return None
             # Move to end (most-recently-used).
             self._store.pop(key, None)
