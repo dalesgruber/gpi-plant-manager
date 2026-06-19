@@ -336,17 +336,27 @@ def test_create_handoff_json_parses_false_string(monkeypatch):
     assert captured["follow_up_required"] is False
 
 
+def test_handoff_summary_api_counts_open_followups(monkeypatch):
+    monkeypatch.setattr(handoff, "_open_followup_count", lambda: 2)
+    client = TestClient(app)
+
+    resp = client.get("/api/handoff/summary")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"open_followups": 2}
+
+
 def test_footer_injects_handoff_nav_link():
     from pathlib import Path
 
-    js = (
-        Path(__file__).resolve().parents[1]
-        / "src"
-        / "zira_dashboard"
-        / "static"
-        / "footer.js"
-    ).read_text(encoding="utf-8")
+    static_dir = Path(__file__).resolve().parents[1] / "src" / "zira_dashboard" / "static"
+    js = (static_dir / "footer.js").read_text(encoding="utf-8")
+    css = (static_dir / "footer.css").read_text(encoding="utf-8")
 
     assert "function ensureHandoffLink()" in js
     assert "href = '/handoff'" in js
-    assert "ensureHandoffLink();" in js
+    assert "/api/handoff/summary" in js
+    assert "startHandoffSummary(ensureHandoffLink())" in js
+    assert "handoff-nav-count" in js
+    assert ".handoff-nav-count" in css
+    assert ".handoff-nav-link.has-open .handoff-nav-count" in css

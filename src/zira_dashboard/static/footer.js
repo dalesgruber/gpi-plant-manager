@@ -132,12 +132,16 @@
     var anchor = settingsLink();
     if (!anchor || !anchor.parentNode) return;
     var existing = anchor.parentNode.querySelector('a[href="/handoff"]');
-    if (existing) return existing;
+    if (existing) {
+      existing.classList.add('handoff-nav-link');
+      return existing;
+    }
     var link = document.createElement('a');
     link.href = '/handoff';
     link.textContent = 'Handoff';
+    link.className = 'handoff-nav-link';
     if (window.location && window.location.pathname === '/handoff') {
-      link.className = 'active';
+      link.classList.add('active');
     }
     anchor.parentNode.insertBefore(link, anchor);
     return link;
@@ -202,6 +206,62 @@
     }, 60000);
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) refreshInboxSummary(link);
+    });
+  }
+
+  function ensureHandoffLabel(link) {
+    if (!link) return null;
+    var label = link.querySelector('.handoff-nav-label');
+    if (!label) {
+      link.textContent = '';
+      label = document.createElement('span');
+      label.className = 'handoff-nav-label';
+      label.textContent = 'Handoff';
+      link.appendChild(label);
+    }
+    return label;
+  }
+
+  function ensureHandoffCount(link) {
+    ensureHandoffLabel(link);
+    var count = link.querySelector('.handoff-nav-count');
+    if (!count) {
+      count = document.createElement('span');
+      count.className = 'handoff-nav-count';
+      count.hidden = true;
+      link.appendChild(count);
+    }
+    return count;
+  }
+
+  function updateHandoffSummaryLink(link, data) {
+    if (!link || !data) return;
+    var open = parseInt(data.open_followups || 0, 10) || 0;
+    var count = ensureHandoffCount(link);
+    link.classList.toggle('has-open', open > 0);
+    count.hidden = open <= 0;
+    count.textContent = open > 99 ? '99+' : String(open);
+    link.title = open > 0
+      ? 'Shift Handoff: ' + open + ' open follow-up' + (open === 1 ? '' : 's')
+      : 'Shift Handoff: no open follow-ups';
+  }
+
+  function refreshHandoffSummary(link) {
+    if (!link) return;
+    window.gpiFetch('/api/handoff/summary').then(function (r) { return r.json(); }).then(function (d) {
+      updateHandoffSummaryLink(link, d);
+    }).catch(function () {});
+  }
+
+  function startHandoffSummary(link) {
+    if (!link) return;
+    window.gpiRefreshHandoffSummary = function () { refreshHandoffSummary(link); };
+    setTimeout(function () { refreshHandoffSummary(link); }, 900);
+    setInterval(function () {
+      if (!document.hidden) refreshHandoffSummary(link);
+    }, 60000);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) refreshHandoffSummary(link);
     });
   }
 
@@ -321,7 +381,7 @@
   }
 
   startInboxSummary(ensureInboxLink());
-  ensureHandoffLink();
+  startHandoffSummary(ensureHandoffLink());
   window.gpiAlertBadges = window.gpiAlertBadges || {};
 
   // ---------- "Assignments to Do" ----------

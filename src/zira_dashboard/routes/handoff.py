@@ -105,6 +105,16 @@ def _open_followups(limit: int = 6) -> list[dict]:
     return [_shape_handoff_row(row) for row in rows]
 
 
+def _open_followup_count() -> int:
+    from .. import db
+
+    rows = db.query(
+        "SELECT COUNT(*) AS count FROM plant_shift_handoffs "
+        "WHERE follow_up_required = TRUE AND resolved_at IS NULL"
+    )
+    return int((rows[0] if rows else {}).get("count") or 0)
+
+
 def _load_handoff(handoff_id: int) -> dict | None:
     from .. import db
 
@@ -252,6 +262,11 @@ async def create_handoff_json(request: Request):
         follow_up_required=_as_bool(body.get("follow_up_required")),
     )
     return JSONResponse({"ok": True, "id": row["id"]})
+
+
+@router.get("/api/handoff/summary")
+def handoff_summary_json():
+    return JSONResponse({"open_followups": _open_followup_count()})
 
 
 @router.post("/api/handoff/{handoff_id}/resolve")
