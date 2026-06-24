@@ -18,6 +18,7 @@ Never log or echo these values.
 
 from __future__ import annotations
 
+import base64
 import os
 import threading
 import time
@@ -1332,3 +1333,42 @@ def ensure_feedback_tag(name: str) -> int:
     if found:
         return found[0]["id"]
     return execute("project.tags", "create", {"name": name})
+
+
+def create_feedback_task(
+    project_id: int,
+    name: str,
+    description_html: str,
+    assignee_uid: int,
+    tag_id: int | None,
+    deadline: str,
+) -> int:
+    """Create a project.task. Tries Odoo 16/17 `user_ids` (m2m), falls back to
+    legacy `user_id` (m2o) if the field is rejected."""
+    base = {
+        "name": name,
+        "project_id": project_id,
+        "description": description_html,
+        "date_deadline": deadline,
+    }
+    if tag_id:
+        base["tag_ids"] = [(6, 0, [tag_id])]
+    try:
+        return execute("project.task", "create",
+                       dict(base, user_ids=[(6, 0, [assignee_uid])]))
+    except xmlrpc.client.Fault:
+        return execute("project.task", "create",
+                       dict(base, user_id=assignee_uid))
+
+
+def add_task_attachment(
+    task_id: int, filename: str, mimetype: str | None, raw_bytes: bytes
+) -> int:
+    """Attach a file to a project.task as an ir.attachment."""
+    return execute("ir.attachment", "create", {
+        "name": filename,
+        "datas": base64.b64encode(raw_bytes).decode("ascii"),
+        "res_model": "project.task",
+        "res_id": task_id,
+        "mimetype": mimetype or "application/octet-stream",
+    })

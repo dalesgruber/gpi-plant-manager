@@ -1,5 +1,7 @@
 """Unit tests for the Odoo feedback-task helpers (execute is stubbed)."""
 
+import xmlrpc.client
+
 from zira_dashboard import odoo_client
 
 
@@ -61,3 +63,68 @@ def test_ensure_feedback_tag_finds_then_creates(monkeypatch):
     assert calls[0][0:2] == ("project.tags", "search_read")
     assert calls[1][0:2] == ("project.tags", "create")
     assert calls[1][2][0]["name"] == "Bug"
+
+
+def test_create_feedback_task_uses_user_ids_and_tag_and_deadline(monkeypatch):
+    calls, responses = _stub(monkeypatch)
+    responses.append(900)  # create → task id
+
+    task_id = odoo_client.create_feedback_task(
+        project_id=7, name="[Bug] x", description_html="<p>x</p>",
+        assignee_uid=3, tag_id=55, deadline="2026-06-24",
+    )
+
+    assert task_id == 900
+    model, method, args, kwargs = calls[0]
+    assert (model, method) == ("project.task", "create")
+    vals = args[0]
+    assert vals["name"] == "[Bug] x"
+    assert vals["project_id"] == 7
+    assert vals["date_deadline"] == "2026-06-24"
+    assert vals["user_ids"] == [(6, 0, [3])]
+    assert vals["tag_ids"] == [(6, 0, [55])]
+
+
+def test_create_feedback_task_falls_back_to_user_id(monkeypatch):
+    calls = []
+    state = {"first": True}
+
+    def fake(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        if state["first"]:
+            state["first"] = False
+            raise xmlrpc.client.Fault(2, "Invalid field 'user_ids'")
+        return 901
+
+    monkeypatch.setattr(odoo_client, "execute", fake)
+    odoo_client._reset_cache_for_tests()
+
+    task_id = odoo_client.create_feedback_task(
+        project_id=7, name="x", description_html="x",
+        assignee_uid=3, tag_id=None, deadline="2026-06-24",
+    )
+
+    assert task_id == 901
+    assert "user_ids" in calls[0][2][0]
+    assert calls[1][2][0]["user_id"] == 3
+    assert "tag_ids" not in calls[1][2][0]
+
+
+def test_add_task_attachment_creates_ir_attachment(monkeypatch):
+    calls, responses = _stub(monkeypatch)
+    responses.append(500)
+
+    att_id = odoo_client.add_task_attachment(
+        task_id=900, filename="shot.png", mimetype="image/png", raw_bytes=b"abc",
+    )
+
+    assert att_id == 500
+    model, method, args, kwargs = calls[0]
+    assert (model, method) == ("ir.attachment", "create")
+    vals = args[0]
+    assert vals["name"] == "shot.png"
+    assert vals["res_model"] == "project.task"
+    assert vals["res_id"] == 900
+    assert vals["mimetype"] == "image/png"
+    import base64
+    assert base64.b64decode(vals["datas"]) == b"abc"
