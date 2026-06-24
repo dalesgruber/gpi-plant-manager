@@ -36,7 +36,10 @@
   </div>
 
   {% if saved %}
-  <div class="saved-banner">Handoff saved.</div>
+  <div class="saved-banner">
+    <span>Handoff saved.</span>
+    <a href="/handoff/{{ saved }}">View saved snapshot</a>
+  </div>
   {% endif %}
 
   {% if summary.get('source_errors') %}

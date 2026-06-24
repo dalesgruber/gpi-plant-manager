@@ -122,6 +122,20 @@ header.app nav a.active {
   background: var(--accent-dim);
   color: #166534;
 }
+.saved-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.saved-banner a {
+  color: #166534;
+  font-weight: 900;
+  text-decoration: none;
+}
+.saved-banner a:hover {
+  text-decoration: underline;
+}
 .source-warning {
   display: flex;
   gap: 0.45rem;

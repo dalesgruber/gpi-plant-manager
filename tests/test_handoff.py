@@ -86,6 +86,22 @@ def test_handoff_page_selects_default_shift(monkeypatch):
     assert '<option value="Evening" selected>' in resp.text
 
 
+def test_handoff_page_saved_banner_links_to_saved_handoff(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff.exception_inbox, "build_summary", _summary)
+    monkeypatch.setattr(handoff, "_open_followups", lambda: [])
+    monkeypatch.setattr(handoff, "_open_followup_count", lambda: 0)
+    monkeypatch.setattr(handoff, "_recent_handoffs", lambda: [])
+    client = TestClient(app)
+
+    resp = client.get("/handoff?saved=42")
+
+    assert resp.status_code == 200
+    assert "Handoff saved." in resp.text
+    assert 'href="/handoff/42"' in resp.text
+    assert "View saved snapshot" in resp.text
+
+
 def test_handoff_detail_renders_saved_snapshot(monkeypatch):
     monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
     monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
