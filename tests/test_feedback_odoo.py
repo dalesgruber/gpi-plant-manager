@@ -128,3 +128,31 @@ def test_add_task_attachment_creates_ir_attachment(monkeypatch):
     assert vals["mimetype"] == "image/png"
     import base64
     assert base64.b64decode(vals["datas"]) == b"abc"
+
+
+def test_fetch_task_stage_names_maps_id_to_name(monkeypatch):
+    calls, responses = _stub(monkeypatch)
+    responses.append([
+        {"id": 900, "stage_id": [3, "In Progress"]},
+        {"id": 901, "stage_id": [4, "Done"]},
+        {"id": 902, "stage_id": False},
+    ])
+
+    out = odoo_client.fetch_task_stage_names([900, 901, 902])
+
+    assert out == {900: "In Progress", 901: "Done", 902: None}
+    assert calls[0][0:2] == ("project.task", "read")
+
+
+def test_fetch_task_stage_names_empty_input_skips_call(monkeypatch):
+    calls, _ = _stub(monkeypatch)
+    assert odoo_client.fetch_task_stage_names([]) == {}
+    assert calls == []
+
+
+def test_feedback_status_bucket():
+    assert odoo_client.feedback_status_bucket("Done") == "done"
+    assert odoo_client.feedback_status_bucket("Rejected") == "rejected"
+    assert odoo_client.feedback_status_bucket("New") == "open"
+    assert odoo_client.feedback_status_bucket("In Progress") == "open"
+    assert odoo_client.feedback_status_bucket(None) == "open"

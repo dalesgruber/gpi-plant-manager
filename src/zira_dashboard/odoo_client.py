@@ -1372,3 +1372,25 @@ def add_task_attachment(
         "res_id": task_id,
         "mimetype": mimetype or "application/octet-stream",
     })
+
+
+def fetch_task_stage_names(task_ids) -> dict[int, str | None]:
+    """Return {task_id: stage name} for the given project.task ids."""
+    ids = [int(t) for t in task_ids if t]
+    if not ids:
+        return {}
+    rows = execute("project.task", "read", ids, fields=["id", "stage_id"]) or []
+    out: dict[int, str | None] = {}
+    for r in rows:
+        stage = r.get("stage_id")
+        out[r["id"]] = stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1 else None
+    return out
+
+
+def feedback_status_bucket(stage_name: str | None) -> str:
+    """Collapse an Odoo stage name to open / done / rejected."""
+    if stage_name == FEEDBACK_DONE_STAGE:
+        return "done"
+    if stage_name == FEEDBACK_REJECTED_STAGE:
+        return "rejected"
+    return "open"
