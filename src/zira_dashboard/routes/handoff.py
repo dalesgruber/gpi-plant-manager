@@ -239,6 +239,20 @@ def _resolve_handoff(*, handoff_id: int, resolved_by: str, resolution_note: str)
     return _shape_handoff_row(rows[0]) if rows else None
 
 
+def _update_handoff_notes(*, handoff_id: int, notes: str) -> dict | None:
+    from .. import db
+
+    rows = db.query(
+        "UPDATE plant_shift_handoffs SET notes = %s, updated_at = now() "
+        "WHERE id = %s "
+        "RETURNING id, handoff_date, shift_label, created_by, notes, open_total, "
+        "urgent_total, source_errors, exception_snapshot, follow_up_required, "
+        "resolved_at, resolved_by, resolution_note, created_at, updated_at",
+        ((notes or "").strip(), handoff_id),
+    )
+    return _shape_handoff_row(rows[0]) if rows else None
+
+
 @router.get("/handoff", response_class=HTMLResponse)
 def handoff_page(request: Request, saved: int | None = None):
     summary = exception_inbox.build_summary()
@@ -302,6 +316,17 @@ def create_handoff_form(
         follow_up_required=follow_up_required,
     )
     return RedirectResponse(url=f"/handoff?saved={row['id']}", status_code=303)
+
+
+@router.post("/handoff/{handoff_id}/notes")
+def update_handoff_notes_form(
+    handoff_id: int,
+    notes: str = Form(""),
+):
+    row = _update_handoff_notes(handoff_id=handoff_id, notes=notes)
+    if row is None:
+        raise HTTPException(status_code=404, detail="handoff not found")
+    return RedirectResponse(url=f"/handoff/{handoff_id}", status_code=303)
 
 
 @router.post("/handoff/{handoff_id}/resolve")

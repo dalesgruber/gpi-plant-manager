@@ -305,6 +305,25 @@ header.app nav a.active {
   padding: 0.9rem;
   white-space: pre-wrap;
 }
+.detail-notes-form {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem;
+}
+.detail-notes-form textarea {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.6rem;
+  resize: vertical;
+}
+.detail-notes-form .secondary-btn {
+  justify-self: start;
+}
 .followup-panel.open {
   border-color: #f4ca64;
 }

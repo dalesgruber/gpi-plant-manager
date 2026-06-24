@@ -64,11 +64,10 @@
       <h3>Notes</h3>
       <span>Saved with this handoff</span>
     </div>
-    {% if handoff.notes %}
-      <p class="detail-notes">{{ handoff.notes }}</p>
-    {% else %}
-      <p class="detail-notes empty-note">No notes entered.</p>
-    {% endif %}
+    <form method="post" action="/handoff/{{ handoff.id }}/notes" class="detail-notes-form">
+      <textarea name="notes" rows="5" placeholder="Staffing moves, blockers, unresolved exceptions, safety notes, maintenance follow-up">{{ handoff.notes }}</textarea>
+      <button type="submit" class="secondary-btn">Save Notes</button>
+    </form>
   </section>
 
   {% if handoff.is_open_followup %}

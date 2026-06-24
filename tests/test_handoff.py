@@ -92,6 +92,8 @@ def test_handoff_detail_renders_saved_snapshot(monkeypatch):
     assert "Repair 2 needs follow-up" in resp.text
     assert "Missing Work Center" in resp.text
     assert "Clocked in 7:05 AM" in resp.text
+    assert 'action="/handoff/7/notes"' in resp.text
+    assert "Save Notes" in resp.text
 
 
 def test_annotate_snapshot_sections_marks_current_status():
@@ -419,6 +421,61 @@ def test_resolve_handoff_form_redirects(monkeypatch):
     assert captured["handoff_id"] == 21
     assert captured["resolved_by"] == "Dale"
     assert captured["resolution_note"] == "Done"
+
+
+def test_update_handoff_notes_updates_notes(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{
+            "id": 21,
+            "handoff_date": date(2026, 6, 19),
+            "shift_label": "Night",
+            "created_by": "Mia",
+            "notes": "Updated note",
+            "open_total": 3,
+            "urgent_total": 1,
+            "source_errors": [],
+            "exception_snapshot": {},
+            "follow_up_required": True,
+            "resolved_at": None,
+            "resolved_by": "",
+            "resolution_note": "",
+            "created_at": datetime(2026, 6, 19, 22, 15, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 6, 20, 2, 30, tzinfo=timezone.utc),
+        }]
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    row = handoff._update_handoff_notes(handoff_id=21, notes="  Updated note  ")
+
+    assert row is not None
+    assert "UPDATE plant_shift_handoffs SET notes = %s, updated_at = now()" in captured["sql"]
+    assert captured["params"] == ("Updated note", 21)
+    assert row["notes"] == "Updated note"
+
+
+def test_update_handoff_notes_form_redirects(monkeypatch):
+    captured = {}
+
+    def fake_update(**kwargs):
+        captured.update(kwargs)
+        return {"id": 21}
+
+    monkeypatch.setattr(handoff, "_update_handoff_notes", fake_update)
+    client = TestClient(app)
+
+    resp = client.post(
+        "/handoff/21/notes",
+        data={"notes": "Updated note"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/handoff/21"
+    assert captured == {"handoff_id": 21, "notes": "Updated note"}
 
 
 def test_create_handoff_json_parses_false_string(monkeypatch):
