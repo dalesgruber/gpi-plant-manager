@@ -56,7 +56,7 @@
     <span style="font-size:0.8rem;color:var(--muted)">Fix by scheduling the minimum, or override below:</span>
     <button type="submit" name="action" value="publish" form="staffing-form" formnovalidate
             onclick="document.getElementById('publish-override').value='1'"
-            class="override-btn">Override &amp; Publish</button>
+            class="override-btn publish-submit" aria-busy="false">Override &amp; Publish</button>
     <input type="hidden" name="override" id="publish-override" value="0" form="staffing-form">
   </div>
 </div>
@@ -207,7 +207,7 @@
               <path fill="#E01E5A" d="M14 18a2 2 0 0 1 0-4h6a2 2 0 0 1 0 4z"/>
             </svg>
           </button>
-          <button type="submit" name="action" value="publish" class="publish-btn">{{ 'Re-publish' if published else 'Publish' }}</button>
+          <button type="submit" name="action" value="publish" class="publish-btn publish-submit" aria-busy="false">{{ 'Re-publish' if published else 'Publish' }}</button>
         {% endif %}
       </div>
       </div>

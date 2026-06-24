@@ -41,3 +41,16 @@ def test_staffing_custom_hours_controls_are_named_and_busy():
     assert "save.setAttribute('aria-busy', 'true');" in js
     assert "save.disabled = false;" in js
     assert "save.setAttribute('aria-busy', 'false');" in js
+
+
+def test_staffing_publish_submit_buttons_expose_busy_state():
+    html = _template()
+    js = _script()
+
+    assert 'class="override-btn publish-submit" aria-busy="false"' in html
+    assert 'class="publish-btn publish-submit" aria-busy="false"' in html
+    assert "form.addEventListener('submit'" in js
+    assert "event.submitter" in js
+    assert "submitter.value !== 'publish'" in js
+    assert "button.disabled = true;" in js
+    assert "button.setAttribute('aria-busy', 'true');" in js

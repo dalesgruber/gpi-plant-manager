@@ -1155,6 +1155,21 @@
     };
   })();
 
+  // ---------- Publish submit busy state ----------
+  (function () {
+    const form = document.getElementById('staffing-form');
+    if (!form) return;
+
+    form.addEventListener('submit', (event) => {
+      const submitter = event.submitter;
+      if (!submitter || submitter.name !== 'action' || submitter.value !== 'publish') return;
+      document.querySelectorAll('.publish-submit').forEach((button) => {
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+      });
+    });
+  })();
+
   // ---------- First-edit-on-posted: one-time toast + drop ?view=posted ----------
   // When the page is loaded with ?view=posted, the first input/change
   // event flips us back to draft mode silently after a brief toast.
