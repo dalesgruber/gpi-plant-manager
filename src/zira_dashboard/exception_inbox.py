@@ -73,12 +73,12 @@ def _pending_time_off_count(today: date) -> int:
 def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
     from . import db
 
-    count = _pending_time_off_count(today)
     rows = db.query(
         "SELECT r.id, r.person_odoo_id, r.odoo_leave_id, "
         "COALESCE(p.name, '#' || r.person_odoo_id::text) AS name, "
         "r.shape, r.state, r.date_from, r.date_to, r.hour_from, r.hour_to, "
-        "r.sync_error, COALESCE(lt.name, 'Time off') AS leave_type "
+        "r.sync_error, COALESCE(lt.name, 'Time off') AS leave_type, "
+        "COUNT(*) OVER () AS total_count "
         "FROM time_off_requests r "
         "LEFT JOIN people p ON p.odoo_id = r.person_odoo_id "
         "LEFT JOIN leave_types_cache lt ON lt.holiday_status_id = r.holiday_status_id "
@@ -107,7 +107,7 @@ def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
         }
         for r in rows
     ]
-    return count, shaped
+    return int(rows[0].get("total_count") or 0) if rows else 0, shaped
 
 
 def build_summary() -> dict:

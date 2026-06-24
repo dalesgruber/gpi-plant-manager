@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from zira_dashboard import exception_inbox, missing_wc, missed_punch_out
+from zira_dashboard import db, exception_inbox, missing_wc, missed_punch_out
 from zira_dashboard.app import app
 from zira_dashboard.routes import exceptions as exceptions_route
 from zira_dashboard.routes import staffing as staffing_routes
@@ -141,6 +141,41 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
         "missed_punch_out": 1,
         "time_off": 4,
     }
+
+
+def test_pending_time_off_uses_window_count(monkeypatch):
+    captured = {"calls": 0}
+
+    def fake_query(sql, params):
+        captured["calls"] += 1
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{
+            "id": 20,
+            "person_odoo_id": 7,
+            "odoo_leave_id": 99,
+            "name": "Eli",
+            "shape": "full",
+            "state": "confirm",
+            "date_from": date(2026, 6, 20),
+            "date_to": date(2026, 6, 20),
+            "hour_from": None,
+            "hour_to": None,
+            "sync_error": None,
+            "leave_type": "Vacation",
+            "total_count": 4,
+        }]
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    count, rows = exception_inbox._pending_time_off(date(2026, 6, 19), limit=8)
+
+    assert captured["calls"] == 1
+    assert "COUNT(*) OVER () AS total_count" in captured["sql"]
+    assert captured["params"] == (date(2026, 6, 19), 8)
+    assert count == 4
+    assert rows[0]["name"] == "Eli"
+    assert rows[0]["row_key"] == "time_off:20:confirm"
 
 
 def test_snapshot_marks_degraded_sources_without_hiding_page(monkeypatch):
