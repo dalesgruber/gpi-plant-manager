@@ -43,6 +43,7 @@ from .routes import (
     skills,
     staffing,
     time_off,
+    time_off_approvals,
     trophies,
     tv_displays,
     departments,
@@ -365,6 +366,7 @@ app.include_router(people.router)
 app.include_router(leaderboards.router)
 app.include_router(past_schedules.router)
 app.include_router(time_off.router)
+app.include_router(time_off_approvals.router)
 app.include_router(trophies.router)
 app.include_router(settings.router)
 app.include_router(api_layout.router)

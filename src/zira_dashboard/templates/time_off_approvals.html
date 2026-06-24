@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/static/gpi-logo.png">
+<title>Time Off Approvals - GPI Plant Manager</title>
+<link rel="stylesheet" href="/static/exceptions.css?v={{ static_v('exceptions.css') }}">
+</head>
+<body>
+<header class="app">
+  <div class="brand-row">
+    <a href="/recycling" class="brand">
+      <img src="/static/gpi-logo.png" alt="GPI">
+      <h1>Plant Manager</h1>
+    </a>
+    <nav>
+      <a href="/recycling">Dashboards</a>
+      <a href="/trophies">Trophy Case</a>
+      <a href="/exceptions">Inbox</a>
+      <a href="/staffing" class="active">Staffing</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </div>
+  <div class="day-chip">{{ today_iso }}</div>
+</header>
+
+<main class="inbox-shell">
+  <div class="inbox-title">
+    <div>
+      <h2>Time off approvals</h2>
+      <p><span>{{ pending | length }}</span> pending</p>
+    </div>
+    <a class="refresh-btn" href="/staffing/time-off/approvals">Refresh</a>
+  </div>
+
+  <div class="section-stack">
+    <section class="inbox-section info">
+      <div class="section-head">
+        <div>
+          <h3>Pending</h3>
+          <span><span class="section-open-count">{{ pending | length }}</span> open</span>
+        </div>
+      </div>
+      {% if pending %}
+      <table>
+        <tbody>
+        {% for r in pending %}
+          <tr class="exception-row"
+              data-request-id="{{ r.id }}"
+              data-action-type="time_off"
+              data-priority="{{ 'urgent' if r.past_due or r.over_balance else 'normal' }}">
+            <th scope="row">{{ r.person_name }}</th>
+            <td>
+              {{ r.leave_type }} · {{ r.date_from }}{% if r.date_to != r.date_from %} to {{ r.date_to }}{% endif %}
+              {% if r.past_due %}<span class="priority-pill urgent">Past due</span>{% endif %}
+              {% if r.awaiting_second %}<span class="priority-pill warn">Awaiting 2nd approval</span>{% endif %}
+            </td>
+            <td>
+              {% if r.balance %}
+                <span class="priority-pill {{ 'urgent' if r.over_balance else 'normal' }}">
+                  {{ '%g' % r.balance.remaining }} {{ r.balance.unit }} left
+                </span>
+              {% else %}
+                <span class="priority-pill normal">Balance unknown</span>
+              {% endif %}
+              <span class="priority-pill {{ 'warn' if r.coverage.count else 'normal' }}">
+                {% if r.coverage.count %}{{ r.coverage.count }} off{% else %}Nobody off{% endif %}{% if r.coverage.scope == 'plant' %} plant-wide{% endif %}
+              </span>
+            </td>
+            <td class="row-actions">
+              <button type="button" class="row-btn primary js-approve">Approve</button>
+              <input type="text" class="inline-input js-reason" placeholder="Reason to deny" hidden>
+              <button type="button" class="row-btn danger js-refuse">Deny</button>
+              <span class="row-status" hidden></span>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-row">All clear. Nothing pending.</div>
+      {% endif %}
+    </section>
+
+    <section class="inbox-section">
+      <div class="section-head">
+        <div>
+          <h3>Recently decided</h3>
+          <span>Last 30 days</span>
+        </div>
+      </div>
+      {% if recent %}
+      <table>
+        <tbody>
+        {% for d in recent %}
+          <tr class="exception-row">
+            <th scope="row">{{ d.person_name }}</th>
+            <td>
+              {{ d.action | capitalize }} · {{ d.leave_type }} {{ d.date_from }}{% if d.date_to != d.date_from %} to {{ d.date_to }}{% endif %}
+              {% if d.reason %}<div class="muted">{{ d.reason }}</div>{% endif %}
+            </td>
+            <td>{{ d.actor_name or d.actor_upn or 'Unknown' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <div class="empty-row">No decisions in the last 30 days.</div>
+      {% endif %}
+    </section>
+  </div>
+</main>
+{% include '_footer.html' %}
+<script src="/static/time_off_approvals.js?v={{ static_v('time_off_approvals.js') }}"></script>
+</body>
+</html>
