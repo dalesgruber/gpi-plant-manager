@@ -65,6 +65,31 @@ def test_handoff_page_renders_current_snapshot_and_recent(monkeypatch):
     assert "/static/handoff.css" in resp.text
 
 
+def test_handoff_detail_notes_textarea_has_accessible_name(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 18),
+        "shift_label": "Day",
+        "created_by": "Dale",
+        "notes": "Repair 2 needs follow-up",
+        "open_total": 2,
+        "urgent_total": 1,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": False,
+        "is_open_followup": False,
+        "created_at_label": "6/18 2:10 PM",
+        "exception_snapshot": {"sections": []},
+    })
+    client = TestClient(app)
+
+    resp = client.get("/handoff/7")
+
+    assert resp.status_code == 200
+    assert 'aria-label="Handoff notes"' in resp.text
+
+
 def test_handoff_page_selects_default_shift(monkeypatch):
     tz = handoff.plant_day.SITE_TZ
     monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 22))

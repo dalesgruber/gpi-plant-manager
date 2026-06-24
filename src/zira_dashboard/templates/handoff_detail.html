@@ -68,7 +68,7 @@
       <span>Saved with this handoff</span>
     </div>
     <form method="post" action="/handoff/{{ handoff.id }}/notes" class="detail-notes-form">
-      <textarea name="notes" rows="5" placeholder="Staffing moves, blockers, unresolved exceptions, safety notes, maintenance follow-up">{{ handoff.notes }}</textarea>
+      <textarea name="notes" rows="5" aria-label="Handoff notes" placeholder="Staffing moves, blockers, unresolved exceptions, safety notes, maintenance follow-up">{{ handoff.notes }}</textarea>
       <button type="submit" class="secondary-btn">Save Notes</button>
     </form>
   </section>
