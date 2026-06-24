@@ -44,6 +44,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Past Schedules edit/delete confirmations now behave like proper dialogs.** The confirmation panel names itself to assistive tech, labels the admin-password field directly, closes with Escape, restores focus to the row action, and marks async edit/delete buttons busy while the request is running.
 - **Leaderboards section visibility controls now name the section and expose busy state.** The hide/show icon buttons announce which work center or group they affect, disable during the async update, and recover if the request fails.
 - **Leaderboards person-detail popup now keeps keyboard focus in the workflow.** Opening a leaderboard average row moves focus into the popup, the Close button has an explicit accessible name, and closing restores focus to the operator button that opened it.
+- **Plant Scheduler partial time-off controls now name the employee they affect.** The partial-clear chips, clearable time-off rows, restored-partial buttons, and dynamically inserted badges now expose person-specific action names instead of relying on shorthand chip text or hover titles.
 
 ## 2026-06-19
 

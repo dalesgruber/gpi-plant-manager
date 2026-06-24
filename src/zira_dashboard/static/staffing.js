@@ -489,6 +489,7 @@
     btn.dataset.name = name;
     btn.dataset.bound = '1';
     btn.title = 'Click to clear this partial for ' + name + ' — they actually worked through it';
+    btn.setAttribute('aria-label', 'Clear partial time off for ' + name);
     btn.textContent = (range || (hours + 'h')) + ' ✕';
     btn.addEventListener('click', (ev) => {
       ev.preventDefault();
