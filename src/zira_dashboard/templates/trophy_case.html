@@ -57,6 +57,7 @@
         <span class="icon">🐐</span>
         <span class="name">{{ g.group }}</span>
         <button class="tc-edit" style="margin-left:auto"
+                aria-label="Edit {{ g.group }} GOAT award"
                 data-scope="award_goat" data-group="{{ g.group }}"
                 data-position="1">✏️</button>
       </div>
@@ -95,6 +96,7 @@
       <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
       <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
       <button class="tc-edit"
+              aria-label="Edit top-day award for {{ s.name }}"
               data-scope="trophy_top_day" data-group="{{ blk.group }}"
               data-year="{{ year }}" data-position="{{ s.position }}">✏️</button>
     </div>
@@ -109,6 +111,7 @@
       <span class="name">Best {{ blk.group }} {{ year }}</span>
       <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ blk.best_avg.name|urlencode }}">{{ blk.best_avg.name }}</a> — {{ '{:,.1f}'.format(blk.best_avg.pph) }} pph ({{ blk.best_avg.days }} days)</span>
       <button class="tc-edit"
+              aria-label="Edit best {{ blk.group }} award"
               data-scope="trophy_best_avg_group" data-group="{{ blk.group }}"
               data-year="{{ year }}" data-position="1">✏️</button>
     </div>
@@ -122,6 +125,7 @@
       <span class="name">{{ w.wc }}</span>
       <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ w.winner.name|urlencode }}">{{ w.winner.name }}</a> — {{ '{:,.1f}'.format(w.winner.pph) }} pph ({{ w.winner.days }} days)</span>
       <button class="tc-edit"
+              aria-label="Edit best {{ w.wc }} award"
               data-scope="trophy_best_avg_wc" data-wc="{{ w.wc }}"
               data-year="{{ year }}" data-position="1">✏️</button>
     </div>
@@ -154,6 +158,7 @@
       <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
       <span class="meta">{{ '{:,.0f}'.format(s.units) }} units · {{ s.day }}</span>
       <button class="tc-edit"
+              aria-label="Edit monthly ribbon for {{ s.name }}"
               data-scope="badge" data-group="{{ blk.group }}"
               data-year="{{ year }}" data-month="{{ month }}"
               data-position="{{ s.position }}">✏️</button>
@@ -172,17 +177,17 @@
   <div class="tc-modal">
     <h3 id="tc-modal-title">Edit award</h3>
     <label>Action</label>
-    <select id="tc-action">
+    <select id="tc-action" aria-label="Award edit action">
       <option value="replace">Reassign to…</option>
       <option value="delete">Delete this slot</option>
       <option value="reset">Reset to computed</option>
     </select>
     <div id="tc-name-row">
       <label>Name</label>
-      <input type="text" id="tc-name" placeholder="Enter person's name">
+      <input type="text" id="tc-name" placeholder="Enter person's name" aria-label="Replacement award winner">
     </div>
     <label>Note (optional)</label>
-    <textarea id="tc-note" rows="2"></textarea>
+    <textarea id="tc-note" rows="2" aria-label="Award override note"></textarea>
     <div class="actions">
       <button id="tc-cancel">Cancel</button>
       <button class="primary" id="tc-save">Save</button>
