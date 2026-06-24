@@ -793,8 +793,9 @@
 
   /* ---- Range chip toolbar ---- */
   .rc-toolbar {
-    display: inline-flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
-    margin-left: 1rem;
+    display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+    margin: 0.6rem 1rem 0;
+    padding: 0.2rem 0;
     font-size: 0.85rem;
   }
   .rc-tool-label { color: var(--muted); margin-right: 0.2rem; }
