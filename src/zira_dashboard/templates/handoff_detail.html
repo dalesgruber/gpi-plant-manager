@@ -82,11 +82,11 @@
     <form method="post" action="/handoff/{{ handoff.id }}/resolve" class="resolve-form">
       <label>
         Resolved by
-        <input type="text" name="resolved_by" value="">
+        <input type="text" name="resolved_by" value="" aria-label="Resolved by">
       </label>
       <label class="notes-label">
         Resolution note
-        <textarea name="resolution_note" rows="4" placeholder="What changed, who was notified, or what was completed"></textarea>
+        <textarea name="resolution_note" rows="4" aria-label="Resolution note" placeholder="What changed, who was notified, or what was completed"></textarea>
       </label>
       <button type="submit" class="primary-btn">Mark Resolved</button>
     </form>

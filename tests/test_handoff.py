@@ -641,6 +641,32 @@ def test_handoff_detail_renders_followup_resolve_form(monkeypatch):
     assert "Mark Resolved" in resp.text
 
 
+def test_handoff_detail_resolve_fields_have_accessible_names(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 19),
+        "shift_label": "Night",
+        "created_by": "Mia",
+        "notes": "Maintenance must check Repair 1",
+        "open_total": 3,
+        "urgent_total": 1,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": True,
+        "is_open_followup": True,
+        "created_at_label": "6/19 10:15 PM",
+        "exception_snapshot": {"sections": []},
+    })
+    client = TestClient(app)
+
+    resp = client.get("/handoff/21")
+
+    assert resp.status_code == 200
+    assert 'aria-label="Resolved by"' in resp.text
+    assert 'aria-label="Resolution note"' in resp.text
+
+
 def test_handoff_detail_renders_mark_followup_form(monkeypatch):
     monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
     monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
