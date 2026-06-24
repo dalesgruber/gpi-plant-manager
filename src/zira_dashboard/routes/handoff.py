@@ -332,10 +332,14 @@ def handoff_detail_page(request: Request, handoff_id: int):
         raise HTTPException(status_code=404, detail="handoff not found")
     snapshot = row.get("exception_snapshot") or {}
     sections = snapshot.get("sections") or []
+    saved_keys = _snapshot_row_keys(snapshot)
+    current_keys = set()
+    degraded_section_ids = set()
     try:
-        current_snapshot = exception_inbox.build_snapshot()
-        current_keys = _snapshot_row_keys(current_snapshot)
-        degraded_section_ids = _degraded_section_ids(current_snapshot)
+        if saved_keys:
+            current_snapshot = exception_inbox.build_snapshot()
+            current_keys = _snapshot_row_keys(current_snapshot)
+            degraded_section_ids = _degraded_section_ids(current_snapshot)
     except Exception:  # noqa: BLE001 -- detail history should still render if live checks fail
         current_keys = set()
         degraded_section_ids = {str(section.get("id") or "") for section in sections}

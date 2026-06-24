@@ -142,6 +142,53 @@ def test_handoff_detail_renders_saved_snapshot(monkeypatch):
     assert "Open Inbox" in resp.text
 
 
+def test_handoff_detail_skips_live_check_without_row_keys(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 18),
+        "shift_label": "Day",
+        "created_by": "Dale",
+        "notes": "Snapshot has summary-only rows",
+        "open_total": 1,
+        "urgent_total": 0,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": False,
+        "is_open_followup": False,
+        "created_at_label": "6/18 2:10 PM",
+        "exception_snapshot": {
+            "generated_at": "2:09 PM",
+            "sections": [{
+                "id": "missing_wc",
+                "title": "Missing Work Center",
+                "count": 1,
+                "rows": [{
+                    "name": "Ana",
+                    "label": "No work center",
+                    "detail": "Clocked in 7:05 AM",
+                }],
+            }],
+        },
+    })
+
+    called = {"live_check": False}
+
+    def fake_live_check():
+        called["live_check"] = True
+        return {"source_errors": [], "sections": []}
+
+    monkeypatch.setattr(handoff.exception_inbox, "build_snapshot", fake_live_check)
+    client = TestClient(app)
+
+    resp = client.get("/handoff/7")
+
+    assert resp.status_code == 200
+    assert called["live_check"] is False
+    assert "Snapshot has summary-only rows" in resp.text
+    assert "Clocked in 7:05 AM" in resp.text
+
+
 def test_annotate_snapshot_sections_marks_current_status():
     sections = [{
         "id": "missing_wc",
