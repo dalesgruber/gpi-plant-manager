@@ -457,6 +457,23 @@ def test_refuse_leave_calls_action(monkeypatch):
     assert calls[0][2][0] == [999]
 
 
+def test_post_leave_message_calls_message_post(monkeypatch):
+    from zira_dashboard import odoo_client
+
+    calls = []
+    monkeypatch.setattr(
+        odoo_client, "execute",
+        lambda model, method, *args, **kwargs: calls.append((model, method, args, kwargs)),
+    )
+
+    odoo_client.post_leave_message(99, "Coverage too thin that Friday")
+
+    assert calls == [
+        ("hr.leave", "message_post", ([99],),
+         {"body": "Coverage too thin that Friday"}),
+    ]
+
+
 def test_find_duplicate_leave_finds_match(monkeypatch):
     responses = {("hr.leave", "search_read"): [{"id": 555}]}
     _stub_execute(monkeypatch, responses)

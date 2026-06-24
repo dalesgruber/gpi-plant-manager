@@ -1206,6 +1206,18 @@ def refuse_leave(leave_id: int) -> None:
     execute("hr.leave", "action_refuse", [leave_id])
 
 
+def post_leave_message(leave_id: int, body: str) -> None:
+    """Post a message to an hr.leave's chatter so the employee is notified.
+
+    ``body`` is passed as a keyword arg because ``execute`` forwards
+    **kwargs as Odoo's keyword args (see ``execute``); the leave id is the
+    positional recordset. Used to deliver a denial reason back to the
+    requester. Callers treat this as best-effort — a failed post must not
+    roll back a completed refusal.
+    """
+    execute("hr.leave", "message_post", [leave_id], body=body)
+
+
 _PUBLIC_HOLIDAYS_TTL_SECONDS = 10 * 60
 # {(start_d, end_d): (rows, expires_at_epoch)} — same pattern as
 # _leave_types_cache, keyed by range because the Who's-Out calendar asks for
