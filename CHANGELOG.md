@@ -9,6 +9,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 #### Features
 
 - **What's New entries now render as deploy cards.** The `/changelog` renderer now turns each deploy into a semantic card with a stable read-state key, optional title, Features/Fixes/Highlights groups, and a New feature badge when an entry has structured feature bullets. Titled deploy headings still feed `/changelog/latest` correctly, so unread detection keeps working as the richer panel rolls out.
+- **Feedback storage is ready for the new panel.** Added the feedback table and store module that the upcoming Send feedback form will use to persist category, page URL, submitter, message, and created time.
 
 ## 2026-06-19
 
