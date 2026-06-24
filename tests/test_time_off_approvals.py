@@ -174,6 +174,7 @@ def test_approvals_page_renders_pending_context_and_recent_decisions(monkeypatch
     assert "/static/time_off_approvals.js" in resp.text
     assert 'data-pending-count' in resp.text
     assert 'data-recent-decisions' in resp.text
+    assert 'aria-label="Reason to deny time off"' in resp.text
     assert 'href="/staffing/time-off/approvals"   class="active">Approvals</a>' in resp.text
 
 
