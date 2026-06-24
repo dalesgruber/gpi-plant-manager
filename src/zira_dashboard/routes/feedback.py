@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import date
 from urllib.parse import urlparse
@@ -56,10 +57,15 @@ def _description_html(description: str, submitter: str | None,
     who = name or submitter or "unknown"
     if name and submitter:
         who = f"{name} ({submitter})"
-    parts = [f"<p>{description.strip()}</p>".replace("\n", "<br>")]
-    meta = [f"Submitted by {who}"]
+    # Escape every dynamic value before interpolating — this HTML lands in the
+    # Odoo task's `description` field. Matches the escaping convention in
+    # routes/changelog.py; keeps descriptions with <, &, or " rendering as typed.
+    body = html.escape(description.strip()).replace("\n", "<br>")
+    parts = [f"<p>{body}</p>"]
+    meta = [f"Submitted by {html.escape(who)}"]
     if page_url:
-        meta.append(f'Page: <a href="{page_url}">{page_url}</a>')
+        safe_url = html.escape(page_url, quote=True)
+        meta.append(f'Page: <a href="{safe_url}">{safe_url}</a>')
     parts.append("<p><small>" + " · ".join(meta) + "</small></p>")
     return "".join(parts)
 

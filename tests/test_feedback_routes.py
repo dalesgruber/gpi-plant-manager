@@ -147,3 +147,19 @@ def test_post_feedback_returns_502_and_skips_local_row_on_odoo_failure(monkeypat
     assert resp.status_code == 502
     assert resp.json()["ok"] is False
     assert inserted["n"] == 0
+
+
+def test_post_feedback_escapes_html_in_description(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
+    monkeypatch.setattr(feedback_store, "insert", lambda **kw: 1)
+
+    resp = client.post(
+        "/feedback",
+        data={"type": "bug", "description": "a < b & <script>x</script>"},
+    )
+
+    assert resp.status_code == 200
+    body_html = calls["task"]["description_html"]
+    assert "<script>" not in body_html
+    assert "&lt;script&gt;" in body_html
+    assert "a &lt; b &amp;" in body_html
