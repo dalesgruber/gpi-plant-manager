@@ -76,3 +76,10 @@ def test_people_matrix_sort_headers_are_keyboard_focusable():
     assert '<th class="name" style="text-align:left" role="button" tabindex="0" aria-sort="none">Name</th>' in html
     assert '<th role="button" tabindex="0" aria-sort="none">Reserve</th>' in html
     assert 'data-skill="Repair" data-type="Production Skills" class="skill-col" role="button" tabindex="0" aria-sort="none">Repair</th>' in html
+
+
+def test_people_matrix_view_popover_has_accessible_relationship():
+    html = _render_skills_html()
+
+    assert 'id="view-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-popover"' in html
+    assert 'id="view-popover" role="dialog" aria-label="People Matrix view options" hidden' in html

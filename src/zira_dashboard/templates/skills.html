@@ -21,8 +21,8 @@
     <div style="margin-left:auto;display:flex;gap:0.75rem;align-items:center">
       <input type="search" id="wheel-filter" placeholder="Filter people…" aria-label="Filter people">
       <div class="view-wrap">
-        <button type="button" class="view-btn" id="view-btn" aria-haspopup="true" aria-expanded="false">View ▾</button>
-        <div class="view-popover" id="view-popover" hidden></div>
+        <button type="button" class="view-btn" id="view-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="view-popover">View ▾</button>
+        <div class="view-popover" id="view-popover" role="dialog" aria-label="People Matrix view options" hidden></div>
       </div>
       <button type="button" class="undo-btn" id="undo-btn" title="Undo" aria-label="Undo" disabled>↶</button>
       <button type="button" class="redo-btn" id="redo-btn" title="Redo" aria-label="Redo" disabled>↷</button>

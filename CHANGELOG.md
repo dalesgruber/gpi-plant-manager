@@ -28,6 +28,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **People Matrix active-status badges now expose their state directly.** The checkmark/cross badge announces "Active" or "Inactive" instead of depending on the glyph alone.
 - **People Matrix Odoo links now appear on keyboard focus.** The hidden row-level Odoo shortcut becomes visible with a focus outline when tabbed to, so keyboard users do not land on an invisible arrow.
 - **People Matrix column sorting now works from the keyboard.** Sortable headers are focusable, expose their sort state, and respond to Enter or Space in addition to mouse clicks.
+- **People Matrix view options now have an explicit popover relationship.** The View button points to a labeled dialog-style popover, making saved view/filter controls clearer to assistive tech.
 
 ## 2026-06-19
 
