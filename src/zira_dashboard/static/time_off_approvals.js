@@ -85,7 +85,14 @@
     }
     row.appendChild(detail);
 
-    row.appendChild(textCell('td', decision.actor_name || decision.actor_upn || 'Unknown'));
+    var actor = textCell('td', decision.actor_name || decision.actor_upn || 'Unknown');
+    if (decision.decided_label) {
+      var decided = document.createElement('div');
+      decided.className = 'muted';
+      decided.textContent = decision.decided_label;
+      actor.appendChild(decided);
+    }
+    row.appendChild(actor);
     tbody.insertBefore(row, tbody.firstChild);
   }
 

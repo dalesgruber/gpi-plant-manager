@@ -190,5 +190,6 @@ def test_approvals_js_removes_resolved_rows_and_updates_pending_counts():
     assert "[data-recent-decisions]" in js
     assert "[data-recent-empty]" in js
     assert "resp.decision" in js
+    assert "decision.decided_label" in js
     assert "bumpPendingCount(-1);" in js
     assert "No pending time-off requests." in js

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import exception_inbox, time_off_audit
+from .. import exception_inbox, plant_day, time_off_audit
 from ..deps import templates
 
 router = APIRouter()
@@ -94,6 +95,12 @@ def _iso_day(value: Any) -> str | None:
     return str(value)
 
 
+def _decision_time_label(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(plant_day.SITE_TZ).strftime("%-m/%-d %-I:%M %p")
+
+
 def _decision_summary(
     row: dict[str, Any],
     *,
@@ -104,6 +111,7 @@ def _decision_summary(
     actor_name: str | None,
     source: str | None,
 ) -> dict[str, Any]:
+    decided_at = plant_day.now()
     return {
         "action": action,
         "person_name": row.get("person_name"),
@@ -115,6 +123,8 @@ def _decision_summary(
         "actor_upn": actor_upn,
         "source": source,
         "result_state": result_state,
+        "decided_at": decided_at.isoformat(),
+        "decided_label": _decision_time_label(decided_at),
     }
 
 

@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -418,6 +418,11 @@ def test_footer_enhances_inbox_nav_with_summary_count():
 def test_time_off_approve_endpoint_updates_to_odoo_state(monkeypatch):
     from zira_dashboard import odoo_client
 
+    monkeypatch.setattr(
+        exceptions_route.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 24, 14, 5, tzinfo=timezone.utc),
+    )
     row = {
         "id": 55,
         "person_odoo_id": 7,
@@ -470,6 +475,8 @@ def test_time_off_approve_endpoint_updates_to_odoo_state(monkeypatch):
         "actor_upn": "dale@gruberpallets.com",
         "source": "page",
         "result_state": "validate",
+        "decided_at": "2026-06-24T14:05:00+00:00",
+        "decided_label": "6/24 9:05 AM",
     }
 
 
@@ -482,6 +489,11 @@ def test_time_off_refuse_requires_reason():
 def test_time_off_refuse_unsynced_draft_stays_local(monkeypatch):
     from zira_dashboard import odoo_client
 
+    monkeypatch.setattr(
+        exceptions_route.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 24, 14, 10, tzinfo=timezone.utc),
+    )
     row = {
         "id": 56,
         "person_odoo_id": 8,
@@ -534,6 +546,7 @@ def test_time_off_refuse_unsynced_draft_stays_local(monkeypatch):
     assert payload["decision"]["reason"] == "No coverage"
     assert payload["decision"]["source"] == "inbox"
     assert payload["decision"]["person_name"] == "Carlos Ortega"
+    assert payload["decision"]["decided_label"] == "6/24 9:10 AM"
 
 
 def test_time_off_refuse_synced_posts_reason_to_odoo(monkeypatch):
