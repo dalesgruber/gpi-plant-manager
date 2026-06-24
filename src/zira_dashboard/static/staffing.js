@@ -1214,6 +1214,7 @@
   async function postToSlack(btn) {
     const originalContent = btn.innerHTML;
     btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
     btn.innerHTML = '<span style="font-size:0.85rem;font-weight:600">Posting…</span>';
     try {
       const day = window.SCHEDULE_DAY
@@ -1266,6 +1267,7 @@
       showToast(e.message || 'Slack post failed', null, 'error');
     } finally {
       btn.disabled = false;
+      btn.setAttribute('aria-busy', 'false');
       btn.innerHTML = originalContent;
     }
   }

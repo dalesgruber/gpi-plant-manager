@@ -70,3 +70,12 @@ def test_staffing_publish_submit_buttons_expose_busy_state():
     assert "submitter.value !== 'publish'" in js
     assert "button.disabled = true;" in js
     assert "button.setAttribute('aria-busy', 'true');" in js
+
+
+def test_staffing_slack_post_button_exposes_busy_state():
+    html = _template()
+    js = _script()
+
+    assert 'class="publish-btn icon-btn share-btn" onclick="postToSlack(this)" title="Post to Slack" aria-label="Post to Slack" aria-busy="false"' in html
+    assert "btn.setAttribute('aria-busy', 'true');" in js
+    assert "btn.setAttribute('aria-busy', 'false');" in js
