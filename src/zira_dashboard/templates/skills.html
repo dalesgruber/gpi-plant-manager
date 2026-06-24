@@ -55,10 +55,10 @@
     <table class="skills-table" id="skills-table">
       <thead>
         <tr>
-          <th class="name" style="text-align:left">Name</th>
-          <th>Active</th>
-          <th>Reserve</th>
-          {% for s in skills %}<th data-skill="{{ s }}" data-type="{{ type_by_skill.get(s, '') }}" class="skill-col{% if s in hidden_skills %} col-hidden{% endif %}">{{ s }}</th>{% endfor %}
+          <th class="name" style="text-align:left" role="button" tabindex="0" aria-sort="none">Name</th>
+          <th role="button" tabindex="0" aria-sort="none">Active</th>
+          <th role="button" tabindex="0" aria-sort="none">Reserve</th>
+          {% for s in skills %}<th data-skill="{{ s }}" data-type="{{ type_by_skill.get(s, '') }}" class="skill-col{% if s in hidden_skills %} col-hidden{% endif %}" role="button" tabindex="0" aria-sort="none">{{ s }}</th>{% endfor %}
         </tr>
       </thead>
       <tbody>

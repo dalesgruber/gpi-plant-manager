@@ -6,3 +6,11 @@ def test_people_matrix_odoo_link_is_visible_on_keyboard_focus():
 
     assert ".odoo-link:focus-visible" in css
     assert "opacity: 1 !important" in css
+
+
+def test_people_matrix_sort_headers_handle_keyboard_activation():
+    js = Path("src/zira_dashboard/static/skills-page.js").read_text()
+
+    assert "th.addEventListener('keydown'" in js
+    assert "e.key === 'Enter'" in js
+    assert "e.key === ' '" in js

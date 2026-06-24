@@ -14,7 +14,7 @@
   filterInput.addEventListener('input', apply);
   apply();
 
-  // Column sort: click any <th> to sort rows. Toggle asc/desc on repeat.
+  // Column sort: click or keyboard-activate any <th> to sort rows. Toggle asc/desc on repeat.
   (function () {
     const table = document.getElementById('skills-table');
     const tbody = table.querySelector('tbody');
@@ -35,18 +35,31 @@
       if (cb) return cb.checked ? 1 : 0;
       return td.textContent.trim().toLowerCase();
     }
+    function sortBy(i, th) {
+      if (sortIndex === i) sortDir = -sortDir; else { sortIndex = i; sortDir = 1; }
+      ths.forEach(x => {
+        x.classList.remove('sort-asc', 'sort-desc');
+        x.setAttribute('aria-sort', 'none');
+      });
+      th.classList.add(sortDir > 0 ? 'sort-asc' : 'sort-desc');
+      th.setAttribute('aria-sort', sortDir > 0 ? 'ascending' : 'descending');
+      const rows = [...tbody.querySelectorAll('tr')];
+      rows.sort((a, b) => {
+        const va = cellValue(a, i), vb = cellValue(b, i);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
+        return String(va).localeCompare(String(vb)) * sortDir;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    }
     ths.forEach((th, i) => {
       th.addEventListener('click', () => {
-        if (sortIndex === i) sortDir = -sortDir; else { sortIndex = i; sortDir = 1; }
-        ths.forEach(x => x.classList.remove('sort-asc', 'sort-desc'));
-        th.classList.add(sortDir > 0 ? 'sort-asc' : 'sort-desc');
-        const rows = [...tbody.querySelectorAll('tr')];
-        rows.sort((a, b) => {
-          const va = cellValue(a, i), vb = cellValue(b, i);
-          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
-          return String(va).localeCompare(String(vb)) * sortDir;
-        });
-        rows.forEach(r => tbody.appendChild(r));
+        sortBy(i, th);
+      });
+      th.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          sortBy(i, th);
+        }
       });
     });
   })();

@@ -68,3 +68,11 @@ def test_people_matrix_active_badge_has_status_label():
 
     assert 'class="active-badge on"' in html
     assert 'aria-label="Active"' in html
+
+
+def test_people_matrix_sort_headers_are_keyboard_focusable():
+    html = _render_skills_html()
+
+    assert '<th class="name" style="text-align:left" role="button" tabindex="0" aria-sort="none">Name</th>' in html
+    assert '<th role="button" tabindex="0" aria-sort="none">Reserve</th>' in html
+    assert 'data-skill="Repair" data-type="Production Skills" class="skill-col" role="button" tabindex="0" aria-sort="none">Repair</th>' in html
