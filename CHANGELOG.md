@@ -47,6 +47,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Plant Scheduler partial time-off controls now name the employee they affect.** The partial-clear chips, clearable time-off rows, restored-partial buttons, and dynamically inserted badges now expose person-specific action names instead of relying on shorthand chip text or hover titles.
 - **Plant Scheduler custom-hours controls now have explicit names and safer saves.** The shift/break time fields, break names, and break remove buttons now expose accessible names, and the custom-hours Save button disables with a busy state while the update is being posted.
 - **Plant Scheduler publish buttons now guard against duplicate submits.** Publish and Override & Publish expose a busy state and disable together once the publish form submit starts, reducing accidental double-posts from repeated clicks.
+- **Plant Scheduler custom-hours editor now manages keyboard focus.** The Hours button exposes its expanded state, the editor is labeled as a dialog-style panel, opening moves focus to shift start, and Cancel or Escape returns focus to the Hours button.
 
 ## 2026-06-19
 

@@ -916,10 +916,21 @@
     const save   = document.getElementById('hours-save');
     if (!pill || !editor) return;
 
-    function open()  { editor.hidden = false; }
-    function close() { editor.hidden = true; }
+    function open() {
+      editor.hidden = false;
+      pill.setAttribute('aria-expanded', 'true');
+      document.getElementById('hours-start').focus();
+    }
+    function close() {
+      editor.hidden = true;
+      pill.setAttribute('aria-expanded', 'false');
+      pill.focus();
+    }
     pill.addEventListener('click', open);
     cancel.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !editor.hidden) close();
+    });
 
     addBtn.addEventListener('click', () => {
       const row = document.createElement('div');

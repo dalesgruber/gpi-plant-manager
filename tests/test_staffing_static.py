@@ -43,6 +43,22 @@ def test_staffing_custom_hours_controls_are_named_and_busy():
     assert "save.setAttribute('aria-busy', 'false');" in js
 
 
+def test_staffing_custom_hours_panel_manages_focus_and_escape():
+    html = _template()
+    js = _script()
+
+    assert 'aria-controls="hours-editor"' in html
+    assert 'aria-expanded="false"' in html
+    assert 'id="hours-editor" class="hours-editor" role="dialog" aria-modal="false" aria-labelledby="hours-editor-title" hidden' in html
+    assert '<h4 id="hours-editor-title">Custom hours for {{ day }}</h4>' in html
+    assert "pill.setAttribute('aria-expanded', 'true');" in js
+    assert "pill.setAttribute('aria-expanded', 'false');" in js
+    assert "document.getElementById('hours-start').focus();" in js
+    assert "pill.focus();" in js
+    assert "document.addEventListener('keydown'" in js
+    assert "e.key === 'Escape'" in js
+
+
 def test_staffing_publish_submit_buttons_expose_busy_state():
     html = _template()
     js = _script()
