@@ -35,7 +35,13 @@
         <td>{{ it.submitter or '-' }}</td>
         <td>{{ it.category or '-' }}</td>
         <td>{{ it.message }}</td>
-        <td class="muted">{{ it.page_url or '-' }}</td>
+        <td class="muted">
+          {% if it.page_url %}
+            <a href="{{ it.page_url }}" target="_blank" rel="noopener">{{ it.page_url }}</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

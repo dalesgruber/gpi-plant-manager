@@ -67,6 +67,24 @@ def test_post_feedback_trims_optional_fields_and_drops_blanks(monkeypatch):
     assert captured["page_url"] == "/staffing?day=2026-06-24"
 
 
+def test_post_feedback_drops_unsafe_page_url(monkeypatch):
+    captured = {}
+
+    def fake_insert(**kwargs):
+        captured.update(kwargs)
+        return 125
+
+    monkeypatch.setattr(feedback_store, "insert", fake_insert)
+
+    resp = client.post("/feedback", json={
+        "message": "Look at this",
+        "page_url": "javascript:alert(1)",
+    })
+
+    assert resp.status_code == 200
+    assert captured["page_url"] is None
+
+
 def test_admin_feedback_renders_rows(monkeypatch):
     monkeypatch.setattr(feedback_store, "recent", lambda limit=200: [{
         "id": 5,
@@ -82,3 +100,4 @@ def test_admin_feedback_renders_rows(monkeypatch):
     assert resp.status_code == 200
     assert "Sticky note text here" in resp.text
     assert "dale@example.com" in resp.text
+    assert 'href="/staffing"' in resp.text

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -23,6 +25,18 @@ def _optional_text(value: str | None) -> str | None:
     return value or None
 
 
+def _safe_page_url(value: str | None) -> str | None:
+    value = _optional_text(value)
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme in ("http", "https"):
+        return value
+    if not parsed.scheme and value.startswith("/") and not value.startswith("//"):
+        return value
+    return None
+
+
 @router.post("/feedback")
 def submit_feedback(payload: FeedbackIn, request: Request) -> JSONResponse:
     message = (payload.message or "").strip()
@@ -35,7 +49,7 @@ def submit_feedback(payload: FeedbackIn, request: Request) -> JSONResponse:
     new_id = feedback_store.insert(
         message=message,
         submitter=submitter,
-        page_url=_optional_text(payload.page_url),
+        page_url=_safe_page_url(payload.page_url),
         category=_optional_text(payload.category),
     )
     return JSONResponse({"ok": True, "id": new_id})
