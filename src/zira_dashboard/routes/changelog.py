@@ -199,9 +199,10 @@ def changelog_latest() -> JSONResponse:
     """Return the most recent deployment identifier as ISO date or
     date+time ('YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM').
 
-    Frontend uses this to show an unread dot when there's an entry newer
-    than localStorage.changelog_seen, and to highlight new sections inside
-    the modal.
+    Frontend uses this for the cheap on-load unread dot: it shows when the
+    latest entry's key is newer than the per-browser read state
+    (localStorage.changelog_cutoff / changelog_read). Per-entry read state is
+    managed when the panel opens.
     """
     global _latest_memo
     try:
