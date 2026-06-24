@@ -15,13 +15,6 @@ from . import plant_day
 _log = logging.getLogger(__name__)
 
 
-def _safe(call, fallback):
-    try:
-        return call()
-    except Exception:
-        return fallback
-
-
 def _capture(errors: list[dict], source: str, call, fallback):
     try:
         return call()
