@@ -172,6 +172,28 @@ def test_annotate_snapshot_sections_marks_degraded_sources_unknown():
     assert annotated[0]["rows"][0]["current_status_label"] == "Check unavailable"
 
 
+def test_snapshot_status_summary_counts_annotated_rows():
+    sections = [{
+        "rows": [
+            {"current_status": "still_open"},
+            {"current_status": "still_open"},
+            {"current_status": "cleared"},
+            {"current_status": "unknown"},
+            {},
+        ],
+    }]
+
+    summary = handoff._snapshot_status_summary(sections)
+
+    assert summary == {
+        "total": 4,
+        "still_open": 2,
+        "cleared": 1,
+        "unknown": 1,
+        "label": "2 still open · 1 cleared · 1 check unavailable",
+    }
+
+
 def test_handoff_detail_renders_current_snapshot_status(monkeypatch):
     monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
     monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
@@ -227,6 +249,50 @@ def test_handoff_detail_renders_current_snapshot_status(monkeypatch):
     assert "Cleared" in resp.text
     assert 'class="snapshot-row-status still-open"' in resp.text
     assert 'class="snapshot-row-status cleared"' in resp.text
+
+
+def test_handoff_detail_renders_snapshot_status_summary(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 18),
+        "shift_label": "Day",
+        "created_by": "Dale",
+        "notes": "",
+        "open_total": 2,
+        "urgent_total": 1,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": False,
+        "is_open_followup": False,
+        "created_at_label": "6/18 2:10 PM",
+        "exception_snapshot": {
+            "generated_at": "2:09 PM",
+            "sections": [{
+                "id": "missing_wc",
+                "title": "Missing Work Center",
+                "count": 2,
+                "rows": [
+                    {"name": "Ana", "label": "No work center", "detail": "7:05 AM", "row_key": "missing_wc:1"},
+                    {"name": "Ben", "label": "No work center", "detail": "7:10 AM", "row_key": "missing_wc:2"},
+                ],
+            }],
+        },
+    })
+    monkeypatch.setattr(handoff.exception_inbox, "build_snapshot", lambda: {
+        "source_errors": [],
+        "sections": [{
+            "id": "missing_wc",
+            "title": "Missing Work Center",
+            "rows": [{"row_key": "missing_wc:1"}],
+        }],
+    })
+    client = TestClient(app)
+
+    resp = client.get("/handoff/7")
+
+    assert resp.status_code == 200
+    assert "1 still open · 1 cleared" in resp.text
 
 
 def test_load_handoff_normalizes_jsonb_strings(monkeypatch):

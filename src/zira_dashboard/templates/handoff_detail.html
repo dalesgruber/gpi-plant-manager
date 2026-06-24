@@ -118,7 +118,12 @@
   <section class="recent-section">
     <div class="section-head">
       <h3>Saved Inbox Snapshot</h3>
-      <span>{{ snapshot.generated_at or '' }}</span>
+      <span>
+        {{ snapshot.generated_at or '' }}
+        {% if snapshot_status_summary.total %}
+          · {{ snapshot_status_summary.label }}
+        {% endif %}
+      </span>
     </div>
     {% if sections %}
       <div class="snapshot-sections">

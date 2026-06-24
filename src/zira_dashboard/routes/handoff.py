@@ -146,6 +146,27 @@ def _annotate_snapshot_sections(
     return annotated
 
 
+def _snapshot_status_summary(sections: list[dict]) -> dict:
+    counts = {"still_open": 0, "cleared": 0, "unknown": 0}
+    for section in sections:
+        for row in section.get("rows") or []:
+            status = row.get("current_status")
+            if status in counts:
+                counts[status] += 1
+
+    parts = []
+    if counts["still_open"]:
+        parts.append(f"{counts['still_open']} still open")
+    if counts["cleared"]:
+        parts.append(f"{counts['cleared']} cleared")
+    if counts["unknown"]:
+        noun = "check" if counts["unknown"] == 1 else "checks"
+        parts.append(f"{counts['unknown']} {noun} unavailable")
+
+    total = sum(counts.values())
+    return {**counts, "total": total, "label": " · ".join(parts)}
+
+
 def _recent_handoffs(limit: int = 10) -> list[dict]:
     from .. import db
 
@@ -321,6 +342,7 @@ def handoff_detail_page(request: Request, handoff_id: int):
         current_keys=current_keys,
         degraded_section_ids=degraded_section_ids,
     )
+    status_summary = _snapshot_status_summary(sections)
     return templates.TemplateResponse(
         request,
         "handoff_detail.html",
@@ -329,6 +351,7 @@ def handoff_detail_page(request: Request, handoff_id: int):
             "handoff": row,
             "snapshot": snapshot,
             "sections": sections,
+            "snapshot_status_summary": status_summary,
         },
     )
 
