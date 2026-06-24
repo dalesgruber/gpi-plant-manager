@@ -73,7 +73,7 @@ def time_off_approvals(request: Request):
         request,
         "time_off_approvals.html",
         {
-            "active": "time_off",
+            "active": "time_off_approvals",
             "today_iso": today.isoformat(),
             "pending": _pending_payload(today),
             "recent": time_off_audit.recent_decisions(days=30),

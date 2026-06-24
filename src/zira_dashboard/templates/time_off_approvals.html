@@ -1,31 +1,12 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" href="/static/gpi-logo.png">
-<title>Time Off Approvals - GPI Plant Manager</title>
-<link rel="stylesheet" href="/static/exceptions.css?v={{ static_v('exceptions.css') }}">
-</head>
-<body>
-<header class="app">
-  <div class="brand-row">
-    <a href="/recycling" class="brand">
-      <img src="/static/gpi-logo.png" alt="GPI">
-      <h1>Plant Manager</h1>
-    </a>
-    <nav>
-      <a href="/recycling">Dashboards</a>
-      <a href="/trophies">Trophy Case</a>
-      <a href="/exceptions">Inbox</a>
-      <a href="/staffing" class="active">Staffing</a>
-      <a href="/settings">Settings</a>
-    </nav>
-  </div>
-  <div class="day-chip">{{ today_iso }}</div>
-</header>
+{% extends "_staffing_base.html" %}
+{% block title %}Time Off Approvals{% endblock %}
 
-<main class="inbox-shell">
+{% block extra_head %}
+<link rel="stylesheet" href="/static/exceptions.css?v={{ static_v('exceptions.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="inbox-shell">
   <div class="inbox-title">
     <div>
       <h2>Time off approvals</h2>
@@ -110,8 +91,9 @@
       {% endif %}
     </section>
   </div>
-</main>
-{% include '_footer.html' %}
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script src="/static/time_off_approvals.js?v={{ static_v('time_off_approvals.js') }}"></script>
-</body>
-</html>
+{% endblock %}

@@ -117,3 +117,4 @@ def test_approvals_page_renders_pending_context_and_recent_decisions(monkeypatch
     assert "Juan Morales" in resp.text
     assert "Coverage too thin" in resp.text
     assert "/static/time_off_approvals.js" in resp.text
+    assert 'href="/staffing/time-off/approvals"   class="active">Approvals</a>' in resp.text
