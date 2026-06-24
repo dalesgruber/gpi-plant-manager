@@ -24,9 +24,11 @@
             <span class="lb-drag-handle" title="Drag to reorder">&#9776;</span>
             <h3>{{ s.loc_name }}{% if is_group %} <span class="lb-section-tag">group</span>{% endif %}</h3>
             {% if not inactive %}
-              <button type="button" class="lb-hide-btn" title="Mark inactive">&#10005;</button>
+              <button type="button" class="lb-hide-btn" title="Mark inactive" aria-busy="false"
+                      aria-label="Mark {{ s.loc_name }} {{ 'group' if is_group else 'work center' }} leaderboard inactive">&#10005;</button>
             {% elif s.is_manually_inactive %}
-              <button type="button" class="lb-show-btn" title="Mark active">&#8634;</button>
+              <button type="button" class="lb-show-btn" title="Mark active" aria-busy="false"
+                      aria-label="Mark {{ s.loc_name }} {{ 'group' if is_group else 'work center' }} leaderboard active">&#8634;</button>
             {% else %}
               <span class="lb-auto-empty" title="No data in this range — auto-hidden">auto-empty</span>
             {% endif %}

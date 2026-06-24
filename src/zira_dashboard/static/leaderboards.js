@@ -87,6 +87,16 @@ document.addEventListener('keydown', e => {
 (function initLeaderboards() {
   let dragged = null;
 
+  function setVisibilityButtonBusy(btn, busy) {
+    if (busy) {
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    } else {
+      btn.disabled = false;
+      btn.setAttribute('aria-busy', 'false');
+    }
+  }
+
   function bindDrag(sec) {
     sec.addEventListener('dragstart', () => {
       dragged = sec;
@@ -123,23 +133,37 @@ document.addEventListener('keydown', e => {
 
   document.querySelectorAll('.lb-hide-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
       const sec = btn.closest('.lb-section');
       const name = sec.dataset.wc;
       const kind = sec.dataset.kind || 'wc';
-      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/inactive?kind=${kind}`,
-                               {method: 'POST'});
-      if (resp.ok) window.location.reload();
+      setVisibilityButtonBusy(btn, true);
+      try {
+        const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/inactive?kind=${kind}`,
+                                 {method: 'POST'});
+        if (resp.ok) window.location.reload();
+        else setVisibilityButtonBusy(btn, false);
+      } catch (e) {
+        setVisibilityButtonBusy(btn, false);
+      }
     });
   });
 
   document.querySelectorAll('.lb-show-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
       const sec = btn.closest('.lb-section');
       const name = sec.dataset.wc;
       const kind = sec.dataset.kind || 'wc';
-      const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/active?kind=${kind}`,
-                               {method: 'POST'});
-      if (resp.ok) window.location.reload();
+      setVisibilityButtonBusy(btn, true);
+      try {
+        const resp = await fetch(`/staffing/leaderboards/wc/${encodeURIComponent(name)}/active?kind=${kind}`,
+                                 {method: 'POST'});
+        if (resp.ok) window.location.reload();
+        else setVisibilityButtonBusy(btn, false);
+      } catch (e) {
+        setVisibilityButtonBusy(btn, false);
+      }
     });
   });
 })();
