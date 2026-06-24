@@ -388,12 +388,15 @@ def test_time_off_approve_endpoint_updates_to_odoo_state(monkeypatch):
     row = {
         "id": 55,
         "person_odoo_id": 7,
+        "person_name": "Maria Delgado",
+        "leave_type": "PTO",
         "date_from": date(2026, 6, 22),
         "date_to": date(2026, 6, 22),
         "state": "confirm",
         "odoo_leave_id": 99,
     }
     updates = []
+    audits = []
     monkeypatch.setattr(exceptions_route, "_load_time_off_request", lambda request_id: row)
     monkeypatch.setattr(odoo_client, "approve_leave", lambda leave_id: "validate")
     monkeypatch.setattr(
@@ -401,12 +404,27 @@ def test_time_off_approve_endpoint_updates_to_odoo_state(monkeypatch):
         "_set_time_off_state",
         lambda old, state: updates.append((old["id"], state)),
     )
+    monkeypatch.setattr(
+        exceptions_route.time_off_audit,
+        "record_decision",
+        lambda **kw: audits.append(kw),
+    )
 
-    resp = exceptions_route._approve_time_off_sync(55)
+    resp = exceptions_route._approve_time_off_sync(
+        55,
+        actor_upn="dale@gruberpallets.com",
+        actor_name="Dale Gruber",
+        source="page",
+    )
 
     assert resp.status_code == 200
     assert resp.body
     assert updates == [(55, "validate")]
+    assert len(audits) == 1
+    assert audits[0]["action"] == "approve"
+    assert audits[0]["result_state"] == "validate"
+    assert audits[0]["actor_upn"] == "dale@gruberpallets.com"
+    assert audits[0]["person_name"] == "Maria Delgado"
 
 
 def test_time_off_refuse_unsynced_draft_stays_local(monkeypatch):

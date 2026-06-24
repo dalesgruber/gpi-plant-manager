@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import exception_inbox
+from .. import exception_inbox, time_off_audit
 from ..deps import templates
 
 router = APIRouter()
@@ -79,6 +79,13 @@ def _json_error(message: str, status_code: int) -> JSONResponse:
     return JSONResponse({"ok": False, "error": message}, status_code=status_code)
 
 
+def _actor_from(request: Request) -> tuple[str | None, str | None]:
+    return (
+        getattr(request.state, "user_upn", None),
+        getattr(request.state, "user_name", None),
+    )
+
+
 def _refresh_time_off_surfaces() -> None:
     from .. import _http_cache
     from .staffing import _bust_after_mutation
@@ -118,7 +125,12 @@ def _set_time_off_state(old: dict[str, Any], state: str) -> None:
     _refresh_time_off_surfaces()
 
 
-def _approve_time_off_sync(request_id: int) -> JSONResponse:
+def _approve_time_off_sync(
+    request_id: int,
+    actor_upn: str | None = None,
+    actor_name: str | None = None,
+    source: str | None = None,
+) -> JSONResponse:
     from .. import odoo_client
 
     row = _load_time_off_request(request_id)
@@ -142,12 +154,39 @@ def _approve_time_off_sync(request_id: int) -> JSONResponse:
     if final_state not in _TIME_OFF_STATES:
         return _json_error(f"unexpected Odoo state {final_state}", 500)
     _set_time_off_state(row, final_state)
+    time_off_audit.record_decision(
+        request_id=row["id"],
+        odoo_leave_id=synced.get("odoo_leave_id"),
+        person_odoo_id=row.get("person_odoo_id"),
+        person_name=row.get("person_name"),
+        leave_type=row.get("leave_type"),
+        date_from=row.get("date_from"),
+        date_to=row.get("date_to"),
+        action="approve",
+        result_state=final_state,
+        reason=None,
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source=source,
+    )
     return JSONResponse({"ok": True, "state": final_state, "approved": final_state == "validate"})
 
 
 @router.post("/api/exceptions/time-off/{request_id}/approve")
-async def approve_time_off_request(request_id: int):
-    return await asyncio.to_thread(_approve_time_off_sync, request_id)
+async def approve_time_off_request(request_id: int, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    source = (body or {}).get("source")
+    actor_upn, actor_name = _actor_from(request)
+    return await asyncio.to_thread(
+        _approve_time_off_sync,
+        request_id,
+        actor_upn,
+        actor_name,
+        source,
+    )
 
 
 def _refuse_time_off_sync(request_id: int) -> JSONResponse:
