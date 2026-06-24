@@ -36,6 +36,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Device token revoke buttons now name the TV they affect.** Each revoke action exposes a label like "Revoke Bay 3 TV," making the admin device table safer to operate with assistive tech.
 - **Trophy Case award edit controls now have explicit accessible names.** The pencil buttons name the award they edit, and the override modal labels its action, winner, and note fields directly.
 - **The Trophy Case override panel now announces as a modal dialog.** The edit-award panel exposes dialog semantics and uses its visible "Edit award" title as the dialog name.
+- **The Trophy Case override panel now closes with Escape and restores focus.** Keyboard users can dismiss the edit-award dialog without reaching for Cancel, and focus returns to the pencil button that opened it.
 
 ## 2026-06-19
 

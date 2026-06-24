@@ -29,3 +29,13 @@ def test_trophy_case_override_modal_has_dialog_semantics():
     html = _template()
 
     assert '<div class="tc-modal" role="dialog" aria-modal="true" aria-labelledby="tc-modal-title">' in html
+
+
+def test_trophy_case_override_modal_closes_with_escape_and_restores_focus():
+    html = _template()
+
+    assert "var opener = null;" in html
+    assert "function closeModal()" in html
+    assert "opener.focus();" in html
+    assert "document.addEventListener('keydown'" in html
+    assert "e.key === 'Escape'" in html

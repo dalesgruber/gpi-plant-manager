@@ -199,9 +199,17 @@
 (function () {
   var bd = document.getElementById('tc-modal-bd');
   var current = null;
+  var opener = null;
+
+  function closeModal() {
+    bd.classList.remove('active');
+    if (opener) opener.focus();
+    opener = null;
+  }
 
   document.querySelectorAll('.tc-edit').forEach(function (btn) {
     btn.addEventListener('click', function () {
+      opener = btn;
       current = {
         scope: btn.dataset.scope,
         group_name: btn.dataset.group || null,
@@ -223,7 +231,14 @@
   });
 
   document.getElementById('tc-cancel').addEventListener('click', function () {
-    bd.classList.remove('active');
+    closeModal();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && bd.classList.contains('active')) {
+      e.preventDefault();
+      closeModal();
+    }
   });
 
   document.getElementById('tc-save').addEventListener('click', function () {
