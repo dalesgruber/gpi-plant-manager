@@ -1356,7 +1356,13 @@ def create_feedback_task(
     try:
         return execute("project.task", "create",
                        dict(base, user_ids=[(6, 0, [assignee_uid])]))
-    except xmlrpc.client.Fault:
+    except xmlrpc.client.Fault as fault:
+        # Only retry when Odoo rejected the `user_ids` field itself (older
+        # versions expose the m2o `user_id` instead). Any other Fault — access
+        # rights, validation, a transient server error — is a real failure and
+        # must propagate, not trigger a second create attempt.
+        if "user_ids" not in (fault.faultString or ""):
+            raise
         return execute("project.task", "create",
                        dict(base, user_id=assignee_uid))
 
@@ -1388,7 +1394,12 @@ def fetch_task_stage_names(task_ids) -> dict[int, str | None]:
 
 
 def feedback_status_bucket(stage_name: str | None) -> str:
-    """Collapse an Odoo stage name to open / done / rejected."""
+    """Collapse an Odoo stage name to open / done / rejected.
+
+    Matching is by exact stage name, so renaming the "Done"/"Rejected" stages
+    in the Odoo UI would make those tasks read as "open" here. The stages are
+    seeded by `_ensure_feedback_stages`; leave their names as-is.
+    """
     if stage_name == FEEDBACK_DONE_STAGE:
         return "done"
     if stage_name == FEEDBACK_REJECTED_STAGE:

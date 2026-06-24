@@ -156,3 +156,23 @@ def test_feedback_status_bucket():
     assert odoo_client.feedback_status_bucket("New") == "open"
     assert odoo_client.feedback_status_bucket("In Progress") == "open"
     assert odoo_client.feedback_status_bucket(None) == "open"
+
+
+def test_create_feedback_task_reraises_unrelated_fault(monkeypatch):
+    calls = []
+
+    def fake(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        raise xmlrpc.client.Fault(1, "AccessError: not allowed")
+
+    monkeypatch.setattr(odoo_client, "execute", fake)
+    odoo_client._reset_cache_for_tests()
+
+    import pytest
+    with pytest.raises(xmlrpc.client.Fault):
+        odoo_client.create_feedback_task(
+            project_id=7, name="x", description_html="x",
+            assignee_uid=3, tag_id=None, deadline="2026-06-24",
+        )
+    # Only the first create was attempted; no blind retry on an unrelated fault.
+    assert len(calls) == 1
