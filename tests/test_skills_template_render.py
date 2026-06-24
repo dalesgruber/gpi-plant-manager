@@ -61,3 +61,10 @@ def test_people_matrix_odoo_link_names_person():
 
     assert "https://odoo.example/web#id=42" in html
     assert 'aria-label="Open Maria Garcia in Odoo"' in html
+
+
+def test_people_matrix_active_badge_has_status_label():
+    html = _render_skills_html()
+
+    assert 'class="active-badge on"' in html
+    assert 'aria-label="Active"' in html

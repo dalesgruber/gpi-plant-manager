@@ -73,7 +73,7 @@
             </div>
           </td>
           <td>
-            <span class="active-badge {% if p.active %}on{% else %}off{% endif %}">
+            <span class="active-badge {% if p.active %}on{% else %}off{% endif %}" aria-label="{% if p.active %}Active{% else %}Inactive{% endif %}">
               {% if p.active %}✓{% else %}✗{% endif %}
             </span>
           </td>

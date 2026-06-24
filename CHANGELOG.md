@@ -25,6 +25,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **The People Matrix filter now has an explicit accessible name.** The skills/reserve planning search box is identified as "Filter people" for screen readers and voice-control tools instead of relying on placeholder text alone.
 - **People Matrix reserve toggles now name the person they affect.** Each reserve checkbox exposes a label like "Reserve Maria Garcia," making reserve edits clearer for keyboard, screen-reader, and voice-control workflows.
 - **People Matrix Odoo profile links now name the person they open.** The arrow link beside an employee now exposes "Open Maria Garcia in Odoo" instead of relying on the bare arrow glyph and a hover title.
+- **People Matrix active-status badges now expose their state directly.** The checkmark/cross badge announces "Active" or "Inactive" instead of depending on the glyph alone.
 
 ## 2026-06-19
 
