@@ -863,13 +863,17 @@ CREATE TABLE IF NOT EXISTS missed_punch_out (
 );
 
 CREATE TABLE IF NOT EXISTS feedback (
-  id          SERIAL PRIMARY KEY,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  submitter   TEXT,
-  page_url    TEXT,
-  category    TEXT,
-  message     TEXT NOT NULL
+  id           SERIAL PRIMARY KEY,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitter    TEXT,
+  page_url     TEXT,
+  category     TEXT,
+  message      TEXT NOT NULL,
+  task_type    TEXT,
+  odoo_task_id BIGINT
 );
+ALTER TABLE feedback ADD COLUMN IF NOT EXISTS task_type TEXT;
+ALTER TABLE feedback ADD COLUMN IF NOT EXISTS odoo_task_id BIGINT;
 
 -- 2026-06-24: append-only audit log of time-off approve/deny decisions made
 -- in-app. Deliberately denormalized (no FK to time_off_requests): the leave
