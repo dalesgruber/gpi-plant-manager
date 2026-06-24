@@ -5,8 +5,12 @@ from __future__ import annotations
 from . import db
 
 
-def _clamp_limit(limit: int) -> int:
-    return max(1, min(int(limit), 500))
+def _clamp_limit(limit: int, default: int = 200) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, 500))
 
 
 def insert(
