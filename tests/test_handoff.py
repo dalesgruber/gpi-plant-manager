@@ -419,6 +419,63 @@ def test_handoff_detail_renders_followup_resolve_form(monkeypatch):
     assert "Mark Resolved" in resp.text
 
 
+def test_handoff_detail_renders_mark_followup_form(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 19),
+        "shift_label": "Day",
+        "created_by": "Dale",
+        "notes": "Needs eyes later",
+        "open_total": 1,
+        "urgent_total": 0,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": False,
+        "is_open_followup": False,
+        "created_at_label": "6/19 2:15 PM",
+        "exception_snapshot": {"sections": []},
+    })
+    client = TestClient(app)
+
+    resp = client.get("/handoff/21")
+
+    assert resp.status_code == 200
+    assert "No Follow-up Open" in resp.text
+    assert 'action="/handoff/21/follow-up"' in resp.text
+    assert "Mark Follow-up" in resp.text
+
+
+def test_handoff_detail_renders_reopen_followup_form(monkeypatch):
+    monkeypatch.setattr(handoff.plant_day, "today", lambda: date(2026, 6, 19))
+    monkeypatch.setattr(handoff, "_load_handoff", lambda handoff_id: {
+        "id": handoff_id,
+        "handoff_date": date(2026, 6, 19),
+        "shift_label": "Night",
+        "created_by": "Mia",
+        "notes": "Maintenance checked",
+        "open_total": 3,
+        "urgent_total": 1,
+        "source_errors": [],
+        "source_error_label": "",
+        "follow_up_required": True,
+        "is_open_followup": False,
+        "resolved_at_label": "6/20 2:30 AM",
+        "resolved_by": "Dale",
+        "resolution_note": "Repair 1 cleared",
+        "created_at_label": "6/19 10:15 PM",
+        "exception_snapshot": {"sections": []},
+    })
+    client = TestClient(app)
+
+    resp = client.get("/handoff/21")
+
+    assert resp.status_code == 200
+    assert "Follow-up Resolved" in resp.text
+    assert 'action="/handoff/21/follow-up"' in resp.text
+    assert "Reopen Follow-up" in resp.text
+
+
 def test_resolve_handoff_updates_followup(monkeypatch):
     captured = {}
 
@@ -456,6 +513,58 @@ def test_resolve_handoff_updates_followup(monkeypatch):
     assert captured["params"] == ("Dale", "Repair 1 cleared", 21)
     assert row["is_open_followup"] is False
     assert row["resolution_note"] == "Repair 1 cleared"
+
+
+def test_mark_handoff_followup_opens_or_reopens(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{
+            "id": 21,
+            "handoff_date": date(2026, 6, 19),
+            "shift_label": "Night",
+            "created_by": "Mia",
+            "notes": "Maintenance must check Repair 1",
+            "open_total": 3,
+            "urgent_total": 1,
+            "source_errors": [],
+            "exception_snapshot": {},
+            "follow_up_required": True,
+            "resolved_at": None,
+            "resolved_by": "",
+            "resolution_note": "",
+            "created_at": datetime(2026, 6, 19, 22, 15, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 6, 20, 2, 30, tzinfo=timezone.utc),
+        }]
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    row = handoff._mark_handoff_followup(handoff_id=21)
+
+    assert row is not None
+    assert "follow_up_required = TRUE" in captured["sql"]
+    assert "resolved_at = NULL" in captured["sql"]
+    assert captured["params"] == (21,)
+    assert row["is_open_followup"] is True
+
+
+def test_mark_handoff_followup_form_redirects(monkeypatch):
+    captured = {}
+
+    def fake_mark(**kwargs):
+        captured.update(kwargs)
+        return {"id": 21}
+
+    monkeypatch.setattr(handoff, "_mark_handoff_followup", fake_mark)
+    client = TestClient(app)
+
+    resp = client.post("/handoff/21/follow-up", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/handoff/21"
+    assert captured == {"handoff_id": 21}
 
 
 def test_resolve_handoff_form_redirects(monkeypatch):

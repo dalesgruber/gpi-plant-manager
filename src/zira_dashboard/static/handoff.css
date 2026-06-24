@@ -336,6 +336,12 @@ header.app nav a.active {
 .followup-panel.resolved .section-head {
   background: var(--accent-dim);
 }
+.followup-panel.neutral .section-head {
+  background: var(--panel-2);
+}
+.followup-action-form {
+  padding: 0 0.9rem 0.9rem;
+}
 .resolve-form {
   display: grid;
   grid-template-columns: minmax(220px, 0.65fr) minmax(260px, 1.35fr);

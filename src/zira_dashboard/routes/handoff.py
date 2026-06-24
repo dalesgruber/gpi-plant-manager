@@ -266,6 +266,22 @@ def _update_handoff_notes(*, handoff_id: int, notes: str) -> dict | None:
     return _shape_handoff_row(rows[0]) if rows else None
 
 
+def _mark_handoff_followup(*, handoff_id: int) -> dict | None:
+    from .. import db
+
+    rows = db.query(
+        "UPDATE plant_shift_handoffs SET "
+        "follow_up_required = TRUE, resolved_at = NULL, resolved_by = '', "
+        "resolution_note = '', updated_at = now() "
+        "WHERE id = %s "
+        "RETURNING id, handoff_date, shift_label, created_by, notes, open_total, "
+        "urgent_total, source_errors, exception_snapshot, follow_up_required, "
+        "resolved_at, resolved_by, resolution_note, created_at, updated_at",
+        (handoff_id,),
+    )
+    return _shape_handoff_row(rows[0]) if rows else None
+
+
 @router.get("/handoff", response_class=HTMLResponse)
 def handoff_page(request: Request, saved: int | None = None):
     summary = exception_inbox.build_summary()
@@ -340,6 +356,14 @@ def update_handoff_notes_form(
     notes: str = Form(""),
 ):
     row = _update_handoff_notes(handoff_id=handoff_id, notes=notes)
+    if row is None:
+        raise HTTPException(status_code=404, detail="handoff not found")
+    return RedirectResponse(url=f"/handoff/{handoff_id}", status_code=303)
+
+
+@router.post("/handoff/{handoff_id}/follow-up")
+def mark_handoff_followup_form(handoff_id: int):
+    row = _mark_handoff_followup(handoff_id=handoff_id)
     if row is None:
         raise HTTPException(status_code=404, detail="handoff not found")
     return RedirectResponse(url=f"/handoff/{handoff_id}", status_code=303)

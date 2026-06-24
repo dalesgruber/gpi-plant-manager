@@ -99,6 +99,19 @@
     {% else %}
       <p class="detail-notes empty-note">No resolution note entered.</p>
     {% endif %}
+    <form method="post" action="/handoff/{{ handoff.id }}/follow-up" class="followup-action-form">
+      <button type="submit" class="secondary-btn">Reopen Follow-up</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="handoff-form-section followup-panel neutral">
+    <div class="section-head">
+      <h3>No Follow-up Open</h3>
+      <span>Mark this if it needs to stay on the next shift's radar</span>
+    </div>
+    <form method="post" action="/handoff/{{ handoff.id }}/follow-up" class="followup-action-form">
+      <button type="submit" class="secondary-btn">Mark Follow-up</button>
+    </form>
   </section>
   {% endif %}
 
