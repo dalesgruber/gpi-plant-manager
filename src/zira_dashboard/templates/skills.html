@@ -79,7 +79,7 @@
           </td>
           <td>
             <input type="hidden" name="reserve_present__{{ p.name }}" value="1">
-            <input class="reserve-check" type="checkbox" name="reserve__{{ p.name }}" {% if p.reserve %}checked{% endif %}>
+            <input class="reserve-check" type="checkbox" name="reserve__{{ p.name }}" aria-label="Reserve {{ p.name }}" {% if p.reserve %}checked{% endif %}>
           </td>
           {% for s in skills %}
             {% set lvl = p.skills.get(s, 0) %}

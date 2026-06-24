@@ -15,7 +15,7 @@ def _env():
     return env
 
 
-def test_people_matrix_filter_has_accessible_name():
+def _render_skills_html():
     person = SimpleNamespace(
         name="Maria Garcia",
         active=True,
@@ -24,7 +24,7 @@ def test_people_matrix_filter_has_accessible_name():
         skills={"Repair": 2},
     )
 
-    html = _env().get_template("skills.html").render(
+    return _env().get_template("skills.html").render(
         active="skills",
         active_count=1,
         inactive_count=0,
@@ -41,5 +41,16 @@ def test_people_matrix_filter_has_accessible_name():
         odoo_url="",
     )
 
+
+def test_people_matrix_filter_has_accessible_name():
+    html = _render_skills_html()
+
     assert 'id="wheel-filter"' in html
     assert 'aria-label="Filter people"' in html
+
+
+def test_people_matrix_reserve_checkbox_names_person():
+    html = _render_skills_html()
+
+    assert 'name="reserve__Maria Garcia"' in html
+    assert 'aria-label="Reserve Maria Garcia"' in html

@@ -23,6 +23,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Handoff follow-up resolution fields now have explicit accessible names.** The saved handoff detail page labels the "Resolved by" and "Resolution note" controls directly, keeping follow-up closure consistent with the rest of the manager workflow forms.
 - **The new handoff form now labels its signer and notes fields directly.** Managers entering shift handoffs get explicit "Signed by" and "Handoff notes" control names instead of relying on surrounding text or placeholder copy.
 - **The People Matrix filter now has an explicit accessible name.** The skills/reserve planning search box is identified as "Filter people" for screen readers and voice-control tools instead of relying on placeholder text alone.
+- **People Matrix reserve toggles now name the person they affect.** Each reserve checkbox exposes a label like "Reserve Maria Garcia," making reserve edits clearer for keyboard, screen-reader, and voice-control workflows.
 
 ## 2026-06-19
 
