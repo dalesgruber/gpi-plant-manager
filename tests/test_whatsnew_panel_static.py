@@ -39,3 +39,11 @@ def test_footer_js_injects_trigger_read_state_and_feedback_submit():
     assert "function submitFeedback" in js
     assert "window.gpiFetch('/feedback'" in js
     assert "function makeBadgeModal" in js
+
+
+def test_footer_js_skips_tv_mode_documents():
+    js = JS.read_text(encoding="utf-8")
+
+    assert "function isTvMode()" in js
+    assert "document.documentElement.dataset.tvTheme" in js
+    assert "if (isTvMode()) return;" in js

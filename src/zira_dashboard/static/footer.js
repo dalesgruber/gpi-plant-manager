@@ -60,7 +60,12 @@
     return whenOf(key) > getCutoff() && !getRead().has(key);
   }
 
+  function isTvMode() {
+    return !!(document.documentElement.dataset && document.documentElement.dataset.tvTheme);
+  }
+
   function injectButton() {
+    if (isTvMode()) return;
     var header = document.querySelector('header');
     if (!header || header.querySelector('.whatsnew-btn')) return;
     btn = document.createElement('button');
