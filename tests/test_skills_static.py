@@ -14,3 +14,11 @@ def test_people_matrix_sort_headers_handle_keyboard_activation():
     assert "th.addEventListener('keydown'" in js
     assert "e.key === 'Enter'" in js
     assert "e.key === ' '" in js
+
+
+def test_people_matrix_view_popover_closes_on_escape():
+    js = Path("src/zira_dashboard/static/skills-page.js").read_text()
+
+    assert "document.addEventListener('keydown'" in js
+    assert "e.key === 'Escape'" in js
+    assert "btn.focus()" in js

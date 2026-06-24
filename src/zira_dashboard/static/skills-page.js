@@ -902,13 +902,18 @@
     recomputeDirty();
     applyState(session.current);
 
+    function closeViewPopover({ restoreFocus = false } = {}) {
+      pop.setAttribute('hidden', '');
+      btn.setAttribute('aria-expanded', 'false');
+      closePicker();
+      if (restoreFocus) btn.focus();
+    }
+
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const isOpen = !pop.hasAttribute('hidden');
       if (isOpen) {
-        pop.setAttribute('hidden', '');
-        btn.setAttribute('aria-expanded', 'false');
-        closePicker();
+        closeViewPopover();
       } else {
         render();
         pop.removeAttribute('hidden');
@@ -919,9 +924,14 @@
     document.addEventListener('click', (e) => {
       if (pop.hasAttribute('hidden')) return;
       if (pop.contains(e.target) || e.target === btn) return;
-      pop.setAttribute('hidden', '');
-      btn.setAttribute('aria-expanded', 'false');
-      closePicker();
+      closeViewPopover();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !pop.hasAttribute('hidden')) {
+        e.preventDefault();
+        closeViewPopover({ restoreFocus: true });
+      }
     });
   })();
 
