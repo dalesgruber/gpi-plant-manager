@@ -947,6 +947,7 @@
     const originalLabel = btn.textContent;
     btn.addEventListener('click', async () => {
       btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
       btn.textContent = 'Refreshing…';
       status.innerHTML = '<em>Refreshing from Odoo… can take a few seconds while Odoo wakes up.</em>';
       try {
@@ -965,12 +966,14 @@
             (data.error ? String(data.error).slice(0, 200) : 'Refresh failed') +
             '</span>';
           btn.disabled = false;
+          btn.setAttribute('aria-busy', 'false');
           btn.textContent = originalLabel;
         }
       } catch (e) {
         status.innerHTML = '<span class="sync-error">⚠ Network error: ' +
           (e && e.message ? e.message : 'unknown') + '</span>';
         btn.disabled = false;
+        btn.setAttribute('aria-busy', 'false');
         btn.textContent = originalLabel;
       }
     });

@@ -89,3 +89,9 @@ def test_people_matrix_sync_status_is_announced_politely():
     html = _render_skills_html()
 
     assert 'id="sync-status" role="status" aria-live="polite"' in html
+
+
+def test_people_matrix_refresh_button_starts_not_busy():
+    html = _render_skills_html()
+
+    assert 'id="refresh-btn" aria-busy="false"' in html
