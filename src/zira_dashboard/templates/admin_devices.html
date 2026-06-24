@@ -10,7 +10,7 @@
   </p>
 
   <form method="post" action="/admin/devices" class="new-device-form">
-    <input type="text" name="name" placeholder="e.g. Bay 3 TV" required maxlength="120">
+    <input type="text" name="name" placeholder="e.g. Bay 3 TV" aria-label="Device display name" required maxlength="120">
     <button type="submit">Create device token</button>
   </form>
 
@@ -18,7 +18,7 @@
   <div class="just-minted">
     <h2>New token created for "{{ just_minted.name }}"</h2>
     <p>Copy this URL and open it once on the TV. <strong>This is the only time the URL is shown — it cannot be retrieved later.</strong></p>
-    <input type="text" value="https://{{ host }}/tv/recycling?device={{ just_minted.signed }}" readonly onclick="this.select()" class="device-url">
+    <input type="text" value="https://{{ host }}/tv/recycling?device={{ just_minted.signed }}" aria-label="New device token URL" readonly onclick="this.select()" class="device-url">
     <p class="muted">For other dashboards, swap <code>/tv/recycling</code> for <code>/tv/wc/&lt;slug&gt;</code> or <code>/tv/new</code>.</p>
   </div>
   {% endif %}
