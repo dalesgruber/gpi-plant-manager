@@ -246,6 +246,18 @@ def test_exceptions_page_renders_sections(monkeypatch):
     assert 'data-focus-mode="urgent"' in resp.text
 
 
+def test_exceptions_page_bootstraps_nav_summary(monkeypatch):
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/exceptions")
+
+    assert resp.status_code == 200
+    assert 'id="gpi-inbox-summary-bootstrap"' in resp.text
+    assert '"total": 1' in resp.text
+    assert '"urgent_total": 0' in resp.text
+
+
 def test_exceptions_page_renders_source_warning(monkeypatch):
     snapshot = _snapshot()
     snapshot["source_errors"] = [{"source": "Pending Time Off"}]
@@ -347,6 +359,8 @@ def test_footer_enhances_inbox_nav_with_summary_count():
 
     assert "/api/exceptions/summary" in js
     assert "startInboxSummary(ensureInboxLink())" in js
+    assert "readInboxSummaryBootstrap" in js
+    assert "updateInboxSummaryLink(link, initial)" in js
     assert "window.gpiRefreshInboxSummary" in js
     assert "inbox-nav-count" in js
     assert "source_errors" in js

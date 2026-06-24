@@ -17,12 +17,18 @@ router = APIRouter()
 @router.get("/exceptions", response_class=HTMLResponse)
 def exceptions_page(request: Request):
     snapshot = exception_inbox.build_snapshot()
+    initial_nav_summary = {
+        "total": int(snapshot.get("total") or 0),
+        "urgent_total": int(snapshot.get("urgent_total") or 0),
+        "source_errors": snapshot.get("source_errors") or [],
+    }
     return templates.TemplateResponse(
         request,
         "exceptions.html",
         {
             "snapshot": snapshot,
             "sections": snapshot["sections"],
+            "initial_nav_summary": initial_nav_summary,
         },
     )
 

@@ -197,10 +197,25 @@
     }).catch(function () {});
   }
 
+  function readInboxSummaryBootstrap() {
+    var el = document.getElementById('gpi-inbox-summary-bootstrap');
+    if (!el) return null;
+    try {
+      return JSON.parse(el.textContent || '{}');
+    } catch (e) {
+      return null;
+    }
+  }
+
   function startInboxSummary(link) {
     if (!link) return;
     window.gpiRefreshInboxSummary = function () { refreshInboxSummary(link); };
-    setTimeout(function () { refreshInboxSummary(link); }, 650);
+    var initial = readInboxSummaryBootstrap();
+    if (initial) {
+      updateInboxSummaryLink(link, initial);
+    } else {
+      setTimeout(function () { refreshInboxSummary(link); }, 650);
+    }
     setInterval(function () {
       if (!document.hidden) refreshInboxSummary(link);
     }, 60000);
