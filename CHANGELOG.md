@@ -49,6 +49,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Plant Scheduler publish buttons now guard against duplicate submits.** Publish and Override & Publish expose a busy state and disable together once the publish form submit starts, reducing accidental double-posts from repeated clicks.
 - **Plant Scheduler custom-hours editor now manages keyboard focus.** The Hours button exposes its expanded state, the editor is labeled as a dialog-style panel, opening moves focus to shift start, and Cancel or Escape returns focus to the Hours button.
 - **Plant Scheduler Slack posting now announces its busy state.** The Post to Slack button starts with an explicit not-busy state, marks itself busy while publishing/posting, and resets that state when the flow finishes or errors.
+- **Timeclock punch buttons now guard against double taps.** Kiosk clock-in and clock-out forms disable their submit button and mark it busy as soon as a punch submit starts, reducing accidental duplicate punch requests from quick repeated taps.
 
 ## 2026-06-19
 

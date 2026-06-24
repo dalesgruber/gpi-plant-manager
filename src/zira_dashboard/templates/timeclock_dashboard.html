@@ -38,8 +38,8 @@
       <p class="lunch-note">{{ t("On lunch — tap Sign Out only if you're leaving for the day.") }}</p>
     {% endif %}
     <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
-      <form method="post" action="/timeclock/clock-out/{{ token }}" style="margin: 0;">
-        <button type="submit" class="k-btn danger">{{ t("Clock Out") }}</button>
+      <form method="post" action="/timeclock/clock-out/{{ token }}" class="k-punch-form" style="margin: 0;">
+        <button type="submit" class="k-btn danger" aria-busy="false">{{ t("Clock Out") }}</button>
       </form>
       <a href="/timeclock/pick-wc/{{ token }}?purpose=transfer"
          class="k-btn secondary" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">
@@ -50,11 +50,11 @@
     {% if scheduled_wc %}
       <h2>{{ t("Today you're scheduled on") }}</h2>
       <h1 style="font-size: 3rem; color: #ea580c;">{{ scheduled_wc }}</h1>
-      <form method="post" action="/timeclock/clock-in/{{ token }}"
+      <form method="post" action="/timeclock/clock-in/{{ token }}" class="k-punch-form"
             style="margin-bottom: 1.5rem;">
         <input type="hidden" name="wc_name" value="{{ scheduled_wc }}" />
         <input type="hidden" name="scheduled_wc_name" value="{{ scheduled_wc }}" />
-        <button type="submit" class="k-btn success">
+        <button type="submit" class="k-btn success" aria-busy="false">
           {{ t("Confirm — Clock In") }}
         </button>
       </form>
@@ -101,4 +101,14 @@
     </a>
   {% endif %}
 </div>
+<script>
+  document.querySelectorAll('.k-punch-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    });
+  });
+</script>
 {% endblock %}
