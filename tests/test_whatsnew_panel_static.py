@@ -14,6 +14,7 @@ def test_footer_template_uses_panel_without_old_text_link():
     assert "changelog-open" not in html
     assert "changelog-feedback-toggle" in html
     assert "changelog-feedback-message" in html
+    assert 'aria-label="Feedback message"' in html
     assert "changelog-markall" in html
 
 
