@@ -16,8 +16,10 @@ function toggleAll(btn) {
   }
 }
 
+let lbPopupOpener = null;
 
 async function openLbPopup(btn) {
+  lbPopupOpener = btn;
   const name = btn.dataset.name;
   const wc = btn.dataset.wc || '';
   const group = btn.dataset.group || '';
@@ -33,6 +35,7 @@ async function openLbPopup(btn) {
 
   const bd = document.getElementById('lb-popup-bd');
   bd.classList.add('show');
+  document.getElementById('lb-popup-card-link').focus();
   const tbody = document.querySelector('#lb-popup-table tbody');
   tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Loading…</td></tr>';
   document.getElementById('lb-popup-empty').style.display = 'none';
@@ -73,14 +76,19 @@ function renderLbPopupRows(rows) {
 }
 
 function closeLbPopup() {
-  document.getElementById('lb-popup-bd').classList.remove('show');
+  const bd = document.getElementById('lb-popup-bd');
+  if (!bd.classList.contains('show')) return;
+  bd.classList.remove('show');
+  if (lbPopupOpener && typeof lbPopupOpener.focus === 'function') {
+    lbPopupOpener.focus();
+  }
 }
 
 document.getElementById('lb-popup-bd').addEventListener('click', e => {
   if (e.target.id === 'lb-popup-bd') closeLbPopup();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeLbPopup();
+  if (e.key === 'Escape' && document.getElementById('lb-popup-bd').classList.contains('show')) closeLbPopup();
 });
 
 

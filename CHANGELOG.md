@@ -43,6 +43,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **The Trophy Case override panel now resets the replacement-name field when reopened.** If a manager previously chose Delete or Reset, the next award edit correctly shows the winner field again when the action resets to Reassign.
 - **Past Schedules edit/delete confirmations now behave like proper dialogs.** The confirmation panel names itself to assistive tech, labels the admin-password field directly, closes with Escape, restores focus to the row action, and marks async edit/delete buttons busy while the request is running.
 - **Leaderboards section visibility controls now name the section and expose busy state.** The hide/show icon buttons announce which work center or group they affect, disable during the async update, and recover if the request fails.
+- **Leaderboards person-detail popup now keeps keyboard focus in the workflow.** Opening a leaderboard average row moves focus into the popup, the Close button has an explicit accessible name, and closing restores focus to the operator button that opened it.
 
 ## 2026-06-19
 
