@@ -331,11 +331,18 @@ def build_snapshot() -> dict:
         for row in section.get("rows") or []
         if row.get("priority") == "urgent"
     )
+    follow_up_total = sum(
+        1
+        for section in sections
+        for row in section.get("rows") or []
+        if row.get("priority") == "muted"
+    )
     return {
         "today": today.isoformat(),
         "generated_at": plant_day.now().strftime("%-I:%M %p"),
         "total": total,
         "urgent_total": urgent_total,
+        "follow_up_total": follow_up_total,
         "source_errors": source_errors,
         "sections": sections,
     }

@@ -81,6 +81,7 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
     assert snap["today"] == "2026-06-19"
     assert snap["total"] == 6
     assert snap["urgent_total"] == 4
+    assert snap["follow_up_total"] == 1
     assert snap["source_errors"] == []
     counts = {s["id"]: s["count"] for s in snap["sections"]}
     assert counts == {
@@ -234,7 +235,10 @@ def test_exceptions_summary_api_uses_summary(monkeypatch):
 
 
 def test_exceptions_page_renders_sections(monkeypatch):
-    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
+    snapshot = _snapshot()
+    snapshot["urgent_total"] = 1
+    snapshot["follow_up_total"] = 2
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", lambda: snapshot)
     client = TestClient(app)
 
     resp = client.get("/exceptions")
@@ -244,6 +248,11 @@ def test_exceptions_page_renders_sections(monkeypatch):
     assert "Repair 1" in resp.text
     assert "Queue changed since this page loaded." in resp.text
     assert 'data-focus-mode="urgent"' in resp.text
+    assert 'data-focus-count="all"' in resp.text
+    assert 'data-focus-count="urgent"' in resp.text
+    assert 'data-focus-count="followup"' in resp.text
+    assert ">1</span> urgent" in resp.text
+    assert ">2</span> follow-up" in resp.text
 
 
 def test_exceptions_page_bootstraps_nav_summary(monkeypatch):
@@ -351,6 +360,9 @@ def test_exceptions_js_refreshes_shared_badges_after_inline_resolution():
     assert "Moved forward; refreshing..." in js
     assert "snapshot.source_errors" in js
     assert "data-source-warning" in js
+    assert "function bumpFocusCounts(row, delta)" in js
+    assert "[data-focus-count=\"" in js
+    assert "bumpFocusCount('urgent', delta)" in js
 
 
 def test_footer_enhances_inbox_nav_with_summary_count():

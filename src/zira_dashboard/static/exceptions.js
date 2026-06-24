@@ -86,6 +86,17 @@
     wrap.hidden = next <= 0;
   }
 
+  function bumpFocusCount(key, delta) {
+    var el = document.querySelector('[data-focus-count="' + key + '"]');
+    if (el) el.textContent = countElText(el) + delta;
+  }
+
+  function bumpFocusCounts(row, delta) {
+    bumpFocusCount('all', delta);
+    if (row && row.dataset.priority === 'urgent') bumpFocusCount('urgent', delta);
+    if (row && row.dataset.priority === 'muted') bumpFocusCount('followup', delta);
+  }
+
   function refreshSharedBadge(row) {
     var actionType = row && row.dataset.actionType;
     var badgeKey = null;
@@ -121,6 +132,7 @@
     row.classList.add('is-resolved');
     bumpCounts(row.dataset.sectionId, -1);
     bumpUrgent(row, -1);
+    bumpFocusCounts(row, -1);
     refreshSharedBadge(row);
     refreshInboxSummary();
     setTimeout(function () {

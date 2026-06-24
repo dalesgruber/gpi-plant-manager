@@ -163,6 +163,23 @@ header.app nav a.active {
   background: var(--accent-dim);
   color: var(--accent);
 }
+.focus-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45rem;
+  min-height: 1.35rem;
+  margin-right: 0.28rem;
+  padding: 0 0.32rem;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: var(--fg);
+  font-size: 0.76rem;
+}
+.focus-btn.active .focus-count {
+  background: #fff;
+  color: var(--accent);
+}
 .focus-empty {
   margin: 0 0 0.9rem;
   padding: 0.75rem 0.85rem;
