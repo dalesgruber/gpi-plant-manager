@@ -31,6 +31,8 @@ def _parse_time_to_24h(s: str) -> str | None:
         return None
     h = int(m.group(1))
     mm = int(m.group(2) or 0)
+    if h < 1 or h > 12 or mm > 59:
+        return None
     period = m.group(3).lower().replace(".", "")
     if h == 12:
         h = 0

@@ -1,6 +1,10 @@
 """Unit tests for the /changelog markdown-to-cards renderer."""
 
-from zira_dashboard.routes.changelog import _latest_deploy_when, _md_to_html
+from zira_dashboard.routes.changelog import (
+    _latest_deploy_when,
+    _md_to_html,
+    _parse_time_to_24h,
+)
 
 
 def test_structured_entry_has_groups_badge_title_and_key():
@@ -67,3 +71,8 @@ def test_latest_deploy_ignores_titled_heading_suffix():
     )
 
     assert _latest_deploy_when(md) == "2026-06-24T10:11"
+
+
+def test_parse_time_rejects_impossible_clock_values():
+    assert _parse_time_to_24h("13:00 PM") is None
+    assert _parse_time_to_24h("9:70 AM") is None
