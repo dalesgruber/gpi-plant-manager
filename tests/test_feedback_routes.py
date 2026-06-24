@@ -46,6 +46,27 @@ def test_post_feedback_rejects_empty_message(monkeypatch):
     assert called["n"] == 0
 
 
+def test_post_feedback_trims_optional_fields_and_drops_blanks(monkeypatch):
+    captured = {}
+
+    def fake_insert(**kwargs):
+        captured.update(kwargs)
+        return 124
+
+    monkeypatch.setattr(feedback_store, "insert", fake_insert)
+
+    resp = client.post("/feedback", json={
+        "message": "  Needs cleanup  ",
+        "category": "   ",
+        "page_url": "  /staffing?day=2026-06-24  ",
+    })
+
+    assert resp.status_code == 200
+    assert captured["message"] == "Needs cleanup"
+    assert captured["category"] is None
+    assert captured["page_url"] == "/staffing?day=2026-06-24"
+
+
 def test_admin_feedback_renders_rows(monkeypatch):
     monkeypatch.setattr(feedback_store, "recent", lambda limit=200: [{
         "id": 5,

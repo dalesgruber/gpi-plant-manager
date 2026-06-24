@@ -18,6 +18,11 @@ class FeedbackIn(BaseModel):
     page_url: str | None = None
 
 
+def _optional_text(value: str | None) -> str | None:
+    value = (value or "").strip()
+    return value or None
+
+
 @router.post("/feedback")
 def submit_feedback(payload: FeedbackIn, request: Request) -> JSONResponse:
     message = (payload.message or "").strip()
@@ -30,8 +35,8 @@ def submit_feedback(payload: FeedbackIn, request: Request) -> JSONResponse:
     new_id = feedback_store.insert(
         message=message,
         submitter=submitter,
-        page_url=(payload.page_url or None),
-        category=(payload.category or None),
+        page_url=_optional_text(payload.page_url),
+        category=_optional_text(payload.category),
     )
     return JSONResponse({"ok": True, "id": new_id})
 
