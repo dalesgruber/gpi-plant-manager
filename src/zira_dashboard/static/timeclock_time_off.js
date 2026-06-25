@@ -39,6 +39,7 @@
   var remainEl = document.getElementById("balance-remaining");
   var submitBtn = document.getElementById("submit-btn");
   var warningEl = document.getElementById("schedule-warning");
+  var form = document.querySelector(".time-off-request-form");
 
   if (!typeSel || !submitBtn) return;
   // availEl/sizeEl/remainEl only exist for full_day; partial-day shapes
@@ -248,6 +249,13 @@
       el.addEventListener("input", onDateOrTimeChange);
     }
   });
+
+  if (form) {
+    form.addEventListener("submit", function () {
+      submitBtn.disabled = true;
+      submitBtn.setAttribute("aria-busy", "true");
+    });
+  }
 
   clampEndToStart();
   recalc();

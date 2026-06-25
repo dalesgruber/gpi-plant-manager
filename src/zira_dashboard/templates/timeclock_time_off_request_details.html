@@ -61,6 +61,7 @@
 
     <form method="post"
           action="{% if edit_mode %}/timeclock/time-off/mine/{{ token }}/{{ edit_rid }}/edit{% else %}/timeclock/time-off/request/{{ token }}/submit{% endif %}"
+          class="time-off-request-form"
           style="display: flex; flex-direction: column; gap: 1.25rem;
                  background: #ffffff; border: 1px solid #e2e8f0;
                  border-radius: 0.75rem; padding: 1.5rem;
@@ -246,7 +247,7 @@
                   padding: 0.85rem 1.1rem; font-size: 1rem;">
       </div>
 
-      <button type="submit" id="submit-btn" class="k-btn success"
+      <button type="submit" id="submit-btn" class="k-btn success" aria-busy="false"
               style="width: 100%; font-size: 1.5rem; padding: 1.25rem;
                      min-height: 80px;"
               {% if shape == "full_day" and not leave_types %}disabled{% endif %}
