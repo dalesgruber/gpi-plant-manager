@@ -1,10 +1,11 @@
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from zira_dashboard import db, exception_inbox, missing_wc, missed_punch_out
+from zira_dashboard import db, exception_inbox, missing_wc, missed_punch_out, staffing
 from zira_dashboard.app import app
 from zira_dashboard.routes import exceptions as exceptions_route
 from zira_dashboard.routes import staffing as staffing_routes
@@ -87,6 +88,7 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
     counts = {s["id"]: s["count"] for s in snap["sections"]}
     assert counts == {
         "assignments": 1,
+        "plant_schedule": 0,
         "late": 2,
         "missing_wc": 1,
         "missed_punch_out": 1,
@@ -138,6 +140,7 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
     assert summary["source_errors"] == []
     assert summary["sections"] == {
         "assignments": 2,
+        "plant_schedule": 0,
         "late": 3,
         "missing_wc": 1,
         "missed_punch_out": 1,
@@ -204,6 +207,7 @@ def test_snapshot_marks_degraded_sources_without_hiding_page(monkeypatch):
     assert snap["source_errors"] == [{"source": "Assignments To Do"}]
     assert [s["id"] for s in snap["sections"]] == [
         "assignments",
+        "plant_schedule",
         "late",
         "missing_wc",
         "missed_punch_out",
@@ -224,6 +228,203 @@ def test_pending_time_off_section_links_to_approvals_page(monkeypatch):
 
     time_off = next(s for s in snap["sections"] if s["id"] == "time_off")
     assert time_off["href"] == "/staffing/time-off/approvals"
+
+
+def _empty_inbox_sources(monkeypatch):
+    monkeypatch.setattr(staffing_routes, "assignments_todo_payload", lambda: {"count": 0})
+    monkeypatch.setattr(staffing_routes, "late_report_payload", lambda: {"count": 0})
+    monkeypatch.setattr(missing_wc, "current_rows", lambda: [])
+    monkeypatch.setattr(missed_punch_out, "current_rows", lambda: [])
+    monkeypatch.setattr(exception_inbox, "_pending_time_off", lambda today: (0, []))
+    monkeypatch.setattr(exception_inbox, "_pending_time_off_count", lambda today: 0)
+    monkeypatch.setattr(exception_inbox, "_work_center_names", lambda: [])
+
+
+def test_plant_schedule_reminder_waits_until_cutoff(monkeypatch):
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 13, 29),
+    )
+
+    count, rows = exception_inbox._plant_schedule_reminder()
+
+    assert count == 0
+    assert rows == []
+
+
+def test_plant_schedule_reminder_adds_unpublished_next_business_day(monkeypatch):
+    loaded_days = []
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 13, 30),
+    )
+    monkeypatch.setattr(
+        exception_inbox.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+
+    def fake_load_schedule(day):
+        loaded_days.append(day)
+        return staffing.Schedule(day=day, published=False)
+
+    monkeypatch.setattr(exception_inbox.staffing, "load_schedule", fake_load_schedule)
+
+    count, rows = exception_inbox._plant_schedule_reminder()
+
+    assert loaded_days == [date(2026, 6, 26)]
+    assert count == 1
+    assert rows == [{
+        "name": "Plant Schedule",
+        "label": "Friday, Jun 26",
+        "detail": "Not published",
+        "priority": "warn",
+        "badge": "Publish",
+        "href": "/staffing?day=2026-06-26",
+        "row_key": "plant_schedule:2026-06-26",
+    }]
+
+
+def test_plant_schedule_reminder_skips_published_target(monkeypatch):
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 14, 0),
+    )
+    monkeypatch.setattr(
+        exception_inbox.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(
+        exception_inbox.staffing,
+        "load_schedule",
+        lambda day: staffing.Schedule(day=day, published=True),
+    )
+
+    count, rows = exception_inbox._plant_schedule_reminder()
+
+    assert count == 0
+    assert rows == []
+
+
+def test_plant_schedule_reminder_friday_after_cutoff_targets_monday(monkeypatch):
+    loaded_days = []
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 26, 14, 0),
+    )
+    monkeypatch.setattr(
+        exception_inbox.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+
+    def fake_load_schedule(day):
+        loaded_days.append(day)
+        return staffing.Schedule(day=day, published=False)
+
+    monkeypatch.setattr(exception_inbox.staffing, "load_schedule", fake_load_schedule)
+
+    count, rows = exception_inbox._plant_schedule_reminder()
+
+    assert loaded_days == [date(2026, 6, 29)]
+    assert count == 1
+    assert rows[0]["label"] == "Monday, Jun 29"
+
+
+def test_snapshot_includes_unpublished_schedule_section_after_cutoff(monkeypatch):
+    _empty_inbox_sources(monkeypatch)
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "today",
+        lambda: date(2026, 6, 25),
+    )
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 13, 45),
+    )
+    monkeypatch.setattr(
+        exception_inbox.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(
+        exception_inbox.staffing,
+        "load_schedule",
+        lambda day: staffing.Schedule(day=day, published=False),
+    )
+
+    snap = exception_inbox.build_snapshot()
+
+    plant_schedule = next(s for s in snap["sections"] if s["id"] == "plant_schedule")
+    assert snap["total"] == 1
+    assert snap["urgent_total"] == 0
+    assert plant_schedule["count"] == 1
+    assert plant_schedule["title"] == "Plant Schedule"
+    assert plant_schedule["tone"] == "warn"
+    assert plant_schedule["href"] == "/staffing?day=2026-06-26"
+    assert plant_schedule["rows"][0]["badge"] == "Publish"
+
+
+def test_summary_includes_unpublished_schedule_after_cutoff(monkeypatch):
+    _empty_inbox_sources(monkeypatch)
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "today",
+        lambda: date(2026, 6, 25),
+    )
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 13, 45),
+    )
+    monkeypatch.setattr(
+        exception_inbox.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(
+        exception_inbox.staffing,
+        "load_schedule",
+        lambda day: staffing.Schedule(day=day, published=False),
+    )
+
+    summary = exception_inbox.build_summary()
+
+    assert summary["total"] == 1
+    assert summary["sections"]["plant_schedule"] == 1
+
+
+def test_schedule_source_failure_marks_inbox_degraded(monkeypatch):
+    _empty_inbox_sources(monkeypatch)
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "today",
+        lambda: date(2026, 6, 25),
+    )
+    monkeypatch.setattr(
+        exception_inbox.plant_day,
+        "now",
+        lambda: datetime(2026, 6, 25, 13, 45),
+    )
+
+    def fail_schedule():
+        raise RuntimeError("schedule settings unavailable")
+
+    monkeypatch.setattr(exception_inbox, "_plant_schedule_reminder", fail_schedule)
+
+    snap = exception_inbox.build_snapshot()
+
+    assert snap["total"] == 0
+    assert {"source": "Plant Schedule"} in snap["source_errors"]
+    plant_schedule = next(s for s in snap["sections"] if s["id"] == "plant_schedule")
+    assert plant_schedule["count"] == 0
+    assert plant_schedule["rows"] == []
 
 
 def test_exceptions_api_uses_snapshot(monkeypatch):

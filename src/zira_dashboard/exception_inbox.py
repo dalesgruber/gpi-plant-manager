@@ -8,9 +8,9 @@ in-process or read from the local Postgres mirror.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, time, timedelta
 
-from . import plant_day
+from . import plant_day, schedule_store, staffing
 
 _log = logging.getLogger(__name__)
 
@@ -41,6 +41,40 @@ def _work_center_names() -> list[str]:
     from . import staffing
 
     return [loc.name for loc in staffing.LOCATIONS]
+
+
+_SCHEDULE_REMINDER_CUTOFF = time(13, 30)
+
+
+def _next_business_day(day: date) -> date:
+    work_weekdays = schedule_store.current().work_weekdays or frozenset({0, 1, 2, 3, 4})
+    nxt = day + timedelta(days=1)
+    for _ in range(14):
+        if nxt.weekday() in work_weekdays:
+            return nxt
+        nxt += timedelta(days=1)
+    return day + timedelta(days=1)
+
+
+def _plant_schedule_reminder() -> tuple[int, list[dict]]:
+    now = plant_day.now()
+    if now.time() < _SCHEDULE_REMINDER_CUTOFF:
+        return 0, []
+
+    target_day = _next_business_day(now.date())
+    sched = staffing.load_schedule(target_day)
+    if sched.published:
+        return 0, []
+
+    return 1, [{
+        "name": "Plant Schedule",
+        "label": target_day.strftime("%A, %b %-d"),
+        "detail": "Not published",
+        "priority": "warn",
+        "badge": "Publish",
+        "href": f"/staffing?day={target_day.isoformat()}",
+        "row_key": _row_key("plant_schedule", target_day.isoformat()),
+    }]
 
 
 def _row_key(kind: str, *parts) -> str:
@@ -115,6 +149,9 @@ def build_summary() -> dict:
     late = _capture(source_errors, "Late / Absence", staffing_routes.late_report_payload, {})
     missing_rows = _capture(source_errors, "Missing Work Center", missing_wc.current_rows, [])
     missed_rows = _capture(source_errors, "Missed Punch Out", missed_punch_out.current_rows, [])
+    schedule_count = _capture(
+        source_errors, "Plant Schedule", lambda: _plant_schedule_reminder()[0], 0
+    )
     pending_count = _capture(
         source_errors, "Pending Time Off", lambda: _pending_time_off_count(today), 0
     )
@@ -129,7 +166,14 @@ def build_summary() -> dict:
         + missing_count
         + missed_count
     )
-    total = assignment_count + late_count + missing_count + missed_count + pending_count
+    total = (
+        assignment_count
+        + schedule_count
+        + late_count
+        + missing_count
+        + missed_count
+        + pending_count
+    )
     return {
         "today": today.isoformat(),
         "generated_at": plant_day.now().strftime("%-I:%M %p"),
@@ -139,6 +183,7 @@ def build_summary() -> dict:
         "source_errors": source_errors,
         "sections": {
             "assignments": assignment_count,
+            "plant_schedule": schedule_count,
             "late": late_count,
             "missing_wc": missing_count,
             "missed_punch_out": missed_count,
@@ -159,6 +204,9 @@ def build_snapshot() -> dict:
     late = _capture(source_errors, "Late / Absence", staffing_routes.late_report_payload, {})
     missing_rows = _capture(source_errors, "Missing Work Center", missing_wc.current_rows, [])
     missed_rows = _capture(source_errors, "Missed Punch Out", missed_punch_out.current_rows, [])
+    schedule_count, schedule_rows = _capture(
+        source_errors, "Plant Schedule", _plant_schedule_reminder, (0, [])
+    )
     pending_count, pending_rows = _capture(
         source_errors, "Pending Time Off", lambda: _pending_time_off(today), (0, [])
     )
@@ -248,6 +296,18 @@ def build_snapshot() -> dict:
                 }
                 for item in assignments.get("items") or []
             ],
+        },
+        {
+            "id": "plant_schedule",
+            "title": "Plant Schedule",
+            "count": schedule_count,
+            "tone": "warn",
+            "action_key": None,
+            "action_label": None,
+            "href": schedule_rows[0]["href"] if schedule_rows else "/staffing",
+            "empty": "All clear",
+            "context": {},
+            "rows": schedule_rows,
         },
         {
             "id": "late",
