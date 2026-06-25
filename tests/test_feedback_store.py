@@ -18,18 +18,19 @@ def _schema():
     yield
 
 
-def test_insert_then_recent_round_trip():
+def test_insert_then_for_submitter_round_trip():
     new_id = feedback_store.insert(
         message="Round-trip test message",
         submitter="tester@gruberpallets.com",
         page_url="/recycling",
-        category="Idea",
+        task_type="bug",
+        odoo_task_id=999001,
     )
     assert isinstance(new_id, int)
-    rows = feedback_store.recent(limit=50)
+    rows = feedback_store.for_submitter("tester@gruberpallets.com", limit=50)
     match = next((r for r in rows if r["id"] == new_id), None)
     assert match is not None
     assert match["message"] == "Round-trip test message"
-    assert match["submitter"] == "tester@gruberpallets.com"
-    assert match["category"] == "Idea"
+    assert match["task_type"] == "bug"
+    assert match["odoo_task_id"] == 999001
     db.execute("DELETE FROM feedback WHERE id = %s", (new_id,))

@@ -18,6 +18,7 @@ Never log or echo these values.
 
 from __future__ import annotations
 
+import base64
 import os
 import threading
 import time
@@ -85,8 +86,9 @@ def _server_proxy(url: str) -> xmlrpc.client.ServerProxy:
 
 def _reset_cache_for_tests() -> None:
     """Clear cached uid + per-thread object proxy; tests call this between cases."""
-    global _uid_cache
+    global _uid_cache, _feedback_project_id
     _uid_cache = None
+    _feedback_project_id = None
     if hasattr(_thread_local, "object_proxy"):
         del _thread_local.object_proxy
 
@@ -143,6 +145,13 @@ def execute(model: str, method: str, *args: Any, **kwargs: Any) -> Any:
 
 
 SKILL_TYPE_NAMES = ("Production Skills", "Supervisor Skills", "Certifications")
+
+FEEDBACK_PROJECT_NAME = "Plant Manager"
+FEEDBACK_STAGES = ("New", "In Progress", "Done", "Rejected")
+FEEDBACK_DONE_STAGE = "Done"
+FEEDBACK_REJECTED_STAGE = "Rejected"
+
+_feedback_project_id: int | None = None
 
 
 def fetch_skill_columns_with_types() -> list[dict]:
@@ -1278,3 +1287,121 @@ def find_duplicate_leave(
         fields=["id"], limit=1,
     )
     return rows[0]["id"] if rows else None
+
+
+def _ensure_feedback_stages(project_id: int) -> None:
+    existing = execute(
+        "project.task.type", "search_read",
+        [("project_ids", "in", [project_id])], fields=["name"],
+    ) or []
+    have = {r["name"] for r in existing}
+    for seq, name in enumerate(FEEDBACK_STAGES):
+        if name in have:
+            continue
+        execute("project.task.type", "create", {
+            "name": name,
+            "sequence": seq,
+            "fold": name in (FEEDBACK_DONE_STAGE, FEEDBACK_REJECTED_STAGE),
+            "project_ids": [(4, project_id)],
+        })
+
+
+def ensure_feedback_project() -> int:
+    """Find-or-create the 'Plant Manager' project (+ its stages); cache the id."""
+    global _feedback_project_id
+    if _feedback_project_id is not None:
+        return _feedback_project_id
+    found = execute(
+        "project.project", "search_read",
+        [("name", "=", FEEDBACK_PROJECT_NAME)], fields=["id"], limit=1,
+    )
+    if found:
+        project_id = found[0]["id"]
+    else:
+        project_id = execute("project.project", "create", {"name": FEEDBACK_PROJECT_NAME})
+    _ensure_feedback_stages(project_id)
+    _feedback_project_id = project_id
+    return project_id
+
+
+def ensure_feedback_tag(name: str) -> int:
+    """Find-or-create a project.tags row by name; return its id."""
+    found = execute(
+        "project.tags", "search_read",
+        [("name", "=", name)], fields=["id"], limit=1,
+    )
+    if found:
+        return found[0]["id"]
+    return execute("project.tags", "create", {"name": name})
+
+
+def create_feedback_task(
+    project_id: int,
+    name: str,
+    description_html: str,
+    assignee_uid: int,
+    tag_id: int | None,
+    deadline: str,
+) -> int:
+    """Create a project.task. Tries Odoo 16/17 `user_ids` (m2m), falls back to
+    legacy `user_id` (m2o) if the field is rejected."""
+    base = {
+        "name": name,
+        "project_id": project_id,
+        "description": description_html,
+        "date_deadline": deadline,
+    }
+    if tag_id:
+        base["tag_ids"] = [(6, 0, [tag_id])]
+    try:
+        return execute("project.task", "create",
+                       dict(base, user_ids=[(6, 0, [assignee_uid])]))
+    except xmlrpc.client.Fault as fault:
+        # Only retry when Odoo rejected the `user_ids` field itself (older
+        # versions expose the m2o `user_id` instead). Any other Fault — access
+        # rights, validation, a transient server error — is a real failure and
+        # must propagate, not trigger a second create attempt.
+        if "user_ids" not in (fault.faultString or ""):
+            raise
+        return execute("project.task", "create",
+                       dict(base, user_id=assignee_uid))
+
+
+def add_task_attachment(
+    task_id: int, filename: str, mimetype: str | None, raw_bytes: bytes
+) -> int:
+    """Attach a file to a project.task as an ir.attachment."""
+    return execute("ir.attachment", "create", {
+        "name": filename,
+        "datas": base64.b64encode(raw_bytes).decode("ascii"),
+        "res_model": "project.task",
+        "res_id": task_id,
+        "mimetype": mimetype or "application/octet-stream",
+    })
+
+
+def fetch_task_stage_names(task_ids) -> dict[int, str | None]:
+    """Return {task_id: stage name} for the given project.task ids."""
+    ids = [int(t) for t in task_ids if t]
+    if not ids:
+        return {}
+    rows = execute("project.task", "read", ids, fields=["id", "stage_id"]) or []
+    out: dict[int, str | None] = {}
+    for r in rows:
+        stage = r.get("stage_id")
+        out[r["id"]] = stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1 else None
+    return out
+
+
+def feedback_status_bucket(stage_name: str | None) -> str:
+    """Collapse an Odoo stage name to open / done / rejected.
+
+    Matching is by exact stage name, so renaming the "Done"/"Rejected" stages
+    in the Odoo UI would make those tasks read as "open" here. The stages are
+    seeded by `_ensure_feedback_stages`; leave their names as-is.
+    """
+    if stage_name == FEEDBACK_DONE_STAGE:
+        return "done"
+    if stage_name == FEEDBACK_REJECTED_STAGE:
+        return "rejected"
+    return "open"

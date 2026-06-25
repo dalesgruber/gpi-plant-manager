@@ -1,103 +1,170 @@
-"""Feedback route tests; store is monkeypatched so no Postgres is required."""
+"""Feedback POST route tests; Odoo + store are monkeypatched (no PG/Odoo)."""
 
 from fastapi.testclient import TestClient
 
-from zira_dashboard import feedback_store
+from zira_dashboard import feedback_store, odoo_client
 from zira_dashboard.app import app
 
 client = TestClient(app)
 
 
-def test_post_feedback_inserts_and_returns_id(monkeypatch):
+def _patch_odoo(monkeypatch, created=None):
+    calls = {"task": None, "attachments": [], "tags": []}
+
+    monkeypatch.setattr(odoo_client, "ensure_feedback_project", lambda: 7)
+    monkeypatch.setattr(odoo_client, "authenticate", lambda: 3)
+
+    def fake_tag(name):
+        calls["tags"].append(name)
+        return 55
+
+    def fake_task(**kwargs):
+        calls["task"] = kwargs
+        return created or 900
+
+    def fake_att(**kwargs):
+        calls["attachments"].append(kwargs)
+        return len(calls["attachments"])
+
+    monkeypatch.setattr(odoo_client, "ensure_feedback_tag", fake_tag)
+    monkeypatch.setattr(
+        odoo_client, "create_feedback_task",
+        lambda **kw: fake_task(**kw),
+    )
+    monkeypatch.setattr(
+        odoo_client, "add_task_attachment",
+        lambda **kw: fake_att(**kw),
+    )
+    return calls
+
+
+def test_post_feedback_creates_task_and_local_row(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
     captured = {}
+    monkeypatch.setattr(
+        feedback_store, "insert",
+        lambda **kw: captured.update(kw) or 12,
+    )
 
-    def fake_insert(**kwargs):
-        captured.update(kwargs)
-        return 123
-
-    monkeypatch.setattr(feedback_store, "insert", fake_insert)
-
-    resp = client.post("/feedback", json={
-        "message": "  Great app  ",
-        "category": "Idea",
-        "page_url": "/recycling",
-    })
+    resp = client.post(
+        "/feedback",
+        data={"type": "bug", "description": "  It broke  ", "page_url": "/recycling"},
+    )
 
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "id": 123}
-    assert captured["message"] == "Great app"
-    assert captured["category"] == "Idea"
+    body = resp.json()
+    assert body["ok"] is True and body["task_id"] == 900
+    assert calls["task"]["project_id"] == 7
+    assert calls["task"]["assignee_uid"] == 3
+    assert calls["task"]["tag_id"] == 55
+    assert calls["task"]["name"].startswith("[Bug] It broke")
+    assert calls["tags"] == ["Bug"]
+    assert captured["task_type"] == "bug"
+    assert captured["odoo_task_id"] == 900
+    assert captured["message"] == "It broke"
     assert captured["page_url"] == "/recycling"
 
 
-def test_post_feedback_rejects_empty_message(monkeypatch):
+def test_post_feedback_feature_uses_feature_tag(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
+    monkeypatch.setattr(feedback_store, "insert", lambda **kw: 1)
+
+    resp = client.post(
+        "/feedback",
+        data={"type": "feature", "description": "Add dark mode"},
+    )
+
+    assert resp.status_code == 200
+    assert calls["tags"] == ["Feature request"]
+    assert calls["task"]["name"].startswith("[Feature] Add dark mode")
+
+
+def test_post_feedback_uploads_attachments(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
+    monkeypatch.setattr(feedback_store, "insert", lambda **kw: 1)
+
+    resp = client.post(
+        "/feedback",
+        data={"type": "bug", "description": "see image"},
+        files=[("files", ("shot.png", b"\x89PNG\r\n", "image/png"))],
+    )
+
+    assert resp.status_code == 200
+    assert len(calls["attachments"]) == 1
+    assert calls["attachments"][0]["task_id"] == 900
+    assert calls["attachments"][0]["filename"] == "shot.png"
+    assert calls["attachments"][0]["raw_bytes"] == b"\x89PNG\r\n"
+
+
+def test_post_feedback_rejects_empty_description(monkeypatch):
+    _patch_odoo(monkeypatch)
     called = {"n": 0}
+    monkeypatch.setattr(
+        feedback_store, "insert",
+        lambda **kw: called.__setitem__("n", called["n"] + 1) or 1,
+    )
 
-    def fake_insert(**kwargs):
-        called["n"] += 1
-        return 1
-
-    monkeypatch.setattr(feedback_store, "insert", fake_insert)
-
-    resp = client.post("/feedback", json={"message": "   "})
+    resp = client.post("/feedback", data={"type": "bug", "description": "   "})
 
     assert resp.status_code == 400
     assert resp.json()["ok"] is False
     assert called["n"] == 0
 
 
-def test_post_feedback_trims_optional_fields_and_drops_blanks(monkeypatch):
-    captured = {}
-
-    def fake_insert(**kwargs):
-        captured.update(kwargs)
-        return 124
-
-    monkeypatch.setattr(feedback_store, "insert", fake_insert)
-
-    resp = client.post("/feedback", json={
-        "message": "  Needs cleanup  ",
-        "category": "   ",
-        "page_url": "  /staffing?day=2026-06-24  ",
-    })
-
-    assert resp.status_code == 200
-    assert captured["message"] == "Needs cleanup"
-    assert captured["category"] is None
-    assert captured["page_url"] == "/staffing?day=2026-06-24"
-
-
 def test_post_feedback_drops_unsafe_page_url(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
     captured = {}
+    monkeypatch.setattr(
+        feedback_store, "insert",
+        lambda **kw: captured.update(kw) or 1,
+    )
 
-    def fake_insert(**kwargs):
-        captured.update(kwargs)
-        return 125
-
-    monkeypatch.setattr(feedback_store, "insert", fake_insert)
-
-    resp = client.post("/feedback", json={
-        "message": "Look at this",
-        "page_url": "javascript:alert(1)",
-    })
+    resp = client.post(
+        "/feedback",
+        data={"type": "bug", "description": "x", "page_url": "javascript:alert(1)"},
+    )
 
     assert resp.status_code == 200
     assert captured["page_url"] is None
 
 
-def test_admin_feedback_renders_rows(monkeypatch):
-    monkeypatch.setattr(feedback_store, "recent", lambda limit=200: [{
-        "id": 5,
-        "created_at": "2026-06-24 09:00",
-        "submitter": "dale@example.com",
-        "page_url": "/staffing",
-        "category": "Bug",
-        "message": "Sticky note text here",
-    }])
+def test_post_feedback_returns_502_and_skips_local_row_on_odoo_failure(monkeypatch):
+    monkeypatch.setattr(odoo_client, "authenticate", lambda: 3)
+    monkeypatch.setattr(odoo_client, "ensure_feedback_tag", lambda name: 55)
 
-    resp = client.get("/admin/feedback")
+    def boom():
+        raise RuntimeError("odoo down")
+
+    monkeypatch.setattr(odoo_client, "ensure_feedback_project", boom)
+    inserted = {"n": 0}
+    monkeypatch.setattr(
+        feedback_store, "insert",
+        lambda **kw: inserted.__setitem__("n", inserted["n"] + 1) or 1,
+    )
+
+    resp = client.post("/feedback", data={"type": "bug", "description": "x"})
+
+    assert resp.status_code == 502
+    assert resp.json()["ok"] is False
+    assert inserted["n"] == 0
+
+
+def test_post_feedback_escapes_html_in_description(monkeypatch):
+    calls = _patch_odoo(monkeypatch)
+    monkeypatch.setattr(feedback_store, "insert", lambda **kw: 1)
+
+    resp = client.post(
+        "/feedback",
+        data={"type": "bug", "description": "a < b & <script>x</script>"},
+    )
 
     assert resp.status_code == 200
-    assert "Sticky note text here" in resp.text
-    assert "dale@example.com" in resp.text
-    assert 'href="/staffing"' in resp.text
+    body_html = calls["task"]["description_html"]
+    assert "<script>" not in body_html
+    assert "&lt;script&gt;" in body_html
+    assert "a &lt; b &amp;" in body_html
+
+
+def test_admin_feedback_route_removed():
+    resp = client.get("/admin/feedback")
+    assert resp.status_code == 404
