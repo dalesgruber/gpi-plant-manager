@@ -82,13 +82,14 @@
       </a>
       <form method="post"
             action="/timeclock/time-off/mine/{{ token }}/{{ request_row.id }}/cancel"
+            class="time-off-cancel-form"
             style="margin-top: 1rem;">
         {% if request_row.state == "validate" %}
           <div class="k-warning" style="margin-bottom: 1.25rem;">
             {{ t("Canceling an approved request will need approval again if you change your mind.") }}
           </div>
         {% endif %}
-        <button type="submit" class="k-btn danger"
+        <button type="submit" class="k-btn danger" aria-busy="false"
                 style="min-width: 280px; width: 100%;">
           {{ t("Cancel This Request") }}
         </button>
@@ -96,4 +97,14 @@
     {% endif %}
   </div>
 </div>
+<script>
+  document.querySelectorAll('.time-off-cancel-form').forEach(function (form) {
+    form.addEventListener('submit', function () {
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+    });
+  });
+</script>
 {% endblock %}

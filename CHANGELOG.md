@@ -52,6 +52,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 - **Timeclock punch buttons now guard against double taps.** Kiosk clock-in and clock-out forms disable their submit button and mark it busy as soon as a punch submit starts, reducing accidental duplicate punch requests from quick repeated taps.
 - **Timeclock work-center picks now guard against double taps.** Clock-in override and transfer choices disable the selected work-center button and mark it busy as soon as the submit starts, matching the main punch screen protection.
 - **Time-off request submits now expose a busy state.** The kiosk request/edit form marks its Submit or Save Changes button busy and disables it once the form submit starts, reducing duplicate time-off requests from repeated taps.
+- **Time-off cancel requests now guard against double taps.** The employee request-detail Cancel action disables and marks itself busy as soon as cancellation starts, reducing duplicate cancel submits on slow kiosk connections.
 
 ## 2026-06-19
 

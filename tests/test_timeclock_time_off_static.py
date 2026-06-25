@@ -5,6 +5,10 @@ def _template():
     return Path("src/zira_dashboard/templates/timeclock_time_off_request_details.html").read_text()
 
 
+def _detail_template():
+    return Path("src/zira_dashboard/templates/timeclock_time_off_mine_detail.html").read_text()
+
+
 def _script():
     return Path("src/zira_dashboard/static/timeclock_time_off.js").read_text()
 
@@ -19,3 +23,14 @@ def test_time_off_request_submit_exposes_busy_state():
     assert "form.addEventListener(\"submit\"" in js
     assert "submitBtn.disabled = true;" in js
     assert "submitBtn.setAttribute(\"aria-busy\", \"true\");" in js
+
+
+def test_time_off_cancel_submit_exposes_busy_state():
+    html = _detail_template()
+
+    assert 'class="time-off-cancel-form"' in html
+    assert 'class="k-btn danger" aria-busy="false"' in html
+    assert "document.querySelectorAll('.time-off-cancel-form').forEach" in html
+    assert "form.addEventListener('submit'" in html
+    assert "btn.disabled = true;" in html
+    assert "btn.setAttribute('aria-busy', 'true');" in html
