@@ -626,6 +626,7 @@ def test_footer_enhances_inbox_nav_with_summary_count():
     assert "link.classList.toggle('is-degraded', degraded && total <= 0)" in js
     assert ".inbox-nav-count" in css
     assert ".inbox-nav-link.has-open" in css
+    assert ".brand-row nav a.inbox-nav-link.has-open" in css
     assert ".inbox-nav-link.has-open .inbox-nav-count" in css
     assert ".inbox-nav-link.is-degraded .inbox-nav-count" in css
 

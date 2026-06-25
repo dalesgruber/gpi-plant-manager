@@ -197,7 +197,8 @@
     line-height: 1.25;
     text-align: center;
   }
-  .inbox-nav-link.has-open {
+  .inbox-nav-link.has-open,
+  .brand-row nav a.inbox-nav-link.has-open {
     color: #b91c1c;
     font-weight: 700;
   }
