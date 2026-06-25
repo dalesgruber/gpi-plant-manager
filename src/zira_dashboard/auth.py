@@ -11,8 +11,10 @@ import time
 from datetime import timedelta
 from typing import Any
 
-from authlib.jose import jwt
-from authlib.jose.errors import JoseError
+from joserfc import jwt
+from joserfc.errors import JoseError
+from joserfc.jwk import OctKey
+from joserfc.jwt import JWTClaimsRegistry
 
 SESSION_COOKIE_NAME = "gpi_session"
 SESSION_TTL = timedelta(days=7)
@@ -34,6 +36,10 @@ def _session_secret() -> str:
     return secret
 
 
+def _jwt_key(secret: str) -> OctKey:
+    return OctKey.import_key(secret)
+
+
 def auth_disabled() -> bool:
     """True when AUTH_DISABLED=1/true/yes (local dev or staged rollout)."""
     return os.environ.get("AUTH_DISABLED", "").strip().lower() in ("1", "true", "yes")
@@ -49,9 +55,7 @@ def mint_session(*, sub: str, upn: str, name: str) -> str:
         "iat": now,
         "exp": now + int(SESSION_TTL.total_seconds()),
     }
-    token = jwt.encode({"alg": _JWT_ALG}, payload, _session_secret())
-    # authlib returns bytes; cookies want str
-    return token.decode("ascii") if isinstance(token, bytes) else token
+    return jwt.encode({"alg": _JWT_ALG}, payload, _jwt_key(_session_secret()))
 
 
 def verify_session(token: str | None) -> dict[str, Any] | None:
@@ -65,9 +69,9 @@ def verify_session(token: str | None) -> dict[str, Any] | None:
     except RuntimeError:
         return None
     try:
-        claims = jwt.decode(token, secret)
-        claims.validate()  # checks exp/nbf if present
-        return dict(claims)
+        token_obj = jwt.decode(token, _jwt_key(secret), algorithms=[_JWT_ALG])
+        JWTClaimsRegistry().validate(token_obj.claims)  # checks exp/nbf/iat if present
+        return dict(token_obj.claims)
     except JoseError:
         return None
     except (ValueError, TypeError):
