@@ -442,4 +442,6 @@ def build_snapshot() -> dict:
         "source_errors": source_errors,
         "sections": sections,
         "queue": queue,
+        "work_centers": work_centers,
+        "people": assignments.get("people") or [],
     }

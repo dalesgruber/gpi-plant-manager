@@ -29,6 +29,9 @@ def exceptions_page(request: Request):
         {
             "snapshot": snapshot,
             "sections": snapshot["sections"],
+            "queue": snapshot["queue"],
+            "work_centers": snapshot.get("work_centers") or [],
+            "people": snapshot.get("people") or [],
             "initial_nav_summary": initial_nav_summary,
         },
     )
