@@ -314,6 +314,25 @@
       <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
       <textarea id="notes-textarea" name="notes" rows="6" placeholder="">{{ notes }}</textarea>
     </div>
+    {% if forklift_advisor and forklift_advisor.available %}
+    <div class="forklift-advisor" style="border:1px solid #f5c518;border-top:4px solid #f5c518;border-radius:8px;padding:9px;margin-top:12px;background:rgba(245,197,24,.10)">
+      <div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">🚜</span><strong>Forklift demand</strong></div>
+      <div style="opacity:.85;margin-top:3px">~{{ forklift_advisor.total_calls }} calls · busiest {{ forklift_advisor.peak_label }}</div>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:30px;margin:7px 0">
+        {% for hour, frac in forklift_advisor.hours %}
+        <div title="{{ hour }}:00 — {{ (frac * 100)|round|int }}% of peak" style="flex:1;background:#f5c518;height:{{ (frac * 100)|round|int }}%;min-height:2px"></div>
+        {% endfor %}
+      </div>
+      <div style="font-size:14px;margin:2px 0"><strong>Recommend {{ forklift_advisor.recommended }} dedicated driver{{ forklift_advisor.recommended != 1 and 's' or '' }}</strong></div>
+      {% if forklift_advisor.coverage.status == 'ok' %}
+      <div style="color:#137333;font-weight:600">✅ Coverage OK</div>
+      {% else %}
+      <div style="color:#b54708;font-weight:600">⚠️ Short {{ forklift_advisor.coverage.gap }} — {{ forklift_advisor.coverage.dedicated }} dedicated of {{ forklift_advisor.recommended }}</div>
+      {% endif %}
+      <div style="opacity:.8;margin-top:2px">{{ forklift_advisor.coverage.certified }} certified scheduled{% if forklift_advisor.backup_names %} · backups: {{ forklift_advisor.backup_names|join(', ') }}{% endif %}</div>
+      <div style="opacity:.55;margin-top:5px;font-size:11px">{% if forklift_advisor.basis == 'history' %}based on {{ forklift_advisor.n_days }} recent {{ forklift_advisor.day_label.split(' ')[0] }}s{% else %}early estimate (building history){% endif %}</div>
+    </div>
+    {% endif %}
   </aside>
 
 </div>
