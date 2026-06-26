@@ -19,7 +19,7 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .. import absence_sync, db, late_report
+from .. import absence_sync, db, inbox_log, late_report
 from ..plant_day import today as plant_today
 
 router = APIRouter()
@@ -33,7 +33,7 @@ def _bust_caches() -> None:
     _bust_after_mutation()
 
 
-def _declare_absent_sync(body: dict) -> JSONResponse:
+def _declare_absent_sync(body: dict, actor_upn=None, actor_name=None) -> JSONResponse:
     """Blocking half of /api/late-report/declare-absent (Postgres writes +
     cache busting); runs in a worker thread via asyncio.to_thread."""
     emp_id = str(body.get("emp_id") or "").strip()
@@ -75,6 +75,19 @@ def _declare_absent_sync(body: dict) -> JSONResponse:
         )
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    inbox_log.log_event_safe(
+        item_kind="late",
+        item_key=f"late:{emp_id}:{today.isoformat()}",
+        person_name=name,
+        category_label="Late",
+        action="absent",
+        outcome="Marked absent",
+        reason=reason,
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+        reversible=True,
+    )
     _bust_caches()
     return JSONResponse({"ok": True})
 
@@ -90,10 +103,11 @@ async def late_report_declare_absent(request: Request):
     manual_absences; clears any pending snooze; busts caches.
     """
     body = await request.json()
-    return await asyncio.to_thread(_declare_absent_sync, body)
+    actor_upn, actor_name = inbox_log.actor_from(request)
+    return await asyncio.to_thread(_declare_absent_sync, body, actor_upn, actor_name)
 
 
-def _save_late_arrival_sync(body: dict) -> JSONResponse:
+def _save_late_arrival_sync(body: dict, actor_upn=None, actor_name=None) -> JSONResponse:
     """Blocking half of /api/late-report/save-late-arrival (Postgres write +
     cache busting); runs in a worker thread via asyncio.to_thread."""
     from .. import late_report
@@ -113,6 +127,19 @@ def _save_late_arrival_sync(body: dict) -> JSONResponse:
         late_report.save_late_arrival(today, emp_id, name, reason=reason)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    inbox_log.log_event_safe(
+        item_kind="late",
+        item_key=f"late:{emp_id}:{today.isoformat()}",
+        person_name=name,
+        category_label="Late",
+        action="reason",
+        outcome="Late reason recorded",
+        reason=reason,
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+        reversible=False,
+    )
     _bust_caches()
     return JSONResponse({"ok": True})
 
@@ -129,7 +156,8 @@ async def late_report_save_late_arrival(request: Request):
     needs_reason on the next poll.
     """
     body = await request.json()
-    return await asyncio.to_thread(_save_late_arrival_sync, body)
+    actor_upn, actor_name = inbox_log.actor_from(request)
+    return await asyncio.to_thread(_save_late_arrival_sync, body, actor_upn, actor_name)
 
 
 def _snooze_sync(body: dict) -> JSONResponse:
