@@ -14,11 +14,24 @@ STATIC_DIR = Path(__file__).resolve().parents[1] / "src" / "zira_dashboard" / "s
 
 
 def _snapshot():
+    row = {
+        "name": "Repair 1",
+        "label": "10 units",
+        "detail": "7:00 AM to 8:00 AM",
+        "priority": "warn",
+        "badge": "Credit",
+        "row_key": "assignment:Repair 1:2026-06-19T12:00:00+00:00",
+        "item_key": "assignment:Repair 1:2026-06-19T12:00:00+00:00",
+    }
     return {
         "today": "2026-06-19",
         "generated_at": "7:35 AM",
         "total": 1,
         "urgent_total": 0,
+        "follow_up_total": 0,
+        "source_errors": [],
+        "work_centers": ["Repair 1"],
+        "people": ["Ana", "Ben"],
         "sections": [
             {
                 "id": "assignments",
@@ -28,9 +41,10 @@ def _snapshot():
                 "action_key": "assignments",
                 "action_label": "Manage",
                 "empty": "All clear",
-                "rows": [{"name": "Repair 1", "label": "10 units", "detail": "7:00 AM to 8:00 AM"}],
+                "rows": [row],
             }
         ],
+        "queue": [{**row, "section_id": "assignments", "category_label": "Assignments To Do", "tone": "warn"}],
     }
 
 
@@ -452,7 +466,7 @@ def test_exceptions_summary_api_uses_summary(monkeypatch):
     assert resp.json()["urgent_total"] == 2
 
 
-def test_exceptions_page_renders_sections(monkeypatch):
+def test_exceptions_page_renders_flat_queue(monkeypatch):
     snapshot = _snapshot()
     snapshot["urgent_total"] = 1
     snapshot["follow_up_total"] = 2
@@ -464,6 +478,14 @@ def test_exceptions_page_renders_sections(monkeypatch):
     assert resp.status_code == 200
     assert "Exception Inbox" in resp.text
     assert "Repair 1" in resp.text
+    # Flat queue of card rows, not the old section/summary DOM.
+    assert 'class="queue"' in resp.text
+    assert "exception-row priority-warn" in resp.text
+    assert '<span class="exception-name">Repair 1</span>' in resp.text
+    assert 'class="category-tag tone-warn">Assignments To Do<' in resp.text
+    assert 'data-item-key="assignment:Repair 1:2026-06-19T12:00:00+00:00"' in resp.text
+    assert "summary-strip" not in resp.text
+    assert "summary-tile" not in resp.text
     assert "Queue changed since this page loaded." in resp.text
     assert 'data-focus-mode="urgent"' in resp.text
     assert 'data-focus-count="all"' in resp.text
@@ -471,6 +493,36 @@ def test_exceptions_page_renders_sections(monkeypatch):
     assert 'data-focus-count="followup"' in resp.text
     assert ">1</span> urgent" in resp.text
     assert ">2</span> follow-up" in resp.text
+
+
+def test_exceptions_page_renders_archive_controls(monkeypatch):
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/exceptions")
+
+    assert resp.status_code == 200
+    assert "data-archive-toggle" in resp.text
+    assert "data-archive-actor" in resp.text
+    assert "data-archive-hide-auto" in resp.text
+    assert "data-archive-groups" in resp.text
+    assert "data-archive-more" in resp.text
+    assert ">Everyone</option>" in resp.text
+    assert "Hide auto-resolved" in resp.text
+
+
+def test_exceptions_page_shows_inbox_zero_when_queue_empty(monkeypatch):
+    snapshot = _snapshot()
+    snapshot["total"] = 0
+    snapshot["queue"] = []
+    snapshot["sections"] = []
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", lambda: snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/exceptions")
+
+    assert resp.status_code == 200
+    assert "Inbox zero — nothing needs you right now." in resp.text
 
 
 def test_exceptions_page_bootstraps_nav_summary(monkeypatch):
@@ -500,51 +552,44 @@ def test_exceptions_page_renders_source_warning(monkeypatch):
 
 
 def test_exceptions_page_renders_inline_action_controls(monkeypatch):
+    assignment_row = {
+        "name": "Repair 1",
+        "label": "10 units",
+        "detail": "7:00 AM to 8:00 AM",
+        "priority": "warn",
+        "badge": "Credit",
+        "row_key": "assignment:Repair 1:2026-06-19T12:00:00+00:00",
+        "item_key": "assignment:Repair 1:2026-06-19T12:00:00+00:00",
+        "action": {
+            "type": "assignment",
+            "day": "2026-06-19",
+            "wc_name": "Repair 1",
+            "start_utc": "2026-06-19T12:00:00+00:00",
+        },
+    }
+    time_off_row = {
+        "name": "Eli",
+        "label": "2026-06-22",
+        "detail": "Vacation · confirm",
+        "priority": "info",
+        "badge": "Approval",
+        "row_key": "time_off:20:confirm",
+        "item_key": "time_off:20",
+        "action": {"type": "time_off", "request_id": 20},
+    }
     snapshot = {
         "today": "2026-06-19",
         "generated_at": "7:35 AM",
         "total": 2,
         "urgent_total": 1,
-        "sections": [
-            {
-                "id": "assignments",
-                "title": "Assignments To Do",
-                "count": 1,
-                "tone": "warn",
-                "action_key": "assignments",
-                "action_label": "Manage",
-                "empty": "All clear",
-                "context": {"people": ["Ana"]},
-                "rows": [{
-                    "name": "Repair 1",
-                    "label": "10 units",
-                    "detail": "7:00 AM to 8:00 AM",
-                    "priority": "warn",
-                    "badge": "Credit",
-                    "row_key": "assignment:Repair 1:2026-06-19T12:00:00+00:00",
-                    "action": {
-                        "type": "assignment",
-                        "day": "2026-06-19",
-                        "wc_name": "Repair 1",
-                        "start_utc": "2026-06-19T12:00:00+00:00",
-                    },
-                }],
-            },
-            {
-                "id": "time_off",
-                "title": "Pending Time Off",
-                "count": 1,
-                "tone": "info",
-                "href": "/staffing/time-off",
-                "empty": "All clear",
-                "context": {},
-                "rows": [{
-                    "name": "Eli",
-                    "label": "2026-06-22",
-                    "detail": "Vacation · confirm",
-                    "action": {"type": "time_off", "request_id": 20},
-                }],
-            },
+        "follow_up_total": 0,
+        "source_errors": [],
+        "work_centers": [],
+        "people": ["Ana"],
+        "sections": [],
+        "queue": [
+            {**assignment_row, "section_id": "assignments", "category_label": "Assignments To Do", "tone": "warn"},
+            {**time_off_row, "section_id": "time_off", "category_label": "Pending Time Off", "tone": "info"},
         ],
     }
     monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", lambda: snapshot)
@@ -555,10 +600,13 @@ def test_exceptions_page_renders_inline_action_controls(monkeypatch):
     assert resp.status_code == 200
     assert 'data-action-type="assignment"' in resp.text
     assert 'class="row-btn primary js-assign"' in resp.text
+    # Assignment person options come from the top-level people var now.
+    assert '<option value="Ana">Ana</option>' in resp.text
     assert 'data-urgent-open' in resp.text
     assert ">1</span> urgent" in resp.text
     assert "priority-pill warn" in resp.text
     assert 'data-row-key="assignment:Repair 1:2026-06-19T12:00:00+00:00"' in resp.text
+    assert 'data-person-name="Eli"' in resp.text
     assert 'data-action-type="time_off"' in resp.text
     assert "js-time-off-approve" in resp.text
 
@@ -581,6 +629,35 @@ def test_exceptions_js_refreshes_shared_badges_after_inline_resolution():
     assert "function bumpFocusCounts(row, delta)" in js
     assert "[data-focus-count=\"" in js
     assert "bumpFocusCount('urgent', delta)" in js
+
+
+def test_exceptions_js_drives_queue_and_archive():
+    js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
+
+    # personName lookup no longer relies on a <th>; it falls back to .exception-name.
+    assert "row.dataset.personName" in js
+    assert "row.querySelector('.exception-name')" in js
+    assert "querySelector('th')" not in js
+    # Flat queue + inbox-zero handling, no section/badge bumping.
+    assert "function updateQueueEmpty()" in js
+    assert "[data-queue-empty]" in js
+    assert "function applyFocus(mode)" in js
+    assert "row.dataset.priority === 'urgent'" in js
+    assert "row.dataset.priority === 'muted'" in js
+    # Freshness poll compares the queue signature (item_key + row_key + total).
+    assert "function snapshotSignature(snapshot)" in js
+    assert "snapshot.queue" in js
+    assert "hasInlineWorkInProgress()" in js
+    # Archive module fetches the new endpoint and supports filters + paging.
+    assert "/api/exceptions/archive" in js
+    assert "include_auto=true" in js
+    assert "actor=" in js
+    assert "before=" in js
+    assert "[data-archive-toggle]" in js
+    assert "[data-archive-groups]" in js
+    assert "[data-archive-more]" in js
+    assert "[data-archive-hide-auto]" in js
+    assert "auto-resolved" in js
 
 
 def test_inbox_template_has_inline_time_off_deny_reason():
