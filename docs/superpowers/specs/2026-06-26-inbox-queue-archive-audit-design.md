@@ -371,3 +371,36 @@ Mirrors the existing style (Odoo mocked), extending
    Plant-schedule resolutions, and any item that clears itself, are logged here as
    `auto_resolved`.
 5. *(Later)* **Audit page (C)** — filterable/exportable view over `inbox_events`.
+
+## Phase 1 review carry-forward (prerequisites for later phases)
+
+Phase 1 shipped as a pure recording layer (table + writer + handler wiring; no
+reader, no UI). A whole-feature review flagged items to resolve **before** any
+later phase reads `inbox_events` by item identity:
+
+- **Canonicalize `item_key` before Phase 2/4 (important).** The Phase 1 handlers
+  write keys like `time_off:{id}`, `missing_wc:{att_id}`,
+  `missed_punch_out:{att_id}`, `late:{emp_id}:{day}`. The snapshot's `row_key`
+  (in [exception_inbox.py](../../../src/zira_dashboard/exception_inbox.py#L80))
+  uses *different* forms — `time_off:{id}:{state}`, `late:scheduled:{emp_id}`,
+  `late_reason:{emp_id}` — and the Component 2 table above lists a third variant
+  (`late:{kind}:{emp_id}:{day}`). These must be reconciled into **one** derivation,
+  centralized in a single helper that both the snapshot rows and the handlers
+  import, because the Phase 4 reconciler diffs the snapshot's open set against
+  logged events by this key — a mismatch would log a spurious `auto_resolved`
+  event for every human-resolved late/time-off item (the exact double-log the
+  dedupe is meant to prevent). Note `time_off` `row_key` embeds *mutable* `state`,
+  so a request's key changes as it advances; the handler's stateless
+  `time_off:{id}` is the better identity — prefer it and update this spec's key
+  table to match.
+- **`reversible` flag has no single source of truth (Phase 3).** Phase 1 set
+  `reversible` per-handler (True for time-off approve/deny, missing-WC
+  assign/dismiss, missed-punch correct, late absent; False for late reason).
+  Confirm this is the intended undo surface when Phase 3 starts.
+- **Dedup `actor_from` (minor).** `routes/exceptions.py` keeps a private
+  `_actor_from` identical to `inbox_log.actor_from`; collapse it when that file is
+  next touched (Phase 2).
+- **Pool traffic (minor).** Each resolve now adds one short pooled-connection
+  INSERT. Negligible in Phase 1, but size the pool when Phase 2's archive-read and
+  Phase 4's polling/reconcile add sustained `inbox_events` traffic (see the
+  `maxconn=30` history).
