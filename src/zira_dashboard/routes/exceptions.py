@@ -60,6 +60,14 @@ _TIME_OFF_STATES = {
 _PENDING_TIME_OFF_STATES = {"draft", "draft_edit", "confirm", "validate1"}
 _TERMINAL_TIME_OFF_STATES = {"refuse", "cancel"}
 
+_UNDOABLE = {
+    ("missing_wc", "assign"),
+    ("missing_wc", "dismiss"),
+    ("late", "absent"),
+    ("late", "reason"),
+}
+_UNDO_WINDOW = timedelta(minutes=10)
+
 
 def _load_time_off_request(request_id: int) -> dict[str, Any] | None:
     from .. import db
@@ -454,3 +462,69 @@ async def refuse_time_off_request(request_id: int, request: Request):
         actor_name,
         source,
     )
+
+
+def _reverse_event(ev: dict[str, Any]) -> None:
+    """Reverse a resolved inbox action. Assumes (item_kind, action) is undoable."""
+    from .. import absence_sync, late_report, missing_wc, odoo_client
+
+    kind, action, key = ev["item_kind"], ev["action"], ev["item_key"]
+    if kind == "missing_wc":
+        att_id = int(key.split(":")[1])
+        if action == "assign":
+            odoo_client.set_attendance_wc(att_id, None)
+        missing_wc.unresolve(att_id)
+    elif kind == "late":
+        _, emp_id, day = key.split(":", 2)
+        if action == "absent":
+            absence_sync.refuse_absence_leave(
+                late_report.odoo_leave_id_for_absence(day, emp_id)
+            )
+            late_report.undo_absent(day, emp_id)
+        elif action == "reason":
+            late_report.undo_late_arrival(day, emp_id)
+
+
+def _undo_sync(
+    event_id: int,
+    actor_upn: str | None = None,
+    actor_name: str | None = None,
+) -> JSONResponse:
+    from .. import inbox_log
+
+    ev = inbox_log.get_event(event_id)
+    if ev is None:
+        return _json_error("event not found", 404)
+    if ev.get("undone_at") is not None:
+        return _json_error("already undone", 409)
+    if (ev["item_kind"], ev["action"]) not in _UNDOABLE:
+        return _json_error("this action can't be undone", 400)
+    resolved = ev["resolved_at"]
+    if resolved.tzinfo is None:
+        resolved = resolved.replace(tzinfo=timezone.utc)
+    if plant_day.now() - resolved > _UNDO_WINDOW:
+        return _json_error("undo window expired", 409)
+    try:
+        _reverse_event(ev)
+    except Exception as e:  # noqa: BLE001 -- surface reversal failure to caller
+        return _json_error(str(e), 500)
+    undo_id = inbox_log.log_event_safe(
+        item_kind=ev["item_kind"],
+        item_key=ev["item_key"],
+        person_name=ev.get("person_name"),
+        category_label=ev.get("category_label"),
+        action="undo",
+        outcome="Undone",
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+    )
+    inbox_log.mark_undone(event_id, undo_id)
+    _refresh_time_off_surfaces()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/api/exceptions/undo/{event_id}")
+async def undo_inbox_event(event_id: int, request: Request):
+    actor_upn, actor_name = _actor_from(request)
+    return await asyncio.to_thread(_undo_sync, event_id, actor_upn, actor_name)
