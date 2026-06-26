@@ -325,12 +325,18 @@
     var upns = Object.keys(archiveKnownActors).sort(function (a, b) {
       return archiveKnownActors[a].localeCompare(archiveKnownActors[b]);
     });
-    var html = '<option value="">Everyone</option>';
+    els.actor.innerHTML = '';
+    var everyone = document.createElement('option');
+    everyone.value = '';
+    everyone.textContent = 'Everyone';
+    els.actor.appendChild(everyone);
     upns.forEach(function (upn) {
-      var selected = upn === current ? ' selected' : '';
-      html += '<option value="' + upn + '"' + selected + '>' + archiveKnownActors[upn] + '</option>';
+      var opt = document.createElement('option');
+      opt.value = upn;
+      opt.textContent = archiveKnownActors[upn];
+      if (upn === current) opt.selected = true;
+      els.actor.appendChild(opt);
     });
-    els.actor.innerHTML = html;
   }
 
   function renderArchiveEvent(event) {
