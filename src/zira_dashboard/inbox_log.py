@@ -126,3 +126,23 @@ def archive(
         " ORDER BY resolved_at DESC LIMIT %s",
         tuple(params),
     )
+
+
+def get_event(event_id: int) -> dict[str, Any] | None:
+    """One event row by id, or None."""
+    rows = db.query(
+        "SELECT id, item_kind, item_key, person_name, category_label, action, "
+        "outcome, before_value, after_value, reason, actor_upn, actor_name, "
+        "source, reversible, undone_at, undo_event_id, resolved_at "
+        "FROM inbox_events WHERE id = %s",
+        (event_id,),
+    )
+    return rows[0] if rows else None
+
+
+def mark_undone(event_id: int, undo_event_id: int | None) -> None:
+    """Stamp an event as undone, pointing at the undo event."""
+    db.execute(
+        "UPDATE inbox_events SET undone_at = now(), undo_event_id = %s WHERE id = %s",
+        (undo_event_id, event_id),
+    )
