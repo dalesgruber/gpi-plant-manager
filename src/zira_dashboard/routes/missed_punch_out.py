@@ -15,6 +15,11 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 
 
+def _clock_label(dt) -> str:
+    """'4:30 PM' for an already site-local datetime — platform-safe (no %-I)."""
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
 @router.get("/api/missed-punch-out")
 def missed_punch_out_json():
     """Badge/modal snapshot: {count, rows}. All local reads."""
@@ -33,15 +38,17 @@ async def missed_punch_out_correct(request: Request):
     Body (JSON): {attendance_id, time}  where time is "HH:MM" (24-hour).
     """
     import asyncio
+    from .. import inbox_log
     body = await request.json()
+    actor_upn, actor_name = inbox_log.actor_from(request)
     # The lookup + Odoo clock_out + resolve are all blocking (psycopg2 +
     # XML-RPC) — run them off the event loop so an Odoo round-trip can't
     # stall every in-flight request (same pattern as the other mutators).
-    return await asyncio.to_thread(_correct_sync, body)
+    return await asyncio.to_thread(_correct_sync, body, actor_upn, actor_name)
 
 
-def _correct_sync(body: dict):
-    from .. import missed_punch_out, odoo_client
+def _correct_sync(body: dict, actor_upn=None, actor_name=None):
+    from .. import inbox_log, missed_punch_out, odoo_client
     from ..shift_config import SITE_TZ
     try:
         att_id = int(body.get("attendance_id"))
@@ -71,4 +78,18 @@ def _correct_sync(body: dict):
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     missed_punch_out.correct(att_id, corrected)
+    inbox_log.log_event_safe(
+        item_kind="missed_punch_out",
+        item_key=f"missed_punch_out:{att_id}",
+        person_name=row.get("name"),
+        category_label="Missed punch out",
+        action="correct",
+        outcome=f"Punch-out corrected to {_clock_label(corrected)}",
+        before_value=_clock_label(midnight),
+        after_value=_clock_label(corrected),
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+        reversible=True,
+    )
     return JSONResponse({"ok": True})

@@ -110,3 +110,31 @@ def test_missing_wc_dismiss_records_inbox_event(monkeypatch):
     assert e["item_kind"] == "missing_wc"
     assert e["item_key"] == "missing_wc:999100"
     assert e["action"] == "dismiss"
+
+
+def test_missed_punch_correct_records_inbox_event(monkeypatch):
+    from zira_dashboard import odoo_client, missed_punch_out as mpo
+    from zira_dashboard.routes import missed_punch_out as mpo_route
+    from zira_dashboard.shift_config import SITE_TZ
+
+    events = _capture_events(monkeypatch)
+    ci = datetime(2026, 6, 8, 14, 0, tzinfo=timezone.utc)
+    midnight = datetime(2026, 6, 9, 0, 0, tzinfo=SITE_TZ)
+    monkeypatch.setattr(mpo, "get_unresolved", lambda att_id: {
+        "attendance_id": att_id, "employee_odoo_id": 42, "name": "Devin Park",
+        "check_in": ci, "auto_closed_at": midnight,
+    })
+    monkeypatch.setattr(odoo_client, "clock_out", lambda att_id, ts, mode=None: None)
+    monkeypatch.setattr(mpo, "correct", lambda att_id, ts: None)
+
+    resp = mpo_route._correct_sync(
+        {"attendance_id": 999500, "time": "16:30"},
+        actor_upn="dale@gruberpallets.com", actor_name="Dale Gruber")
+
+    assert resp.status_code == 200
+    e = events[0]
+    assert e["item_kind"] == "missed_punch_out"
+    assert e["item_key"] == "missed_punch_out:999500"
+    assert e["action"] == "correct"
+    assert e["after_value"] == "4:30 PM"
+    assert e["person_name"] == "Devin Park"
