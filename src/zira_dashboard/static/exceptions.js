@@ -504,6 +504,7 @@
         wc_name: row.dataset.wcName,
         person_name: person,
         start_utc: row.dataset.startUtc,
+        source: 'inbox',
       }).then(function (resp) {
         if (resp && resp.ok) {
           resolveRow(row, 'Assigned');

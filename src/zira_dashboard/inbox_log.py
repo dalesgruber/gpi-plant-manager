@@ -20,11 +20,13 @@ def actor_from(request) -> tuple[str | None, str | None]:
     """(user_upn, user_name) for the current request; both None for system/auto.
 
     The auth middleware sets these on request.state for every authenticated
-    request (see auth.py). Returns (None, None) when unset (e.g. AUTH_DISABLED).
+    request (see auth.py). Returns (None, None) when unset (e.g. AUTH_DISABLED)
+    or when the request carries no ``state`` at all.
     """
+    state = getattr(request, "state", None)
     return (
-        getattr(request.state, "user_upn", None),
-        getattr(request.state, "user_name", None),
+        getattr(state, "user_upn", None),
+        getattr(state, "user_name", None),
     )
 
 

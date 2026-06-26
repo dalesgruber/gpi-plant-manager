@@ -546,6 +546,10 @@ async def staffing_attribute(request: Request):
     if end_utc is not None and end_utc <= start_utc:
         return JSONResponse({"ok": False, "error": "end must be after start"}, status_code=400)
 
+    from .. import inbox_keys, inbox_log
+    actor_upn, actor_name = inbox_log.actor_from(request)
+    source = body.get("source")
+
     def _work():
         new_id = wc_attributions.add(day, wc, person, start_utc, end_utc)
         # Department transfer side-effect: if the person physically moved to this
@@ -556,6 +560,20 @@ async def staffing_attribute(request: Request):
             transfer = staffing_transfer.decide_and_apply(person, wc, start_utc)
         except Exception as e:  # noqa: BLE001
             transfer = {"transfer": "error", "error": str(e)}
+        if source == "inbox":
+            inbox_log.log_event_safe(
+                item_kind="assignment",
+                item_key=inbox_keys.assignment(wc, body["start_utc"]),
+                person_name=person,
+                category_label="Assignments To Do",
+                action="assign",
+                outcome="Credited to " + person,
+                after_value=person,
+                actor_upn=actor_upn,
+                actor_name=actor_name,
+                source="inbox",
+                reversible=True,
+            )
         invalidate_today_cache()
         _bust_assignments_todo_cache()
         return JSONResponse({"ok": True, "id": new_id, "transfer": transfer})
