@@ -73,3 +73,19 @@ def test_fetch_queue_history_uses_correct_path(monkeypatch):
 
     assert rows == [{"id": "call-1", "status": "completed"}]
     assert captured["url"] == "https://fk.example/api/queue/history"
+
+
+def test_fetch_weekly_trends_uses_correct_path(monkeypatch):
+    monkeypatch.setenv("FORKLIFT_BASE_URL", "https://fk.example")
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        return _json_response({"weeks": []})
+
+    monkeypatch.setattr(forklift_client.requests, "get", fake_get)
+
+    trends = forklift_client.fetch_weekly_trends()
+
+    assert trends == {"weeks": []}
+    assert captured["url"] == "https://fk.example/api/report/weekly-trends"

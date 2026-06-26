@@ -56,3 +56,8 @@ def fetch_queue_history() -> list[dict]:
 def fetch_drivers() -> list[dict]:
     """Forklift drivers: {id, name, isOverloadResponder, skills}."""
     return _get("/api/drivers")
+
+
+def fetch_weekly_trends() -> dict:
+    """8-week aggregate trends (cold-start demand source)."""
+    return _get("/api/report/weekly-trends")
