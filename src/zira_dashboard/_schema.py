@@ -904,4 +904,32 @@ ALTER TABLE time_off_decisions
   ADD COLUMN IF NOT EXISTS hour_to NUMERIC;
 CREATE INDEX IF NOT EXISTS time_off_decisions_decided_at_idx
   ON time_off_decisions (decided_at DESC);
+
+-- 2026-06-26: unified Exception Inbox activity log — the archive + audit trail.
+-- One append-only row per resolution across every inbox category. Denormalized
+-- (no FK) so history survives source-row deletion, like time_off_decisions.
+-- actor_upn NULL => auto-resolved/system; otherwise the manager who acted.
+CREATE TABLE IF NOT EXISTS inbox_events (
+  id            SERIAL PRIMARY KEY,
+  item_kind     TEXT NOT NULL,
+  item_key      TEXT NOT NULL,
+  person_name   TEXT,
+  category_label TEXT,
+  action        TEXT NOT NULL,
+  outcome       TEXT,
+  before_value  TEXT,
+  after_value   TEXT,
+  reason        TEXT,
+  actor_upn     TEXT,
+  actor_name    TEXT,
+  source        TEXT,
+  detail        JSONB,
+  reversible    BOOLEAN NOT NULL DEFAULT FALSE,
+  undone_at     TIMESTAMPTZ,
+  undo_event_id INTEGER,
+  resolved_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS inbox_events_resolved_at_idx ON inbox_events (resolved_at DESC);
+CREATE INDEX IF NOT EXISTS inbox_events_actor_idx ON inbox_events (actor_upn);
+CREATE INDEX IF NOT EXISTS inbox_events_item_idx ON inbox_events (item_kind, item_key);
 """
