@@ -973,4 +973,17 @@ CREATE TABLE IF NOT EXISTS forklift_name_map (
   plant_name     TEXT NOT NULL,
   PRIMARY KEY (kind, forklift_name)
 );
+-- 2026-06-26: live "what's open right now" mirror for the Exception Inbox.
+-- Bookkeeping for the reconcile tick (inbox_reconcile): diffed against the
+-- freshly-computed open set to detect items that left without a human action
+-- (logged as auto_resolved). Not a source of truth — rebuilt from the snapshot.
+CREATE TABLE IF NOT EXISTS inbox_open_items (
+  item_key       TEXT PRIMARY KEY,
+  item_kind      TEXT NOT NULL,
+  person_name    TEXT,
+  category_label TEXT,
+  priority       TEXT,
+  first_seen     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
