@@ -167,6 +167,16 @@ async def _tick_missed_punch_out():
     await asyncio.to_thread(missed_punch_out.run_close, today)
 
 
+async def _tick_forklift():
+    """Snapshot today's forklift demand + driver performance into Postgres.
+    No-ops gracefully (logs+swallows via _run_warmer) if the forklift API is
+    unreachable. Runs off the event loop because the client makes blocking
+    HTTP calls."""
+    from . import forklift_snapshot
+    today = plant_today()
+    await asyncio.to_thread(forklift_snapshot.snapshot_today, None, today)
+
+
 # (name, tick coroutine, interval seconds). `name` is used only in the
 # "warmer tick failed" log line. Intervals are unchanged from the original
 # per-loop functions this registry replaced.
@@ -183,6 +193,7 @@ _WARMERS = [
     ("staffing stable", _tick_staffing_stable, 300),
     ("missing WC", _tick_missing_wc, 180),
     ("missed punch-out", _tick_missed_punch_out, 60),
+    ("forklift snapshot", _tick_forklift, 600),
 ]
 
 

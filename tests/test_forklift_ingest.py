@@ -1,0 +1,49 @@
+from datetime import date
+
+from zira_dashboard import forklift_ingest
+
+DASHBOARD = {
+    "driverLeaderboard": [
+        {"driverId": "fk-1", "name": "Trent", "total": 86, "onTime": 85, "late": 1,
+         "avgMs": 190000, "maxMs": 700000, "utilizationPct": 95,
+         "totalOnCallMs": 17000000, "availableMs": 17900000},
+    ],
+    "hourlyClaimAvgs": [
+        {"slot": 8, "avgMinutes": 3.0, "calls": 40, "overloadCount": 0, "neglectedCount": 0},
+        {"slot": 9, "avgMinutes": 5.0, "calls": 70, "overloadCount": 2, "neglectedCount": 1},
+    ],
+}
+HISTORY = [
+    {"workstationName": "Prosaw #4", "requiredSkillId": "sk-2", "priority": "urgent", "status": "completed"},
+    {"workstationName": "Prosaw #4", "requiredSkillId": "sk-2", "priority": "normal", "status": "completed"},
+    {"workstationName": "Junior #3", "requiredSkillId": "sk-1", "priority": "normal", "status": "completed"},
+    {"workstationName": "Junior #3", "requiredSkillId": "sk-1", "priority": "normal", "status": "canceled"},
+]
+
+
+def test_build_calls_daily_aggregates_history_and_hours():
+    row = forklift_ingest.build_calls_daily(date(2026, 6, 26), DASHBOARD, HISTORY)
+    assert row["day"] == date(2026, 6, 26)
+    assert row["total_calls"] == 3          # completed only
+    assert row["urgent_calls"] == 1
+    assert row["by_station"] == {"Prosaw #4": 2, "Junior #3": 1}
+    assert row["by_skill"] == {"sk-2": 2, "sk-1": 1}
+    assert row["overload_count"] == 2       # summed across hourly slots
+    assert row["neglected_count"] == 1
+    assert row["by_hour"]["9"]["calls"] == 70
+
+
+def test_build_driver_daily_maps_leaderboard_rows():
+    rows = forklift_ingest.build_driver_daily(date(2026, 6, 26), DASHBOARD)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["driver_id"] == "fk-1"
+    assert r["name"] == "Trent"
+    assert r["calls"] == 86 and r["on_time"] == 85 and r["late"] == 1
+    assert r["avg_ms"] == 190000 and r["utilization_pct"] == 95
+    assert r["on_call_ms"] == 17000000 and r["available_ms"] == 17900000
+
+
+def test_build_calls_daily_handles_empty_payloads():
+    row = forklift_ingest.build_calls_daily(date(2026, 6, 26), {}, [])
+    assert row["total_calls"] == 0 and row["by_station"] == {} and row["by_hour"] == {}

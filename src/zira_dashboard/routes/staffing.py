@@ -62,6 +62,25 @@ def _next_working_day(d: date) -> date:
     return d + timedelta(days=1)
 
 
+FORKLIFT_WC_NAMES = ("Loading/Jockeying", "Tablets")
+FORKLIFT_CERT = "Forklift Certified"
+
+
+def _forklift_scheduled_counts(assignments, person_certs, overload_responders):
+    """Derive dedicated/certified/backup counts from the draft schedule.
+    - dedicated: people assigned to the forklift work centers
+    - certified: scheduled people holding the Forklift Certified cert
+    - backups: certified scheduled people flagged as overload responders
+    """
+    dedicated = set()
+    for wc in FORKLIFT_WC_NAMES:
+        dedicated.update(assignments.get(wc, []) or [])
+    scheduled = {n for names in assignments.values() for n in (names or [])}
+    certified = {n for n in scheduled if FORKLIFT_CERT in (person_certs.get(n) or [])}
+    backups = {n for n in certified if n in overload_responders}
+    return {"dedicated": len(dedicated), "certified": len(certified), "backups": len(backups)}
+
+
 @router.get("/staffing", response_class=HTMLResponse)
 def staffing_page(
     request: Request,
@@ -250,6 +269,18 @@ def staffing_page(
     hours_source = shift_config.scheduler_hours_source(d, sched.custom_hours is not None)
     eff_hours_label = f"{eff_start.strftime('%H:%M')}–{eff_end.strftime('%H:%M')}"
 
+    # Forklift demand advisor (read-only; never blocks scheduling).
+    try:
+        from .. import app_settings, forklift_advisor
+        _overload = set(app_settings.get_setting("forklift_overload_responders") or [])
+        _counts = _forklift_scheduled_counts(sched.assignments, person_certs, _overload)
+        forklift_advisor_model = forklift_advisor.build_advisor(
+            target_day=d, dedicated=_counts["dedicated"],
+            certified=_counts["certified"], backups=_counts["backups"],
+        )
+    except Exception:
+        forklift_advisor_model = {"available": False}
+
     with _Phase(phases, "render"):
         response = templates.TemplateResponse(
             request,
@@ -285,6 +316,7 @@ def staffing_page(
                 "assignments_todo": assignments_todo,
                 "assignments_done": assignments_done,
                 "attributions_by_wc": attributions_by_wc,
+                "forklift_advisor": forklift_advisor_model,
             },
         )
 

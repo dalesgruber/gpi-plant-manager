@@ -932,4 +932,45 @@ CREATE TABLE IF NOT EXISTS inbox_events (
 CREATE INDEX IF NOT EXISTS inbox_events_resolved_at_idx ON inbox_events (resolved_at DESC);
 CREATE INDEX IF NOT EXISTS inbox_events_actor_idx ON inbox_events (actor_upn);
 CREATE INDEX IF NOT EXISTS inbox_events_item_idx ON inbox_events (item_kind, item_key);
+
+-- Forklift integration (gpiforklift.com) -------------------------------
+-- Daily snapshots of forklift demand + per-driver performance. The API
+-- only exposes "today", so a warmer writes one row per day and history
+-- accumulates here (mirrors production_daily).
+CREATE TABLE IF NOT EXISTS forklift_calls_daily (
+  day              DATE PRIMARY KEY,
+  total_calls      INTEGER NOT NULL DEFAULT 0,
+  urgent_calls     INTEGER NOT NULL DEFAULT 0,
+  overload_count   INTEGER NOT NULL DEFAULT 0,
+  neglected_count  INTEGER NOT NULL DEFAULT 0,
+  by_hour          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  by_station       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  by_skill         JSONB NOT NULL DEFAULT '{}'::jsonb,
+  computed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS forklift_driver_daily (
+  day              DATE NOT NULL,
+  driver_id        TEXT NOT NULL,
+  name             TEXT NOT NULL,
+  calls            INTEGER NOT NULL DEFAULT 0,
+  on_time          INTEGER NOT NULL DEFAULT 0,
+  late             INTEGER NOT NULL DEFAULT 0,
+  avg_ms           BIGINT NOT NULL DEFAULT 0,
+  max_ms           BIGINT NOT NULL DEFAULT 0,
+  utilization_pct  NUMERIC NOT NULL DEFAULT 0,
+  on_call_ms       BIGINT NOT NULL DEFAULT 0,
+  available_ms     BIGINT NOT NULL DEFAULT 0,
+  computed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, driver_id)
+);
+CREATE INDEX IF NOT EXISTS idx_forklift_driver_daily_name_day
+  ON forklift_driver_daily (name, day);
+-- Override map for the few forklift names that don't match the plant roster
+-- (driver -> plant person) or work centers (workstation -> WC).
+CREATE TABLE IF NOT EXISTS forklift_name_map (
+  kind           TEXT NOT NULL,   -- 'driver' | 'workstation'
+  forklift_name  TEXT NOT NULL,
+  plant_name     TEXT NOT NULL,
+  PRIMARY KEY (kind, forklift_name)
+);
 """
