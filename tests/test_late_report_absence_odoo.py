@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from unittest.mock import MagicMock
 
@@ -41,6 +42,56 @@ def test_declare_absent_sync_posts_absence_to_odoo_before_local_write(monkeypatc
         "Test Person",
         reason="No call no show",
         odoo_leave_id=777,
+    )
+    db_execute.assert_called_once()
+
+
+def test_declare_absent_sync_records_locally_when_odoo_rejects(monkeypatch):
+    """If Odoo can't represent the absence — e.g. the employee's Odoo work
+    schedule shows no hours that day, raising
+    'The following employees are not supposed to work during that period' —
+    the manager's declaration must still succeed locally. The local
+    manual_absences row is the source of truth for the scheduler/inbox; the
+    Odoo Time Off sync is best-effort. Its failure surfaces as a non-fatal
+    warning (HTTP 200, ok=True), NOT a 500 that blocks the whole action."""
+
+    class _OdooFault(Exception):
+        # Mirrors xmlrpc.client.Fault, whose message lives in .faultString.
+        faultString = (
+            "The following employees are not supposed to work during that "
+            "period:\n Gerardo Vergara Quintero"
+        )
+
+    def _reject(**kwargs):
+        raise _OdooFault()
+
+    declare_absent = MagicMock()
+    db_execute = MagicMock()
+    monkeypatch.setattr(late_report_routes, "plant_today", lambda: FIXED_DAY)
+    monkeypatch.setattr(late_report_routes.absence_sync, "create_absence_for_day", _reject)
+    monkeypatch.setattr(late_report_routes.late_report, "declare_absent", declare_absent)
+    monkeypatch.setattr(late_report_routes.db, "execute", db_execute)
+    monkeypatch.setattr(late_report_routes.inbox_log, "log_event_safe", lambda **k: 123)
+    monkeypatch.setattr(late_report_routes, "_bust_caches", lambda: None)
+
+    response = late_report_routes._declare_absent_sync({
+        "emp_id": "9",
+        "name": "Gerardo Vergara",
+        "reason": "No call no show",
+    })
+
+    assert response.status_code == 200
+    payload = json.loads(response.body)
+    assert payload["ok"] is True
+    assert payload.get("odoo_synced") is False
+    assert "not supposed to work" in payload.get("warning", "")
+    # Local record still written, with NO linked Odoo leave id.
+    declare_absent.assert_called_once_with(
+        FIXED_DAY,
+        "9",
+        "Gerardo Vergara",
+        reason="No call no show",
+        odoo_leave_id=None,
     )
     db_execute.assert_called_once()
 
