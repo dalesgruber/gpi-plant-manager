@@ -585,8 +585,11 @@
         name: personName,
         reason: absentReason,
       }).then(function (resp) {
-        if (resp && resp.ok) resolveRow(row, 'Marked absent', resp.event_id);
-        else failRow(row, (resp && resp.error) || 'Save failed.');
+        if (resp && resp.ok) {
+          resolveRow(row, resp.warning ? 'Marked absent — Odoo Time Off not updated' : 'Marked absent', resp.event_id);
+        } else {
+          failRow(row, (resp && resp.error) || 'Save failed.');
+        }
       }).catch(function () { failRow(row, 'Network error.'); });
       return;
     }

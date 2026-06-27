@@ -15,12 +15,15 @@ duplicating the helper. Cache invalidation runs through
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .. import absence_sync, db, inbox_keys, inbox_log, late_report
 from ..plant_day import today as plant_today
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -55,6 +58,15 @@ def _declare_absent_sync(body: dict, actor_upn=None, actor_name=None) -> JSONRes
             status_code=400,
         )
     today = plant_today()
+    # The Odoo Time Off sync is best-effort: the local manual_absences row is
+    # the source of truth for the scheduler/inbox (see the absent-in-timeoff
+    # design). Odoo can legitimately refuse the leave — e.g. the employee's
+    # Odoo work schedule shows no hours that day ("not supposed to work during
+    # that period") even though our plant schedule had them on — and that must
+    # NOT block the manager from recording the absence. So sync first, but on
+    # failure fall through with no linked leave id and surface a warning.
+    odoo_leave_id = None
+    odoo_warning = None
     try:
         absence = absence_sync.create_absence_for_day(
             employee_odoo_id=employee_odoo_id,
@@ -62,12 +74,17 @@ def _declare_absent_sync(body: dict, actor_upn=None, actor_name=None) -> JSONRes
             day=today,
             reason=reason,
         )
+        odoo_leave_id = absence["leave_id"]
+    except Exception as e:  # noqa: BLE001 -- sync is best-effort; record locally regardless
+        odoo_warning = absence_sync.describe_sync_failure(e)
+        _log.warning("absence Odoo sync failed for %s (emp %s): %s", name, emp_id, e)
+    try:
         late_report.declare_absent(
             today,
             emp_id,
             name,
             reason=reason,
-            odoo_leave_id=absence["leave_id"],
+            odoo_leave_id=odoo_leave_id,
         )
         db.execute(
             "DELETE FROM late_snoozes WHERE day = %s AND emp_id = %s",
@@ -89,7 +106,11 @@ def _declare_absent_sync(body: dict, actor_upn=None, actor_name=None) -> JSONRes
         reversible=True,
     )
     _bust_caches()
-    return JSONResponse({"ok": True, "event_id": eid})
+    result: dict = {"ok": True, "event_id": eid}
+    if odoo_warning:
+        result["odoo_synced"] = False
+        result["warning"] = odoo_warning
+    return JSONResponse(result)
 
 
 @router.post("/api/late-report/declare-absent")

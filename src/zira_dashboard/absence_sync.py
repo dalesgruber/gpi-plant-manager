@@ -85,6 +85,18 @@ def create_absence_for_day(
     }
 
 
+def describe_sync_failure(exc: Exception) -> str:
+    """One-line, human-readable reason the Odoo Time Off sync didn't happen.
+
+    xmlrpc faults carry the useful text on ``.faultString`` and stringify as
+    the noisy ``<Fault 2: '...'>`` repr; prefer the clean message. Collapse
+    newlines so it fits on a single status line in the inbox.
+    """
+    msg = getattr(exc, "faultString", None) or str(exc)
+    msg = " ".join(str(msg).split())
+    return f"absence saved locally, but Odoo Time Off wasn't updated — {msg}"
+
+
 def refuse_absence_leave(leave_id: int | None) -> None:
     if leave_id is None:
         return
