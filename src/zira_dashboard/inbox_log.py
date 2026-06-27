@@ -146,3 +146,15 @@ def mark_undone(event_id: int, undo_event_id: int | None) -> None:
         "UPDATE inbox_events SET undone_at = now(), undo_event_id = %s WHERE id = %s",
         (undo_event_id, event_id),
     )
+
+
+def has_human_event_since(item_key: str, since) -> bool:
+    """True if a human (non-auto, non-undo) event exists for this item at or
+    after ``since`` — used by the reconciler to tell a human resolution from a
+    self-clearing one."""
+    rows = db.query(
+        "SELECT 1 FROM inbox_events WHERE item_key = %s AND resolved_at >= %s "
+        "AND action NOT IN ('auto_resolved', 'undo') LIMIT 1",
+        (item_key, since),
+    )
+    return bool(rows)
