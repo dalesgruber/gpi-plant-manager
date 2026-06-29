@@ -23,6 +23,22 @@ router = APIRouter()
 _FORKLIFT_LOOKBACK_DAYS = 90
 
 
+def _resolve_forklift_name(name: str) -> str | None:
+    """Map a plant `name` to its forklift display name.
+
+    name_map("driver") is {forklift_name: plant_name}; the player card holds a
+    plant name, so reverse it. Fall back to a direct match (forklift_name ==
+    plant name) when there's no explicit mapping. Returns None only when the
+    name is itself a mapped forklift name with no reverse entry."""
+    from .. import forklift_store
+
+    nm = forklift_store.name_map("driver") or {}
+    forklift_name = next((fk for fk, pl in nm.items() if pl == name), None)
+    if forklift_name is None and name not in nm:
+        forklift_name = name  # try a direct match against the driver name
+    return forklift_name
+
+
 def _forklift_for_person(name: str, today: date, cfg) -> dict | None:
     """Resolve a plant `name` to a forklift driver and return that driver's
     recent forklift stats + earned trophies, or None when the person doesn't
@@ -31,13 +47,7 @@ def _forklift_for_person(name: str, today: date, cfg) -> dict | None:
     try:
         from .. import forklift_awards, forklift_score, forklift_store
 
-        # name_map("driver") is {forklift_name: plant_name}; the player card
-        # holds a plant name, so reverse it. Fall back to a direct match
-        # (forklift_name == plant name) when there's no explicit mapping.
-        nm = forklift_store.name_map("driver") or {}
-        forklift_name = next((fk for fk, pl in nm.items() if pl == name), None)
-        if forklift_name is None and name not in nm:
-            forklift_name = name  # try a direct match against the driver name
+        forklift_name = _resolve_forklift_name(name)
 
         start = today - timedelta(days=_FORKLIFT_LOOKBACK_DAYS)
         rows = forklift_store.driver_days_between(start, today)
@@ -89,6 +99,50 @@ def _forklift_for_person(name: str, today: date, cfg) -> dict | None:
         }
     except Exception:  # noqa: BLE001 - hide the block rather than 500
         return None
+
+
+def _forklift_days_for_person(
+    name: str, start_d: date, end_d: date, cfg
+) -> list[dict]:
+    """Per-day forklift performances for a mapped driver over [start_d, end_d],
+    newest first. One dict per day the driver had calls (>0) — sub-gate days are
+    listed with score/components None. Mirrors the repair/dismantling per-day
+    breakdown. Defensive: any store/compute failure yields [] (section hidden)."""
+    try:
+        from .. import forklift_score, forklift_store
+
+        forklift_name = _resolve_forklift_name(name)
+        if forklift_name is None:
+            return []
+        rows = forklift_store.driver_days_between(start_d, end_d)
+        mine = [
+            r for r in rows
+            if r.get("name") == forklift_name or r.get("driver_id") == forklift_name
+        ]
+        days: list[dict] = []
+        for r in sorted(mine, key=lambda r: r["day"], reverse=True):
+            calls = int(r.get("calls") or 0)
+            if calls <= 0:
+                continue  # no activity that day -> not a performance
+            on_time = int(r.get("on_time") or 0)
+            late = int(r.get("late") or 0)
+            denom = on_time + late
+            b = forklift_score.daily_score(r, cfg)
+            days.append({
+                "date": r["day"].isoformat(),
+                "calls": calls,
+                "on_time": on_time,
+                "late": late,
+                "ontime_pct": (on_time / denom * 100) if denom else 0.0,
+                "avg_ms": r.get("avg_ms") or 0,
+                "max_ms": r.get("max_ms") or 0,
+                "utilization_pct": float(r.get("utilization_pct") or 0),
+                "score": b.score if b is not None else None,
+                "components": b.components if b is not None else None,
+            })
+        return days
+    except Exception:  # noqa: BLE001 - hide the section rather than 500
+        return []
 
 
 @router.get("/staffing/people")
@@ -225,6 +279,12 @@ def staffing_player_card(
     except Exception:  # noqa: BLE001 - fall back to default score config
         pass
     forklift = _forklift_for_person(name, today, _cfg)
+    # Per-day forklift performances over the page's picker range — only for
+    # people who map to a forklift driver (forklift block present). Empty list
+    # when the driver had no forklift days in the selected range.
+    forklift_days = (
+        _forklift_days_for_person(name, start_d, end_d, _cfg) if forklift else []
+    )
 
     response = templates.TemplateResponse(
         request,
@@ -248,6 +308,8 @@ def staffing_player_card(
             "roster_names": roster_names,
             "awards_earned": awards_earned,
             "forklift": forklift,
+            "forklift_days": forklift_days,
+            "forklift_min_calls": _cfg.min_calls,
         },
     )
     _http_cache.set_cache_headers(response, includes_today=includes_today)

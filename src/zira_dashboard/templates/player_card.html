@@ -75,6 +75,21 @@
   .pc-trophy-gold   { filter: none; }
   .pc-trophy-silver { filter: grayscale(100%) brightness(115%); }
   .pc-trophy-bronze { filter: hue-rotate(-30deg) saturate(150%) brightness(85%); }
+  /* Per-day forklift performances — clickable rows that expand an inline
+     detail drawer (server-rendered, toggled by a tiny script; no fetch). */
+  .pc-forklift-days { margin-top: 1rem; }
+  .pc-forklift-days h3 { margin: 1rem 0 0.6rem 0; }
+  table.pc-fk-days tbody tr.fk-day-row { cursor: pointer; }
+  table.pc-fk-days tbody tr.fk-day-row:hover td { background: var(--panel-2); }
+  table.pc-fk-days tbody tr.fk-day-row:focus { outline: none; }
+  table.pc-fk-days tbody tr.fk-day-row:focus td { background: var(--panel-2); }
+  .fk-caret { display: inline-block; width: 1em; color: var(--muted); font-size: 0.8em; }
+  table.pc-fk-days tr.fk-day-detail > td { background: var(--panel); padding: 0.6rem 0.9rem; }
+  .fk-day-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.35rem 1.2rem; font-size: 0.88rem; }
+  .fk-day-detail-grid .lab { color: var(--muted); }
+  .fk-day-detail-grid .lab::after { content: ": "; }
+  .fk-day-score { margin-top: 0.55rem; font-size: 0.88rem; }
+  .fk-day-score .sub { color: var(--muted); }
 {% endblock %}
 
 {% block content %}
@@ -173,6 +188,91 @@
     </div>
     {% endif %}
   </div>
+</section>
+{% endif %}
+
+{% if forklift %}
+<section class="pc-forklift-days">
+  <h3>🚜 Forklift — per-day performances</h3>
+  {% if forklift_days %}
+  <table class="pc pc-fk-days">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th class="num">Calls</th>
+        <th class="num">On-time %</th>
+        <th class="num">Avg response</th>
+        <th class="num">Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in forklift_days %}
+      <tr class="fk-day-row" data-fk-target="fk-day-{{ loop.index }}"
+          tabindex="0" role="button" aria-expanded="false">
+        <td><span class="fk-caret">▸</span> {{ d.date }}</td>
+        <td class="num">{{ '{:,.0f}'.format(d.calls) }}</td>
+        <td class="num">{{ '%.1f'|format(d.ontime_pct) }}%</td>
+        <td class="num">{{ '%.1f'|format((d.avg_ms or 0) / 1000.0) }}s</td>
+        <td class="num">{% if d.score is not none %}{{ '%.0f'|format(d.score) }}{% else %}—{% endif %}</td>
+      </tr>
+      <tr class="fk-day-detail" id="fk-day-{{ loop.index }}" hidden>
+        <td colspan="5">
+          <div class="fk-day-detail-grid">
+            <div><span class="lab">Calls</span>{{ '{:,.0f}'.format(d.calls) }}</div>
+            <div><span class="lab">On-time</span>{{ '{:,.0f}'.format(d.on_time) }}</div>
+            <div><span class="lab">Late</span>{{ '{:,.0f}'.format(d.late) }}</div>
+            <div><span class="lab">On-time %</span>{{ '%.1f'|format(d.ontime_pct) }}%</div>
+            <div><span class="lab">Avg response</span>{{ '%.1f'|format((d.avg_ms or 0) / 1000.0) }}s</div>
+            <div><span class="lab">Max response</span>{{ '%.1f'|format((d.max_ms or 0) / 1000.0) }}s</div>
+            <div><span class="lab">Utilization</span>{{ '%.0f'|format(d.utilization_pct) }}%</div>
+          </div>
+          {% if d.score is not none %}
+          <div class="fk-day-score">
+            <strong>Score {{ '%.0f'|format(d.score) }}</strong>
+            <span class="sub">
+              calls {{ '%.0f'|format(d.components.calls.sub) }} ·
+              on-time {{ '%.0f'|format(d.components.ontime.sub) }} ·
+              speed {{ '%.0f'|format(d.components.speed.sub) }} ·
+              util {{ '%.0f'|format(d.components.util.sub) }}
+            </span>
+          </div>
+          {% else %}
+          <div class="fk-day-score sub">Below scoring threshold (min {{ forklift_min_calls }} calls)</div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <script>
+  (function () {
+    var script = document.currentScript;
+    var table = script ? script.previousElementSibling : null;
+    if (!table || !table.classList.contains('pc-fk-days')) return;
+    function toggle(row) {
+      var detail = document.getElementById(row.getAttribute('data-fk-target'));
+      if (!detail) return;
+      var opening = detail.hasAttribute('hidden');
+      if (opening) { detail.removeAttribute('hidden'); }
+      else { detail.setAttribute('hidden', ''); }
+      row.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      var caret = row.querySelector('.fk-caret');
+      if (caret) caret.textContent = opening ? '▾' : '▸';
+    }
+    table.addEventListener('click', function (e) {
+      var row = e.target.closest('.fk-day-row');
+      if (row) toggle(row);
+    });
+    table.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var row = e.target.closest('.fk-day-row');
+      if (row) { e.preventDefault(); toggle(row); }
+    });
+  })();
+  </script>
+  {% else %}
+  <p style="color:var(--muted);font-style:italic">No forklift days in this range.</p>
+  {% endif %}
 </section>
 {% endif %}
 
