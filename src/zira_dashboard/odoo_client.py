@@ -1383,6 +1383,17 @@ def create_feedback_task(
                        dict(base, user_id=assignee_uid))
 
 
+def update_task(task_id: int, **fields: Any) -> None:
+    """Write fields on a project.task (e.g. description=..., active=False)."""
+    execute("project.task", "write", [task_id], fields)
+
+
+def post_task_message(task_id: int, body: str) -> None:
+    """Post a message to a project.task's chatter (mirrors post_leave_message:
+    `body` is forwarded as Odoo's keyword arg by `execute`)."""
+    execute("project.task", "message_post", [task_id], body=body)
+
+
 def add_task_attachment(
     task_id: int, filename: str, mimetype: str | None, raw_bytes: bytes
 ) -> int:
