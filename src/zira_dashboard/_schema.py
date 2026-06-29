@@ -708,6 +708,34 @@ CREATE TABLE IF NOT EXISTS time_off_balances (
   PRIMARY KEY (person_odoo_id, holiday_status_id)
 );
 
+-- Employee-facing kiosk notifications. One row = one thing to tell an
+-- employee at their next time-clock sign-in. Currently sourced only from
+-- time-off resolutions (approved/denied/cancelled). `acknowledged_at`
+-- records the "Got it" tap so a notification never shows twice. Leave
+-- dates are snapshotted so the message stays correct even if the source
+-- time_off_requests row later changes or is deleted.
+CREATE TABLE IF NOT EXISTS employee_notifications (
+  id                   BIGSERIAL PRIMARY KEY,
+  person_odoo_id       INTEGER NOT NULL,
+  kind                 TEXT NOT NULL,
+  time_off_request_id  BIGINT,
+  odoo_leave_id        INTEGER,
+  title                TEXT NOT NULL,
+  body                 TEXT NOT NULL,
+  leave_date_from      DATE,
+  leave_date_to        DATE,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acknowledged_at      TIMESTAMPTZ
+);
+-- Hard dedupe backstop: generation only fires on observed transitions, but
+-- this guarantees at most one notification per (request, kind) even if a
+-- poll double-processes a row.
+CREATE UNIQUE INDEX IF NOT EXISTS employee_notifications_dedupe
+  ON employee_notifications (time_off_request_id, kind);
+-- Sign-in hot path: "does this person have anything to show?"
+CREATE INDEX IF NOT EXISTS employee_notifications_unack
+  ON employee_notifications (person_odoo_id) WHERE acknowledged_at IS NULL;
+
 -- Audit log of scheduler reassignments caused by time-off cascade. Bucket
 -- vocabulary: `from_bucket` / `to_bucket` are either a WC name from
 -- `staffing.LOCATIONS`, the special `TIME_OFF_KEY` constant `'__time_off'`
