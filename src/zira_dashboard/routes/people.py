@@ -63,20 +63,28 @@ def _forklift_for_person(name: str, today: date, cfg) -> dict | None:
                 util = float(r["utilization_pct"])
                 break
 
-        # Best-day GOAT score over the window (None below the gate).
+        # Best-day GOAT score over the window (None below the gate), carrying
+        # the winning day's component breakdown for the card's compact line.
         best_score = None
+        best_components = None
         for r in mine:
             b = forklift_score.daily_score(r, cfg)
             if b is not None and (best_score is None or b.score > best_score):
                 best_score = b.score
+                best_components = b.components
 
-        trophies = forklift_awards.awards_earned_by_driver(name, today, cfg)
+        # Awards match on the forklift display name carried in
+        # forklift_driver_daily, so look them up by `forklift_name` — passing
+        # the plant `name` would silently miss every driver whose forklift
+        # name differs from their plant name.
+        trophies = forklift_awards.awards_earned_by_driver(forklift_name, today, cfg)
         return {
             "calls": calls,
             "ontime_pct": ontime_pct,
             "avg_ms": avg_ms,
             "utilization_pct": util,
             "best_score": best_score,
+            "best_components": best_components,
             "trophies": trophies,
         }
     except Exception:  # noqa: BLE001 - hide the block rather than 500

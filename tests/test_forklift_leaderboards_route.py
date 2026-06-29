@@ -1,6 +1,8 @@
 """Endpoint test for GET /staffing/forklift (forklift leaderboard page)."""
 from __future__ import annotations
 
+import inspect
+
 
 def _client(monkeypatch):
     """Stub forklift_awards.leaderboard so the page renders without DB."""
@@ -47,3 +49,14 @@ def test_forklift_leaderboard_degrades_on_failure(monkeypatch):
     r = TestClient(app).get("/staffing/forklift")
     assert r.status_code == 200
     assert "Overall score" in r.text  # cards still render, just empty
+
+
+def test_forklift_leaderboard_route_has_no_aliasing_empty_constant():
+    """The failure fallback must build a fresh empty literal each call, not a
+    shallow copy of a module constant (whose inner lists would alias)."""
+    from zira_dashboard.routes import forklift_leaderboards as fl
+
+    src = inspect.getsource(fl)
+    # No module-level _EMPTY_LB constant aliased via dict(...) copies.
+    assert "_EMPTY_LB" not in src
+    assert "dict(_EMPTY_LB)" not in src

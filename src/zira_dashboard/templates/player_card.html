@@ -162,6 +162,14 @@
     <div class="stat">
       <div class="lab">Best-day score</div>
       <div class="v">{{ '%.0f'|format(forklift.best_score) }}</div>
+      {% if forklift.best_components %}
+      <div style="font-size:0.7rem;color:var(--muted);margin-top:0.25rem">
+        calls {{ '%.0f'|format(forklift.best_components.calls.sub) }} ·
+        on-time {{ '%.0f'|format(forklift.best_components.ontime.sub) }} ·
+        speed {{ '%.0f'|format(forklift.best_components.speed.sub) }} ·
+        util {{ '%.0f'|format(forklift.best_components.util.sub) }}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
   </div>

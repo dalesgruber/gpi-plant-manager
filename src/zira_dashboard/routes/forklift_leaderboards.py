@@ -28,8 +28,6 @@ _WINDOW_LABELS = {
     "quarter": "Quarter", "year": "Year", "alltime": "All Time",
 }
 
-_EMPTY_LB = {"most_calls": [], "on_time": [], "fastest": [], "overall": []}
-
 
 @router.get("/staffing/forklift", response_class=HTMLResponse)
 def forklift_leaderboards(
@@ -52,7 +50,9 @@ def forklift_leaderboards(
         )
     except Exception as exc:  # noqa: BLE001 - never 500 the page on a data hiccup
         _log.warning("forklift leaderboard: render context failed: %s", exc)
-        lb = dict(_EMPTY_LB)
+        # Fresh literal so the fallback can't alias a shared module constant's
+        # inner lists (a shallow dict copy would).
+        lb = {"most_calls": [], "on_time": [], "fastest": [], "overall": []}
 
     label = "Custom" if custom_range_active else _WINDOW_LABELS.get(window, window)
     return templates.TemplateResponse(
