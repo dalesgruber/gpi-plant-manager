@@ -709,7 +709,7 @@ async def staffing_transfer_undo(request: Request):
 _ASSIGNMENTS_TODO_CACHE: dict = {"value": None, "expires_at": 0.0}
 
 
-def assignments_todo_payload() -> dict:
+def assignments_todo_payload(force: bool = False) -> dict:
     """Snapshot for the global "Assignments to Do" nav badge + modal.
 
     Always for today. Returns count, items (pending), saved (already
@@ -719,12 +719,18 @@ def assignments_todo_payload() -> dict:
     below). Polled by every page load's footer and every /tv/new reload;
     each cold call pays schedule + attribution + roster + Zira-cache work.
     Attribution writes bust it via _bust_assignments_todo_cache.
+
+    ``force=True`` skips the cache read and recomputes, resetting the TTL.
+    The inbox warmer (page_warmer.warm_inbox_once) calls it this way on a
+    cadence below the 30 s TTL so build_summary()'s nav badge — rendered on
+    every page via _topnav.html — never pays this cold cascade on a human
+    request.
     """
     from .. import staffing as _staffing, wc_attributions
     from ..deps import client as _client
     now_ts = time.time()
     cached = _ASSIGNMENTS_TODO_CACHE.get("value")
-    if cached is not None and now_ts < _ASSIGNMENTS_TODO_CACHE.get("expires_at", 0):
+    if not force and cached is not None and now_ts < _ASSIGNMENTS_TODO_CACHE.get("expires_at", 0):
         return cached
 
     today = plant_today()
@@ -778,7 +784,7 @@ def _bust_assignments_todo_cache() -> None:
 _LATE_REPORT_CACHE: dict = {"value": None, "expires_at": 0.0}
 
 
-def late_report_payload() -> dict:
+def late_report_payload(force: bool = False) -> dict:
     """Snapshot for the global Late/Absence Report badge + modal.
 
     Always for today. Covers people who were on today's schedule only —
@@ -794,11 +800,13 @@ def late_report_payload() -> dict:
     `count` is the badge number = sum of the three actionable sections.
 
     Cached in-process for 30 s. Polled by every page footer every 60 s.
+    ``force=True`` skips the cache read and recomputes, resetting the TTL —
+    used by the inbox warmer to keep the nav badge warm for human requests.
     """
     from .. import late_report
     now_ts = time.time()
     cached = _LATE_REPORT_CACHE.get("value")
-    if cached is not None and now_ts < _LATE_REPORT_CACHE.get("expires_at", 0):
+    if not force and cached is not None and now_ts < _LATE_REPORT_CACHE.get("expires_at", 0):
         return cached
 
     today = plant_today()

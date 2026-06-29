@@ -139,6 +139,16 @@ async def _tick_staffing_pages():
     await asyncio.to_thread(page_warmer.warm_once)
 
 
+async def _tick_inbox():
+    """Keep the inbox top-nav sub-caches warm. build_summary() renders the
+    Inbox badge on every page (_topnav.html); its expensive sub-sources self-
+    cache for 30 s but the TTL doesn't slide on hits, so a human hitting any
+    page after the cache lapses pays the full cold Zira/Odoo cascade. Refresh
+    below that TTL (interval 20 s) so the badge is always served warm."""
+    from . import page_warmer
+    await asyncio.to_thread(page_warmer.warm_inbox_once)
+
+
 async def _tick_staffing_stable():
     """Warm the slow-changing staffing pages (the skills matrix). Roster/skill
     data rarely changes and writes invalidate the cache directly, so 5 min is
@@ -219,6 +229,7 @@ _WARMERS = [
     ("time-off poll", _tick_time_off_poll, 60),
     ("time-off balance", _tick_time_off_balance, 600),
     ("staffing pages", _tick_staffing_pages, 45),
+    ("inbox warm", _tick_inbox, 20),
     ("staffing stable", _tick_staffing_stable, 300),
     ("missing WC", _tick_missing_wc, 180),
     ("missed punch-out", _tick_missed_punch_out, 60),

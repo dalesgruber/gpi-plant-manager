@@ -80,6 +80,25 @@ def warm_once() -> None:
         _log.warning("page_warmer: leaderboards warm failed: %s", e)
 
 
+def warm_inbox_once() -> None:
+    """Force-refresh the inbox top-nav sub-caches (assignments-todo +
+    late-report). ``build_summary()`` renders these into the Inbox badge on
+    EVERY page via _topnav.html; their 30 s in-process TTL doesn't slide on
+    hits, so without this a human repeatedly pays the cold Zira/Odoo cascade
+    just to draw the nav. Run on a cadence below the 30 s TTL (see _tick_inbox)
+    so the badge is always served warm. Each source refreshes independently;
+    a failure must never bubble (the warmer loop must never die)."""
+    from .routes.staffing import assignments_todo_payload, late_report_payload
+    try:
+        assignments_todo_payload(force=True)
+    except Exception as e:  # noqa: BLE001 — warmer must never bubble
+        _log.warning("page_warmer: assignments inbox warm failed: %s", e)
+    try:
+        late_report_payload(force=True)
+    except Exception as e:  # noqa: BLE001 — warmer must never bubble
+        _log.warning("page_warmer: late-report inbox warm failed: %s", e)
+
+
 def warm_skills_once() -> None:
     """Warm the skills matrix. Separate from warm_once() because roster /
     skill data changes rarely (and writes invalidate the cache directly),
