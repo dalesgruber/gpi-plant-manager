@@ -471,6 +471,47 @@ def test_exceptions_api_uses_snapshot(monkeypatch):
     assert resp.json()["total"] == 1
 
 
+def test_exceptions_api_serializes_date_bearing_coverage(monkeypatch):
+    # Reproduces the regression where date objects in time-off rows / coverage
+    # broke JSONResponse on /api/exceptions.
+    time_off_row = {
+        "name": "Maria", "label": "Jul 6 – Jul 8", "detail": "Vacation · confirm",
+        "priority": "info", "badge": "Approval",
+        "row_key": "time_off:55:confirm", "item_key": "time_off:55",
+        "action": {"type": "time_off", "request_id": 55},
+        "person_odoo_id": 7,
+        "date_from": date(2026, 7, 6), "date_to": date(2026, 7, 8),
+        "coverage": {
+            "severity": "warn", "peak_count": 4, "peak_date": date(2026, 7, 7),
+            "peak_dept_count": 2, "scope": "department", "dept_label": "Recycling",
+            "has_holiday": False, "more_days": 0,
+            "by_day": [{"date": date(2026, 7, 7), "count": 4, "dept_count": 2,
+                        "holiday": None, "people": [
+                            {"name": "Juan", "dept": "Recycling", "label": "full day",
+                             "pending": False, "same_dept": True}]}],
+        },
+    }
+    snapshot = {
+        "today": "2026-07-01", "generated_at": "7:35 AM", "total": 1,
+        "urgent_total": 0, "follow_up_total": 0, "source_errors": [],
+        "work_centers": [], "people": [], "sections": [],
+        "queue": [{**time_off_row, "section_id": "time_off",
+                   "category_label": "Pending Time Off", "tone": "info"}],
+    }
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot",
+                        lambda: snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/api/exceptions")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    row = body["queue"][0]
+    assert row["coverage"]["peak_date"] == "2026-07-07"        # date -> ISO string
+    assert row["coverage"]["by_day"][0]["date"] == "2026-07-07"
+    assert row["date_from"] == "2026-07-06"
+
+
 def test_exceptions_summary_api_uses_summary(monkeypatch):
     monkeypatch.setattr(
         exceptions_route.exception_inbox,

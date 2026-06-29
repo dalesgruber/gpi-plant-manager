@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import exception_inbox, inbox_keys, inbox_log, plant_day, time_off_audit
@@ -35,7 +36,7 @@ def exceptions_page(request: Request):
 
 @router.get("/api/exceptions")
 def exceptions_json():
-    return JSONResponse(exception_inbox.build_snapshot())
+    return JSONResponse(jsonable_encoder(exception_inbox.build_snapshot()))
 
 
 @router.get("/api/exceptions/summary")
