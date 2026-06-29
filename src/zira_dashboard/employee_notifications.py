@@ -19,6 +19,13 @@ from . import db, shift_config
 
 _NOTIFY_ENV = "KIOSK_TIME_OFF_NOTIFY_ENABLED"
 
+# Odoo/local state a request lands in -> the notification we raise.
+_RESOLUTION_KIND = {
+    "validate": "time_off_approved",
+    "refuse": "time_off_denied",
+    "cancel": "time_off_cancelled",
+}
+
 
 def notifications_enabled() -> bool:
     """Kill-switch. Default ON; set KIOSK_TIME_OFF_NOTIFY_ENABLED=0 to disable
@@ -75,6 +82,35 @@ def create_time_off_notification(
         (person_odoo_id, kind, req.get("id"), req.get("odoo_leave_id"),
          title, body, req.get("date_from"), req.get("date_to")),
     )
+
+
+def maybe_notify_resolution(
+    old: dict[str, Any], new: dict[str, Any], today: date | None = None,
+) -> None:
+    """Raise a resolution notification when a request transitions into an
+    approved/denied/cancelled state. Called from ``time_off_sync._upsert_one``
+    on every observed state change and on insert-already-validated.
+
+    Suppressed when:
+      - the feature is off,
+      - the new state isn't a resolution,
+      - the change is the employee's own cancellation (local prior state
+        ``draft_cancel`` — Odoo records that as a refuse/cancel, which is not
+        a denial),
+      - the leave is entirely in the past (date_to < today).
+    """
+    if not notifications_enabled():
+        return
+    kind = _RESOLUTION_KIND.get(new.get("state"))
+    if kind is None:
+        return
+    if old.get("state") == "draft_cancel":
+        return
+    date_to = new.get("date_to")
+    today = today or _plant_today()
+    if date_to is None or date_to < today:
+        return
+    create_time_off_notification(new["person_odoo_id"], kind, new)
 
 
 def has_unacknowledged(person_odoo_id: int) -> bool:

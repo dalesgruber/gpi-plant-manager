@@ -96,3 +96,77 @@ def test_acknowledge_all_is_person_scoped(fake_db):
     assert "person_odoo_id = %s" in sql
     assert "acknowledged_at IS NULL" in sql
     assert params == (5,)
+
+
+def _req(state, date_to=date(2026, 7, 3), **extra):
+    base = {
+        "id": 7, "person_odoo_id": 5, "odoo_leave_id": 88, "state": state,
+        "date_from": date(2026, 7, 1), "date_to": date(2026, 7, 3),
+    }
+    base.update(extra)
+    base["date_to"] = date_to
+    return base
+
+
+def test_notify_on_approve(fake_db, monkeypatch):
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(_req("confirm"), _req("validate"),
+                               today=date(2026, 6, 29))
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO employee_notifications" in e[0]]
+    assert len(inserts) == 1
+    assert "time_off_approved" in inserts[0][1]
+
+
+def test_notify_on_deny_from_confirm(fake_db, monkeypatch):
+    # The case the scheduler cascade misses: deny a never-approved request.
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(_req("confirm"), _req("refuse"),
+                               today=date(2026, 6, 29))
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO employee_notifications" in e[0]]
+    assert len(inserts) == 1
+    assert "time_off_denied" in inserts[0][1]
+
+
+def test_no_notify_on_self_cancel_pushed_as_refuse(fake_db, monkeypatch):
+    # Employee cancelled their own approved request -> Odoo records 'refuse'
+    # from local 'draft_cancel'. Not a denial: suppress.
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(_req("draft_cancel"), _req("refuse"),
+                               today=date(2026, 6, 29))
+    assert not [e for e in fake_db["executes"]
+                if "INSERT INTO employee_notifications" in e[0]]
+
+
+def test_no_notify_on_self_cancel_to_cancel(fake_db, monkeypatch):
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(_req("draft_cancel"), _req("cancel"),
+                               today=date(2026, 6, 29))
+    assert not [e for e in fake_db["executes"]
+                if "INSERT INTO employee_notifications" in e[0]]
+
+
+def test_no_notify_for_past_leave(fake_db, monkeypatch):
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(
+        _req("confirm", date_to=date(2026, 6, 20)),
+        _req("validate", date_to=date(2026, 6, 20)),
+        today=date(2026, 6, 29),
+    )
+    assert not [e for e in fake_db["executes"]
+                if "INSERT INTO employee_notifications" in e[0]]
+
+
+def test_no_notify_for_non_resolution_transition(fake_db, monkeypatch):
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    en.maybe_notify_resolution(_req("draft"), _req("confirm"),
+                               today=date(2026, 6, 29))
+    assert not fake_db["executes"]
+
+
+def test_no_notify_when_disabled(fake_db, monkeypatch):
+    monkeypatch.setenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", "0")
+    en.maybe_notify_resolution(_req("confirm"), _req("validate"),
+                               today=date(2026, 6, 29))
+    assert not fake_db["executes"]

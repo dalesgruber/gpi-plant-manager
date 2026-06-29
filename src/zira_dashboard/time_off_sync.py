@@ -57,7 +57,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from . import db, odoo_client, time_off_balances
+from . import db, employee_notifications, odoo_client, time_off_balances
 from .staffing import TIME_OFF_KEY
 
 _log = logging.getLogger(__name__)
@@ -522,6 +522,7 @@ def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
         )
         if existing["state"] != state:
             cascade_on_state_change(existing, new_row)
+            employee_notifications.maybe_notify_resolution(existing, new_row)
     else:
         # We can't tell late/early/midday from Odoo alone, so valid partial
         # windows use midday_gap, the most permissive partial-day shape.
@@ -542,6 +543,8 @@ def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
             )
             if new_rows:
                 cascade_on_state_change({"state": "draft"}, new_rows[0])
+                employee_notifications.maybe_notify_resolution(
+                    {"state": "draft"}, new_rows[0])
 
 
 def _delete_missing_from_odoo(

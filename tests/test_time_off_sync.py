@@ -787,3 +787,56 @@ def test_push_create_proceeds_when_no_conflict(monkeypatch, fake_db):
     mock_create.assert_called_once()
     assert not any("DELETE FROM time_off_requests" in e[0]
                    for e in fake_db["executes"])
+
+
+def test_upsert_update_calls_notify_on_state_change(monkeypatch, fake_db):
+    from unittest.mock import MagicMock
+    existing = {
+        "id": 1, "person_odoo_id": 5, "state": "confirm", "shape": "full_day",
+        "date_from": date(2026, 7, 1), "date_to": date(2026, 7, 3),
+        "hour_from": None, "hour_to": None, "odoo_leave_id": 88,
+    }
+    leave = {
+        "id": 88, "state": "validate",
+        "employee_id": (5, "X"), "holiday_status_id": (1, "PTO"),
+        "request_date_from": "2026-07-01", "request_date_to": "2026-07-03",
+        "number_of_days": 3, "request_unit_hours": False,
+        "request_hour_from": False, "request_hour_to": False,
+        "name": "PTO",
+    }
+    notify = MagicMock()
+    monkeypatch.setattr(time_off_sync.employee_notifications,
+                        "maybe_notify_resolution", notify)
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change", MagicMock())
+
+    time_off_sync._upsert_one(leave, existing)
+
+    notify.assert_called_once()
+    old_arg, new_arg = notify.call_args[0][0], notify.call_args[0][1]
+    assert old_arg["state"] == "confirm"
+    assert new_arg["state"] == "validate"
+
+
+def test_upsert_insert_validate_calls_notify(monkeypatch, fake_db):
+    from unittest.mock import MagicMock
+    leave = {
+        "id": 99, "state": "validate",
+        "employee_id": (5, "X"), "holiday_status_id": (1, "PTO"),
+        "request_date_from": "2026-07-01", "request_date_to": "2026-07-03",
+        "number_of_days": 3, "request_unit_hours": False,
+        "request_hour_from": False, "request_hour_to": False,
+        "name": "PTO",
+    }
+    fake_db["query_result"] = [{
+        "id": 2, "person_odoo_id": 5, "state": "validate", "shape": "full_day",
+        "date_from": date(2026, 7, 1), "date_to": date(2026, 7, 3),
+        "hour_from": None, "hour_to": None, "odoo_leave_id": 99,
+    }]
+    notify = MagicMock()
+    monkeypatch.setattr(time_off_sync.employee_notifications,
+                        "maybe_notify_resolution", notify)
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change", MagicMock())
+
+    time_off_sync._upsert_one(leave, None)
+
+    notify.assert_called_once()
