@@ -144,3 +144,30 @@ def test_run_once_all_resolved_archives_task(fake_state, monkeypatch):
     update.assert_called_once_with(111, active=False)
     assert saved["odoo_task_id"] is None
     assert saved["reported_emp_ids"] == []
+
+
+def test_run_once_updates_existing_task_when_set_changes(fake_state, monkeypatch):
+    # A task already exists and the conflict set grows (7 -> 7,8): update the
+    # existing task body + comment; do NOT create a new task.
+    state, saved = fake_state
+    state["last_run_at"] = datetime.now(timezone.utc) - timedelta(days=8)  # due
+    state["reported_emp_ids"] = [7]
+    state["odoo_task_id"] = 111
+    _patch_conflicts(monkeypatch, [_conflict(7, "Gerardo", {4}), _conflict(8, "Maria", {4})])
+    create = MagicMock()
+    update = MagicMock()
+    comment = MagicMock()
+    monkeypatch.setattr(mon.odoo_client, "create_feedback_task", create)
+    monkeypatch.setattr(mon.odoo_client, "update_task", update)
+    monkeypatch.setattr(mon.odoo_client, "post_task_message", comment)
+
+    result = mon.run_once()
+
+    assert result["changed"] is True
+    assert result["now_empty"] is False
+    create.assert_not_called()
+    update.assert_called_once()           # description update on the existing task
+    assert update.call_args.args[0] == 111
+    comment.assert_called_once()
+    assert saved["odoo_task_id"] == 111
+    assert saved["reported_emp_ids"] == [7, 8]

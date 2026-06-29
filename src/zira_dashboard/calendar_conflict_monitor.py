@@ -7,6 +7,7 @@ See docs/superpowers/specs/2026-06-29-calendar-conflict-monitor-design.md
 
 from __future__ import annotations
 
+import html
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -68,13 +69,15 @@ def _build_task_body(conflicts) -> str:
     rows = sorted(conflicts, key=lambda c: c["name"].lower())
     items = []
     for c in rows:
+        name = html.escape(str(c["name"]))
+        cal = html.escape(str(c["cal_name"]))
         if c["verdict"] == "missing_days":
-            detail = f"calendar {c['cal_name']} missing {calendar_conflicts.fmt_days(c['missing'])}"
+            detail = f"calendar {cal} missing {calendar_conflicts.fmt_days(c['missing'])}"
         elif c["verdict"] == "flexible":
-            detail = f"calendar {c['cal_name']} is flexible / has no fixed hours"
+            detail = f"calendar {cal} is flexible / has no fixed hours"
         else:
             detail = "no Odoo work schedule"
-        items.append(f"<li>{c['name']} (id {c['odoo_id']}) — {detail}</li>")
+        items.append(f"<li>{name} (id {c['odoo_id']}) — {detail}</li>")
     return (
         "<p>These employees' Odoo work schedule has no working hours on a plant "
         "workday, so declaring them absent can't sync to Odoo Time Off. Fix each "
@@ -85,7 +88,7 @@ def _build_task_body(conflicts) -> str:
 def _summary_comment(decision, names_by_id) -> str:
     parts = []
     if decision["added"]:
-        parts.append("New conflicts: " + ", ".join(names_by_id.get(i, f"id {i}") for i in decision["added"]))
+        parts.append("New conflicts: " + ", ".join(html.escape(names_by_id.get(i, f"id {i}")) for i in decision["added"]))
     if decision["removed"]:
         parts.append("Resolved: " + ", ".join(f"id {i}" for i in decision["removed"]))
     return "; ".join(parts) or "Updated."
