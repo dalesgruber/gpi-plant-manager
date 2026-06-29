@@ -101,8 +101,15 @@ def gather_rows(plant_set):
         eid = int(e["id"])
         if roster_by_id is not None:
             p = roster_by_id.get(eid)
+            # Only flag people the absence flow actually applies to. The
+            # Late/Absence report (late_report.report_eligible_emp_ids) covers
+            # HOURLY + FIXED-schedule people only — flexible/salaried people are
+            # never declared absent, so a calendar gap can't break an absence
+            # sync for them. Mirror that eligibility here.
             if p is None or p.reserve:
-                continue  # not rostered, or a reserve — never declared absent
+                continue  # not rostered, or a reserve
+            if p.wage_type != "hourly" or getattr(p, "is_flexible", False):
+                continue  # salaried/flexible — outside the late/absence flow
         cal_id = emp_cal.get(eid)
         has_cal = cal_id is not None
         if has_cal:

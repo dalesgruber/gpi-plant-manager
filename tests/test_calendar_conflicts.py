@@ -59,9 +59,9 @@ def test_gather_excludes_reserves_and_non_roster(monkeypatch):
     ]
     _patch_odoo(monkeypatch, employees, schedules, {10: _MON_FRI_HOURS, 11: _MON_THU_HOURS})
     roster = [
-        SimpleNamespace(employee_id=1, reserve=False),
-        SimpleNamespace(employee_id=2, reserve=True),
-        SimpleNamespace(employee_id=4, reserve=False),
+        SimpleNamespace(employee_id=1, reserve=False, wage_type="hourly", is_flexible=False),
+        SimpleNamespace(employee_id=2, reserve=True, wage_type="hourly", is_flexible=False),
+        SimpleNamespace(employee_id=4, reserve=False, wage_type="hourly", is_flexible=False),
     ]
     monkeypatch.setattr(staffing_mod, "load_roster", lambda: roster)
 
@@ -72,6 +72,32 @@ def test_gather_excludes_reserves_and_non_roster(monkeypatch):
     assert by_id[1]["verdict"] == "ok"
     assert by_id[4]["verdict"] == "missing_days"
     assert by_id[4]["missing"] == {4}
+    assert notes == []
+
+
+def test_gather_excludes_flexible_and_salaried_people(monkeypatch):
+    # Absence flow applies only to hourly + fixed-schedule people. Flexible and
+    # salaried people are never declared absent, so a calendar gap isn't a
+    # conflict for them — they must not be flagged.
+    employees = [
+        {"id": 1, "name": "Ana Hourly Fixed", "resource_calendar_id": [11, "M-Th"]},
+        {"id": 2, "name": "Flora Flexible", "resource_calendar_id": [11, "M-Th"]},
+        {"id": 3, "name": "Sam Salaried", "resource_calendar_id": [11, "M-Th"]},
+    ]
+    schedules = [{"id": 11, "name": "M-Th", "is_flexible": False}]
+    _patch_odoo(monkeypatch, employees, schedules, {11: _MON_THU_HOURS})
+    roster = [
+        SimpleNamespace(employee_id=1, reserve=False, wage_type="hourly", is_flexible=False),
+        SimpleNamespace(employee_id=2, reserve=False, wage_type="hourly", is_flexible=True),
+        SimpleNamespace(employee_id=3, reserve=False, wage_type="monthly", is_flexible=False),
+    ]
+    monkeypatch.setattr(staffing_mod, "load_roster", lambda: roster)
+
+    rows, notes = cc.gather_rows(MON_FRI)
+
+    by_id = {r["odoo_id"]: r for r in rows}
+    assert set(by_id) == {1}                      # flexible (2) + salaried (3) excluded
+    assert by_id[1]["verdict"] == "missing_days"  # hourly fixed, missing Fri — still flagged
     assert notes == []
 
 
