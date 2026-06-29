@@ -29,7 +29,7 @@ def _base_url() -> str:
     return (os.environ.get("FORKLIFT_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
 
 
-def _get(path: str) -> Any:
+def _get(path: str, params: dict | None = None) -> Any:
     """GET {base}{path} with the API key header; return parsed JSON.
     Wraps any transport/HTTP error in ForkliftError."""
     url = f"{_base_url()}{path}"
@@ -38,16 +38,22 @@ def _get(path: str) -> Any:
     if key:
         headers["X-API-Key"] = key
     try:
-        r = requests.get(url, headers=headers, timeout=_TIMEOUT)
+        r = requests.get(url, headers=headers, params=params, timeout=_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except Exception as e:  # noqa: BLE001 - normalize to one error type
         raise ForkliftError(f"GET {path} failed: {e}") from e
 
 
-def fetch_dashboard() -> dict:
-    """Today's precomputed analytics: driverLeaderboard, hourlyClaimAvgs, etc."""
-    return _get("/api/dashboard")
+def fetch_dashboard(since: int | None = None) -> dict:
+    """Precomputed analytics: driverLeaderboard, hourlyClaimAvgs, etc.
+
+    With no `since`, returns today's view. With `since` (epoch ms), the
+    driverLeaderboard counts become cumulative from `since` to now — used to
+    reconstruct/forward-capture per-day on-time/utilization history.
+    """
+    params = {"since": since} if since is not None else None
+    return _get("/api/dashboard", params=params)
 
 
 def fetch_queue_history() -> list[dict]:

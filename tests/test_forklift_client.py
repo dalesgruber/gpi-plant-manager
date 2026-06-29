@@ -46,6 +46,23 @@ def test_default_base_url_when_unset(monkeypatch):
     assert captured["url"] == "https://www.gpiforklift.com/api/dashboard"
 
 
+def test_fetch_dashboard_passes_since_param(monkeypatch):
+    monkeypatch.setenv("FORKLIFT_BASE_URL", "https://fk.example")
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        return _json_response({"driverLeaderboard": []})
+
+    monkeypatch.setattr(forklift_client.requests, "get", fake_get)
+
+    forklift_client.fetch_dashboard(since=0)
+
+    assert captured["url"] == "https://fk.example/api/dashboard"
+    assert captured["params"] == {"since": 0}
+
+
 def test_http_error_is_wrapped_in_forklift_error(monkeypatch):
     monkeypatch.setenv("FORKLIFT_BASE_URL", "https://fk.example")
 
