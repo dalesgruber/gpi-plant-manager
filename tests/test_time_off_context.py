@@ -147,7 +147,7 @@ def test_coverage_breakdowns_for_batches_queries(monkeypatch):
             return [{"person_odoo_id": 2, "name": "Juan", "shape": "full_day",
                      "date_from": date(2026, 7, 6), "date_to": date(2026, 7, 6),
                      "hour_from": None, "hour_to": None}]
-        if "IN ('draft'" in sql:
+        if "r.state = ANY(%s)" in sql:       # pending query (state list bound as param)
             return [{"person_odoo_id": 3, "name": "Lee", "shape": "full_day",
                      "date_from": date(2026, 7, 6), "date_to": date(2026, 7, 6),
                      "hour_from": None, "hour_to": None}]

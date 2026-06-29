@@ -199,9 +199,9 @@ def coverage_breakdowns_for(rows: list[dict]) -> dict[int, dict]:
         (window_start, window_end),
     )
     pending = db.query(
-        _OVERLAP_SELECT + "WHERE r.state IN ('draft', 'draft_edit', "
-        "'confirm', 'validate1') AND r.date_to >= %s AND r.date_from <= %s",
-        (window_start, window_end),
+        _OVERLAP_SELECT + "WHERE r.state = ANY(%s) "
+        "AND r.date_to >= %s AND r.date_from <= %s",
+        (list(_PENDING_STATES), window_start, window_end),
     )
     holiday_names = _holiday_names(window_start, window_end)
 
