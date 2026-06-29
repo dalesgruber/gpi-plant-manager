@@ -18,6 +18,10 @@ _log = logging.getLogger(__name__)
 THROTTLE = timedelta(days=7)
 _TASK_NAME = "Odoo work-schedule conflicts"
 
+# Log the "throttled" state at most once per process so a deploy's boot tick
+# surfaces the persisted state (last run + task id) without spamming every 6h.
+_throttle_logged = False
+
 
 def decide(current_ids, reported_ids) -> dict:
     """Pure diff of the conflict employee-id sets.
@@ -96,9 +100,16 @@ def _summary_comment(decision, names_by_id) -> str:
 
 def run_once(force: bool = False) -> dict:
     """Weekly check. Best-effort; raises propagate to the warmer (logged/swallowed)."""
+    global _throttle_logged
     state = _load_state()
     now = datetime.now(timezone.utc)
     if not force and state["last_run_at"] and (now - state["last_run_at"]) < THROTTLE:
+        if not _throttle_logged:
+            _log.warning(
+                "calendar-conflict monitor: throttled — last run %s, task=%s, %d reported",
+                state["last_run_at"], state["odoo_task_id"], len(state["reported_emp_ids"]),
+            )
+            _throttle_logged = True
         return {"skipped": "throttled"}
 
     conflicts = calendar_conflicts.current_conflicts()
@@ -136,7 +147,9 @@ def run_once(force: bool = False) -> dict:
             odoo_client.post_task_message(task_id, _summary_comment(decision, names_by_id))
 
     _save_state(odoo_task_id=task_id, reported_emp_ids=current_ids, last_run_at=now)
-    _log.info(
+    # WARNING level so this weekly heartbeat is visible in prod logs (the app
+    # sets no logging config, so module-level INFO is dropped by lastResort).
+    _log.warning(
         "calendar-conflict monitor: %d conflict(s), changed=%s, task=%s",
         len(current_ids), decision["changed"], task_id,
     )

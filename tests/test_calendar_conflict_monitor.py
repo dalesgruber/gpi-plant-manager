@@ -198,3 +198,48 @@ def test_run_once_recreates_task_when_stored_task_update_fails(fake_state, monke
     assert saved["odoo_task_id"] == 222      # new task id persisted
     assert saved["reported_emp_ids"] == [7, 8]
     assert result["changed"] is True
+
+
+def test_run_once_emits_visible_warning_summary_on_real_run(fake_state, monkeypatch, caplog):
+    # A real (non-throttled) run logs its outcome at WARNING so it shows in
+    # prod logs (the app enables no INFO logging).
+    import logging
+
+    state, saved = fake_state  # last_run_at None -> due
+    _patch_conflicts(monkeypatch, [_conflict(7, "Gerardo", {4})])
+    monkeypatch.setattr(mon.odoo_client, "ensure_feedback_project", lambda: 3)
+    monkeypatch.setattr(mon.odoo_client, "authenticate", lambda: 9)
+    monkeypatch.setattr(mon.odoo_client, "create_feedback_task", MagicMock(return_value=111))
+    monkeypatch.setattr(mon.odoo_client, "post_task_message", MagicMock())
+    monkeypatch.setattr(mon.odoo_client, "update_task", MagicMock())
+
+    with caplog.at_level(logging.WARNING, logger="zira_dashboard.calendar_conflict_monitor"):
+        mon.run_once()
+
+    assert any(
+        r.levelno == logging.WARNING and "calendar-conflict monitor" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_run_once_logs_throttled_state_once_per_process(fake_state, monkeypatch, caplog):
+    # The throttled path logs the persisted state (last run + task id) at
+    # WARNING exactly once per process, so a deploy's boot tick confirms state
+    # without spamming every tick.
+    import logging
+
+    monkeypatch.setattr(mon, "_throttle_logged", False)
+    state, saved = fake_state
+    state["last_run_at"] = datetime.now(timezone.utc)  # recent -> throttled
+    state["odoo_task_id"] = 111
+    state["reported_emp_ids"] = [7]
+
+    with caplog.at_level(logging.WARNING, logger="zira_dashboard.calendar_conflict_monitor"):
+        first = mon.run_once()
+        second = mon.run_once()
+
+    assert first == {"skipped": "throttled"}
+    assert second == {"skipped": "throttled"}
+    throttled = [r for r in caplog.records if "throttled" in r.getMessage()]
+    assert len(throttled) == 1               # logged once, not per tick
+    assert "111" in throttled[0].getMessage()  # surfaces the stored task id
