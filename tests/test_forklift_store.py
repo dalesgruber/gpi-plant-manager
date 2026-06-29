@@ -96,3 +96,27 @@ def test_upsert_driver_metrics_fills_ontime_without_clobbering_calls():
     assert row["on_time"] == 18
     assert row["late"] == 2
     assert round(float(row["utilization_pct"]), 1) == 19.4
+
+
+def test_ontime_history_day_count_counts_only_days_with_ontime():
+    from zira_dashboard import db
+    db.bootstrap_schema()
+    db.execute("DELETE FROM forklift_driver_daily")
+    has_ontime = date(2026, 5, 1)
+    has_late = date(2026, 5, 2)
+    no_ontime = date(2026, 5, 3)
+    forklift_store.upsert_driver_daily([
+        # day with on_time > 0 -> counts
+        {"day": has_ontime, "driver_id": "d1", "name": "A", "calls": 10,
+         "on_time": 9, "late": 0, "avg_ms": 1000, "max_ms": 2000,
+         "utilization_pct": 50, "on_call_ms": 600000, "available_ms": 1200000},
+        # day with late > 0 (on_time 0) -> counts
+        {"day": has_late, "driver_id": "d1", "name": "A", "calls": 10,
+         "on_time": 0, "late": 3, "avg_ms": 1000, "max_ms": 2000,
+         "utilization_pct": 50, "on_call_ms": 600000, "available_ms": 1200000},
+        # day with neither -> excluded
+        {"day": no_ontime, "driver_id": "d1", "name": "A", "calls": 10,
+         "on_time": 0, "late": 0, "avg_ms": 1000, "max_ms": 2000,
+         "utilization_pct": 50, "on_call_ms": 600000, "available_ms": 1200000},
+    ])
+    assert forklift_store.ontime_history_day_count() == 2

@@ -164,6 +164,18 @@ def history_day_count() -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
+def ontime_history_day_count() -> int:
+    """How many distinct days actually have on-time/utilization data. Used to
+    decide whether to run the one-time on-time history reconstruction (the
+    completions feed that drives history_day_count() can't supply on-time)."""
+    from . import db
+    rows = db.query(
+        "SELECT COUNT(DISTINCT day) AS n FROM forklift_driver_daily "
+        "WHERE on_time > 0 OR late > 0"
+    )
+    return int(rows[0]["n"]) if rows else 0
+
+
 def name_map(kind: str) -> dict[str, str]:
     from . import db
     rows = db.query(

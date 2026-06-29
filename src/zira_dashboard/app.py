@@ -182,6 +182,11 @@ async def _tick_missed_punch_out():
 # of demand snapshots; after that, each tick just refreshes today.
 _FORKLIFT_MIN_HISTORY_DAYS = 14
 
+# When fewer than this many days carry on-time/utilization data, the warmer
+# self-heals the history by reconstructing it (~90 API calls) once per process.
+_FORKLIFT_ONTIME_MIN_DAYS = 14
+_forklift_ontime_reconstructed = False
+
 
 async def _tick_forklift():
     """Keep forklift demand/performance snapshots fresh. On the first run(s)
@@ -201,6 +206,36 @@ async def _tick_forklift():
         result = await asyncio.to_thread(forklift_snapshot.snapshot_today, None, plant_today())
         _log.warning("forklift warmer: snapshot today (history=%d days) -> %s", days, result)
         await asyncio.to_thread(_capture_forklift_ontime)
+        await _maybe_reconstruct_ontime()
+
+
+async def _maybe_reconstruct_ontime() -> None:
+    """Self-heal the on-time/utilization history once per process when it's
+    sparse, so nobody has to run scripts/backfill_forklift_ontime.py by hand.
+    Mirrors the Stage-1 self-backfill above, but for the on-time columns the
+    completions feed can't supply. Runs the ~90-call reconstruction off the
+    event loop. Best-effort: the guard flag flips in `finally` so a transient
+    source failure won't re-trigger it every tick — it retries next process."""
+    global _forklift_ontime_reconstructed
+    from . import forklift_backfill, forklift_store
+    if _forklift_ontime_reconstructed:
+        return
+    try:
+        days = await asyncio.to_thread(forklift_store.ontime_history_day_count)
+    except Exception:
+        days = _FORKLIFT_ONTIME_MIN_DAYS  # can't tell -> assume fine, skip
+    if days >= _FORKLIFT_ONTIME_MIN_DAYS:
+        return
+    try:
+        result = await asyncio.to_thread(forklift_backfill.reconstruct_ontime_history)
+        _log.warning(
+            "forklift warmer: reconstructed on-time history (had %d days) -> %s",
+            days, result,
+        )
+    except Exception as exc:  # noqa: BLE001 - best-effort, never fatal
+        _log.warning("forklift warmer: on-time reconstruction failed: %s", exc)
+    finally:
+        _forklift_ontime_reconstructed = True
 
 
 def _capture_forklift_ontime() -> None:
