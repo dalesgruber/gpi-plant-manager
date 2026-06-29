@@ -101,6 +101,7 @@ def reconstruct_ontime_history(client=None, days_back: int = 120) -> dict:
         day_rows = diff_day(d.isoformat(), (d + dt.timedelta(days=1)).isoformat(), cum)
         for r in day_rows:
             r["day"] = d
+            r["name"] = id_to_name.get(r["driver_id"], r["driver_id"])
         try:
             total += forklift_store.upsert_driver_metrics(day_rows)
         except Exception as exc:  # noqa: BLE001 - best-effort per day
