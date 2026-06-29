@@ -48,3 +48,37 @@ def test_overload_when_cap_too_low():
 def test_near_zero_demand_recommends_one():
     r = q.recommend_for_target(0.0, 180, target_seconds=240, k=1.0)
     assert r.drivers == 1 and not r.overloaded
+
+
+def test_calibration_is_median_ratio_of_actual_to_predicted():
+    # Build samples whose actual wait is ~2x the model's prediction at their (crew, lambda).
+    handle = 180
+    samples = []
+    for lam, crew in [(60, 5), (70, 6), (80, 6), (50, 5), (65, 6)]:
+        pred = q.erlang_c_wait_seconds(crew, lam, handle)
+        samples.append({"avg_lambda": lam, "crew": crew, "actual_wait_seconds": 2.0 * pred})
+    res = q.fit_calibration(samples, handle)
+    assert abs(res.k - 2.0) < 1e-6 and res.uncalibrated is False
+    assert res.n_samples == 5
+
+
+def test_calibration_clamps_extremes():
+    handle = 180
+    s = [{"avg_lambda": 60, "crew": 5,
+          "actual_wait_seconds": 999 * q.erlang_c_wait_seconds(5, 60, handle)}] * 6
+    assert q.fit_calibration(s, handle).k == 5.0  # clamped to max
+
+
+def test_too_few_samples_is_uncalibrated():
+    handle = 180
+    s = [{"avg_lambda": 60, "crew": 5,
+          "actual_wait_seconds": 2 * q.erlang_c_wait_seconds(5, 60, handle)}] * 3
+    res = q.fit_calibration(s, handle)
+    assert res.k == 1.0 and res.uncalibrated is True
+
+
+def test_unstable_samples_are_skipped():
+    handle = 180
+    # crew below offered load -> inf prediction -> skipped, leaving too few -> uncalibrated
+    s = [{"avg_lambda": 500, "crew": 1, "actual_wait_seconds": 100.0}] * 8
+    assert q.fit_calibration(s, handle).uncalibrated is True
