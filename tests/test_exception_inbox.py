@@ -527,12 +527,20 @@ def test_exceptions_page_shows_inbox_zero_when_queue_empty(monkeypatch):
 
 def test_exceptions_page_bootstraps_nav_summary(monkeypatch):
     monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
+    # The nav Inbox-count bootstrap is now rendered by _topnav.html via
+    # nav_inbox_summary() -> build_summary(), not by the route. Stub that and
+    # assert the page carries it exactly once (no duplicate from exceptions.html).
+    monkeypatch.setattr(
+        exceptions_route.exception_inbox,
+        "build_summary",
+        lambda: {"total": 1, "urgent_total": 0, "source_errors": []},
+    )
     client = TestClient(app)
 
     resp = client.get("/exceptions")
 
     assert resp.status_code == 200
-    assert 'id="gpi-inbox-summary-bootstrap"' in resp.text
+    assert resp.text.count('id="gpi-inbox-summary-bootstrap"') == 1
     assert '"total": 1' in resp.text
     assert '"urgent_total": 0' in resp.text
 

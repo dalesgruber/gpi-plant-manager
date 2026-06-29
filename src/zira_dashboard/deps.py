@@ -38,6 +38,19 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 from . import timeclock_i18n  # noqa: E402
 templates.env.globals["t"] = timeclock_i18n.t
 
+
+# Top-nav Inbox count: templates call {{ nav_inbox_summary() }} to server-render
+# the Inbox badge into the menu HTML on every page (so it never flashes on
+# navigation). Lazily imports exception_inbox to keep deps' import graph acyclic;
+# build_summary() is cheap (in-process cache / local Postgres, no Odoo calls).
+def _nav_inbox_summary() -> dict:
+    from . import exception_inbox
+
+    return exception_inbox.build_summary()
+
+
+templates.env.globals["nav_inbox_summary"] = _nav_inbox_summary
+
 RUNNING_STALENESS = timedelta(minutes=10)
 
 

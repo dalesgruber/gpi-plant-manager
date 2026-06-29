@@ -5,7 +5,16 @@
   Valid active_nav values: dashboards, trophies, inbox, staffing, settings.
   Styling lives in topnav.css (load it in the page <head>), so the menu looks
   and sits identically on every page.
+
+  The Inbox count badge is server-rendered here (via nav_inbox_summary(),
+  registered in deps.py) so it is part of the page HTML the instant it paints —
+  no client-side flash on navigation. footer.js then keeps it fresh in place.
+  Keep the badge logic below in sync with updateInboxSummaryLink() in footer.js.
 #}
+{% set nav_inbox = nav_inbox_summary() %}
+{% set nav_inbox_total = nav_inbox.total | int %}
+{% set nav_inbox_urgent = nav_inbox.urgent_total | int %}
+{% set nav_inbox_degraded = (nav_inbox.source_errors | length) > 0 %}
 <div class="brand-row">
   <a href="/recycling" class="brand">
     <img src="/static/gpi-logo.png" alt="GPI">
@@ -14,8 +23,20 @@
   <nav>
     <a href="/recycling"{% if active_nav == 'dashboards' %} class="active"{% endif %}>Dashboards</a>
     <a href="/trophies"{% if active_nav == 'trophies' %} class="active"{% endif %}>Trophy Case</a>
-    <a href="/exceptions"{% if active_nav == 'inbox' %} class="active"{% endif %}>Inbox</a>
+    <a href="/exceptions"
+       class="inbox-nav-link
+         {%- if active_nav == 'inbox' %} active{% endif %}
+         {%- if nav_inbox_total > 0 %} has-open{% endif %}
+         {%- if nav_inbox_urgent > 0 %} has-urgent{% endif %}
+         {%- if nav_inbox_degraded and nav_inbox_total <= 0 %} is-degraded{% endif %}"
+       title="{% if nav_inbox_total > 0 %}Exception Inbox: {{ nav_inbox_total }} open{% if nav_inbox_urgent > 0 %}, {{ nav_inbox_urgent }} urgent{% endif %}{% else %}Exception Inbox: all clear{% endif %}{% if nav_inbox_degraded %} (some checks could not load){% endif %}">
+      <span class="inbox-nav-label">Inbox</span>
+      <span class="inbox-nav-count"{% if nav_inbox_total <= 0 and not nav_inbox_degraded %} hidden{% endif %}>{% if nav_inbox_degraded and nav_inbox_total <= 0 %}!{% elif nav_inbox_total > 99 %}99+{% else %}{{ nav_inbox_total }}{% endif %}</span>
+    </a>
     <a href="/staffing"{% if active_nav == 'staffing' %} class="active"{% endif %}>Staffing</a>
     <a href="/settings"{% if active_nav == 'settings' %} class="active"{% endif %}>Settings</a>
   </nav>
 </div>
+{# Bootstrap blob read by footer.js (startInboxSummary): lets it adopt the
+   server value instantly on load instead of the 650ms delayed fetch. #}
+<script id="gpi-inbox-summary-bootstrap" type="application/json">{{ {"total": nav_inbox_total, "urgent_total": nav_inbox_urgent, "source_errors": nav_inbox.source_errors} | tojson }}</script>

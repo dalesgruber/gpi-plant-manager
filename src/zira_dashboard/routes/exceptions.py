@@ -17,12 +17,9 @@ router = APIRouter()
 
 @router.get("/exceptions", response_class=HTMLResponse)
 def exceptions_page(request: Request):
+    # The nav Inbox-count bootstrap is rendered by _topnav.html (via
+    # nav_inbox_summary()), so this route no longer needs to pass it.
     snapshot = exception_inbox.build_snapshot()
-    initial_nav_summary = {
-        "total": int(snapshot.get("total") or 0),
-        "urgent_total": int(snapshot.get("urgent_total") or 0),
-        "source_errors": snapshot.get("source_errors") or [],
-    }
     return templates.TemplateResponse(
         request,
         "exceptions.html",
@@ -32,7 +29,6 @@ def exceptions_page(request: Request):
             "queue": snapshot["queue"],
             "work_centers": snapshot.get("work_centers") or [],
             "people": snapshot.get("people") or [],
-            "initial_nav_summary": initial_nav_summary,
         },
     )
 

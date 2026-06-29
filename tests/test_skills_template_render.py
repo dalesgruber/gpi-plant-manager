@@ -12,6 +12,10 @@ def _env():
     env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
     env.globals["static_v"] = lambda _f: "test"
     env.globals["goat_holders"] = lambda: {}
+    # _topnav.html server-renders the Inbox badge via this global (see deps.py).
+    env.globals["nav_inbox_summary"] = lambda: {
+        "total": 0, "urgent_total": 0, "source_errors": [],
+    }
     return env
 
 
