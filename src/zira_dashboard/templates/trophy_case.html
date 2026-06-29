@@ -172,6 +172,107 @@
   </div>
 </section>
 
+<!-- Forklift -->
+{% if forklift %}
+<section class="tc-section" id="forklift">
+  <h2>🚜 Forklift</h2>
+
+  <div class="tc-goats">
+    <div class="tc-card">
+      <div class="head">
+        <span class="icon">🐐</span>
+        <span class="name">Forklift GOAT</span>
+        <button class="tc-edit" style="margin-left:auto"
+                aria-label="Edit Forklift GOAT award"
+                data-scope="forklift_goat" data-position="1">✏️</button>
+      </div>
+      {% if forklift.goat %}
+      <div class="meta">
+        <a class="tc-name-link" href="/staffing/people/{{ forklift.goat.name|urlencode }}"><strong>{{ forklift.goat.name }}</strong></a>
+        — score {{ '%.0f'|format(forklift.goat.score) }}{% if forklift.goat.day %} on {{ forklift.goat.day }}{% endif %}
+      </div>
+      {% if forklift.goat_components %}
+      <div class="meta">
+        calls {{ '%.0f'|format(forklift.goat_components.calls.sub) }} ·
+        on-time {{ '%.0f'|format(forklift.goat_components.ontime.sub) }} ·
+        speed {{ '%.0f'|format(forklift.goat_components.speed.sub) }} ·
+        util {{ '%.0f'|format(forklift.goat_components.util.sub) }}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="empty">No record yet.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="tc-grid" style="margin-top:0.8rem">
+    <!-- Annual: top-3 score days + best on-time + fastest -->
+    <div class="tc-group-block" id="forklift-annual">
+      <h3>Annual ({{ year }})</h3>
+      {% if forklift.top_days %}
+      {% for s in forklift.top_days %}
+      <div class="tc-row">
+        <span class="icon tc-trophy-{% if s.position == 1 %}gold{% elif s.position == 2 %}silver{% else %}bronze{% endif %}">🏆</span>
+        <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
+        <span class="meta">score {{ '%.0f'|format(s.score) }} · {{ s.day }}</span>
+        <button class="tc-edit"
+                aria-label="Edit forklift top-day award for {{ s.name }}"
+                data-scope="forklift_top_day" data-year="{{ year }}"
+                data-position="{{ s.position }}">✏️</button>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="tc-row"><span class="empty">No top-day winners for {{ year }}.</span></div>
+      {% endif %}
+
+      {% if forklift.best_ontime %}
+      <div class="tc-row" style="margin-top:0.4rem">
+        <span class="icon">⏱️</span>
+        <span class="name">Best on-time</span>
+        <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ forklift.best_ontime.name|urlencode }}">{{ forklift.best_ontime.name }}</a> — {{ '%.1f'|format(forklift.best_ontime.ontime_pct) }}%</span>
+        <button class="tc-edit"
+                aria-label="Edit forklift best on-time award"
+                data-scope="forklift_best_ontime" data-year="{{ year }}"
+                data-position="1">✏️</button>
+      </div>
+      {% endif %}
+
+      {% if forklift.fastest %}
+      <div class="tc-row">
+        <span class="icon">⚡</span>
+        <span class="name">Fastest</span>
+        <span class="meta"><a class="tc-name-link" href="/staffing/people/{{ forklift.fastest.name|urlencode }}">{{ forklift.fastest.name }}</a> — {{ '%.1f'|format((forklift.fastest.avg_ms or 0) / 1000.0) }}s</span>
+        <button class="tc-edit"
+                aria-label="Edit forklift fastest award"
+                data-scope="forklift_fastest" data-year="{{ year }}"
+                data-position="1">✏️</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Monthly ribbons -->
+    <div class="tc-group-block" id="forklift-monthly">
+      <h3>{{ month_name(month) }} {{ year }}</h3>
+      {% if forklift.badges %}
+      {% for s in forklift.badges %}
+      <div class="tc-row">
+        <span class="icon">{% if s.position == 1 %}🥇{% elif s.position == 2 %}🥈{% else %}🥉{% endif %}</span>
+        <a class="tc-name-link name" href="/staffing/people/{{ s.name|urlencode }}">{{ s.name }}</a>
+        <span class="meta">score {{ '%.0f'|format(s.score) }} · {{ s.day }}</span>
+        <button class="tc-edit"
+                aria-label="Edit forklift monthly ribbon for {{ s.name }}"
+                data-scope="forklift_badge" data-year="{{ year }}"
+                data-month="{{ month }}" data-position="{{ s.position }}">✏️</button>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="tc-row"><span class="empty">No badges for this month.</span></div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <!-- Override modal -->
 <div class="tc-modal-backdrop" id="tc-modal-bd">
   <div class="tc-modal" role="dialog" aria-modal="true" aria-labelledby="tc-modal-title">

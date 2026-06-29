@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import awards, work_centers_store
+from .. import awards, forklift_awards, work_centers_store
 from .._http_cache import get_cached_response, set_cache_headers, store_cached_response
 from ..deps import templates
 
@@ -19,8 +19,15 @@ VALID_SCOPES = {
     "trophy_best_avg_group",
     "trophy_best_avg_wc",
     "award_goat",
+    *forklift_awards.FORKLIFT_SCOPES,
 }
 VALID_ACTIONS = {"replace", "delete", "reset"}
+
+# Singleton award slots — one winner, no rank — so the edit modal can omit a
+# position and we default it to 1 (matches how the override layer matches them).
+_SINGLETON_SCOPES = {
+    "award_goat", "forklift_goat", "forklift_best_ontime", "forklift_fastest",
+}
 
 
 @router.get("/trophies", response_class=HTMLResponse)
@@ -91,6 +98,11 @@ def trophies_page(
         )
         monthly.append({"group": g, "badges": badges})
 
+    # Forklift section — one shared pool (no per-group split). Best-effort: a
+    # store / score-config failure leaves `forklift` None and the template just
+    # omits the section, never 500s (mirrors forklift_advisor's posture).
+    forklift = _forklift_trophies(y, m, overrides)
+
     response = templates.TemplateResponse(
         request,
         "trophy_case.html",
@@ -102,11 +114,73 @@ def trophies_page(
             "goats": goats,
             "annual": annual,
             "monthly": monthly,
+            "forklift": forklift,
         },
     )
     set_cache_headers(response, includes_today=True)
     store_cached_response(cache_key, includes_today=True, response=response)
     return response
+
+
+def _forklift_trophies(year: int, month: int, overrides: list[dict]) -> dict | None:
+    """Build the trophy-case forklift section: GOAT (with component line),
+    the annual block (top-3 by score + best on-time + fastest) and monthly
+    ribbons, with the manual override layer applied. Defensive — any failure
+    returns None so the section is simply hidden."""
+    from .. import forklift_settings
+
+    try:
+        cfg = forklift_settings.resolve(
+            forklift_settings.current(), algo_throughput=0.0
+        ).score_config()
+
+        # GOAT (all-time single winner).
+        goat = awards.apply_overrides_single(
+            forklift_awards.goat(cfg), scope="forklift_goat", overrides=overrides,
+        )
+        goat_components = None
+        if goat and goat.get("breakdown") is not None:
+            goat_components = goat["breakdown"].components
+
+        # Annual block for the selected year. The award rows carry no rank, so
+        # stamp a 1-based position the override layer matches/edits on.
+        top_rows = [
+            {**r, "position": i}
+            for i, r in enumerate(forklift_awards.annual_top_days(year, cfg), start=1)
+        ]
+        top_days = awards.apply_overrides(
+            top_rows, scope="forklift_top_day", year=year, overrides=overrides,
+        )
+        best_ontime = awards.apply_overrides_single(
+            forklift_awards.annual_best_ontime(year),
+            scope="forklift_best_ontime", year=year, overrides=overrides,
+        )
+        fastest = awards.apply_overrides_single(
+            forklift_awards.annual_fastest(year),
+            scope="forklift_fastest", year=year, overrides=overrides,
+        )
+
+        # Monthly ribbons for the selected month (same 1-based position stamp).
+        badge_rows = [
+            {**r, "position": i}
+            for i, r in enumerate(
+                forklift_awards.monthly_badges(year, month, cfg), start=1)
+        ]
+        badges = awards.apply_overrides(
+            badge_rows, scope="forklift_badge", year=year, month=month,
+            overrides=overrides,
+        )
+
+        return {
+            "goat": goat,
+            "goat_components": goat_components,
+            "top_days": top_days,
+            "best_ontime": best_ontime,
+            "fastest": fastest,
+            "badges": badges,
+        }
+    except Exception:  # noqa: BLE001 - hide the section rather than 500
+        return None
 
 
 def _reset_override(scope, group_name, wc_name, year, month, position) -> None:
@@ -122,6 +196,7 @@ def _reset_override(scope, group_name, wc_name, year, month, position) -> None:
         (scope, group_name, wc_name, year, month, position),
     )
     _http_cache.invalidate_all_cache()
+    forklift_awards.invalidate()  # forklift award caches recompute next render
 
 
 def _upsert_override(scope, group_name, wc_name, year, month, position, action, name, note) -> None:
@@ -138,6 +213,7 @@ def _upsert_override(scope, group_name, wc_name, year, month, position, action, 
         (scope, group_name, wc_name, year, month, position, action, name, note),
     )
     _http_cache.invalidate_all_cache()
+    forklift_awards.invalidate()  # forklift award caches recompute next render
 
 
 @router.post("/api/awards/override")
@@ -158,8 +234,11 @@ async def award_override(request: Request):
     wc_name = body.get("wc_name") or None
     year = body.get("year") or None
     month = body.get("month") or None
+    # Singleton scopes (GOAT, best-on-time, fastest) have no rank — default
+    # their position to 1 so the modal need not send one.
+    default_position = 1 if scope in _SINGLETON_SCOPES else 0
     try:
-        position = int(body.get("position") or 0)
+        position = int(body.get("position") or default_position)
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "position required (int)"}, status_code=400)
     if position < 1:

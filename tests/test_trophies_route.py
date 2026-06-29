@@ -108,3 +108,59 @@ def test_override_endpoint_validates_action(monkeypatch):
               "month": 4, "position": 1, "action": "garbage"},
     )
     assert r.status_code == 400
+
+
+# ---- Task 12: forklift section in the shared trophy case ----------------
+
+def _forklift_client(monkeypatch):
+    """Stub both production awards and forklift awards so /trophies renders
+    the forklift section without DB."""
+    import datetime as _dt
+
+    from fastapi.testclient import TestClient
+    from zira_dashboard import (
+        _http_cache, awards, forklift_awards as fa, forklift_settings,
+        production_history, work_centers_store,
+    )
+    from zira_dashboard.app import app
+
+    # Production side: empty so only the forklift section carries data.
+    monkeypatch.setattr(awards, "monthly_badges", lambda *a, **k: [])
+    monkeypatch.setattr(awards, "annual_top_days", lambda *a, **k: [])
+    monkeypatch.setattr(awards, "annual_best_avg_group", lambda *a, **k: None)
+    monkeypatch.setattr(awards, "annual_best_avg_wc", lambda *a, **k: None)
+    monkeypatch.setattr(awards, "goat", lambda *a, **k: None)
+    monkeypatch.setattr(awards, "_load_overrides", lambda: [])
+    monkeypatch.setattr(production_history, "daily_records", lambda *a, **k: [])
+    monkeypatch.setattr(work_centers_store, "registered_groups", lambda: ["Repairs"])
+    monkeypatch.setattr(work_centers_store, "members", lambda *a, **k: [])
+
+    # Forklift side.
+    monkeypatch.setattr(forklift_settings, "current", lambda: forklift_settings.DEFAULT)
+    monkeypatch.setattr(fa, "goat", lambda cfg=None: {
+        "name": "Trent", "driver_id": "d1", "score": 86.0,
+        "day": _dt.date(2026, 4, 14)})
+    monkeypatch.setattr(fa, "annual_top_days", lambda y, cfg=None, n=3: [])
+    monkeypatch.setattr(fa, "monthly_badges", lambda y, m, cfg=None, n=3: [])
+    monkeypatch.setattr(fa, "annual_best_ontime", lambda y, min_calls=50: None)
+    monkeypatch.setattr(fa, "annual_fastest", lambda y, min_calls=50: None)
+
+    _http_cache.invalidate_all_cache()
+    return TestClient(app)
+
+
+def test_trophy_case_renders_forklift_section(monkeypatch):
+    page = _forklift_client(monkeypatch).get("/trophies").text
+    assert "Forklift" in page and "Trent" in page
+
+
+def test_override_accepts_forklift_scope(monkeypatch):
+    from fastapi.testclient import TestClient
+    from zira_dashboard import db
+    from zira_dashboard.app import app
+
+    spy = MagicMock()
+    monkeypatch.setattr(db, "execute", spy)
+    r = TestClient(app).post("/api/awards/override", json={
+        "scope": "forklift_goat", "action": "replace", "name": "Isidro"})
+    assert r.status_code in (200, 303)
