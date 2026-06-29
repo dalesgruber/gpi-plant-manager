@@ -880,11 +880,18 @@
         var headlineNum = document.getElementById('fl_headline_num');
 
         // Nearest-rank percentile over the sorted-ascending per-hour call counts.
-        // Mirrors forklift_demand.demand_at_percentile: idx = round(pct*(n-1)).
+        // Mirrors forklift_demand.demand_at_percentile: idx = round(pct*(n-1)),
+        // using Python's round-half-to-even so the live preview never disagrees
+        // with the saved/server recommendation at exact half-index boundaries.
+        function pyRound(x) {
+          var f = Math.floor(x);
+          if (Math.abs(x - f - 0.5) < 1e-9) { return (f % 2 === 0) ? f : f + 1; }
+          return Math.round(x);
+        }
         function demandAt(pct) {
           if (!hourValues.length) return 0;
           var p = Math.max(0, Math.min(1, pct));
-          var idx = Math.round(p * (hourValues.length - 1));
+          var idx = pyRound(p * (hourValues.length - 1));
           return hourValues[idx];
         }
         function fieldValue(field) {
