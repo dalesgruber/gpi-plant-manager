@@ -54,7 +54,7 @@ from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from .. import db, timeclock_sync, shift_config, staffing, attendance_state
-from .. import employee_notifications, time_off_reminder  # noqa: F401
+from .. import employee_notifications, time_off_reminder
 # Not called directly here, but the state-reconciliation tests patch
 # timeclock.live_cache.read_open_attendance through this module — keep it
 # importable as part of the module surface.
@@ -661,9 +661,10 @@ def kiosk_clock_out(
     auto_lunch.note_employee_clock_out(odoo_id)
     background_tasks.add_task(timeclock_sync.sync_one_by_id, log_id)
     # Day-before reminder: if today is the last working day before approved
-    # time off, the success screen shows a "time off tomorrow" card and skips
-    # the auto-redirect so they have to tap past it. Never block the clock-out
-    # on a reminder lookup failure.
+    # time off, the success screen shows a "time off tomorrow" card and drops
+    # its own 3s auto-redirect so they have to tap past it (the base template's
+    # ~30s idle timer is still the backstop). Never block the clock-out on a
+    # reminder lookup failure.
     time_off_reminder_card = None
     if employee_notifications.notifications_enabled():
         try:
