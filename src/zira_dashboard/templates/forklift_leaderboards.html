@@ -1,0 +1,131 @@
+{% extends "_staffing_base.html" %}
+{% block title %}Forklift Leaderboards{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/leaderboards.css?v={{ static_v('leaderboards.css') }}">
+{% endblock %}
+
+{% block styles %}
+  /* Forklift leaderboard — reuses .lb-section / .lb-table; adds medal tints,
+     the on-time/late split colors and the qualify note. */
+  .fk-lb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  .lb-section h3 .fk-emoji { margin-right: 0.35rem; }
+  .lb-table tr.fk-medal-1 td { background: #fef9c3; }   /* gold */
+  .lb-table tr.fk-medal-2 td { background: #f1f5f9; }   /* silver */
+  .lb-table tr.fk-medal-3 td { background: #fde9d3; }   /* bronze */
+  .fk-ontime { color: var(--accent); font-weight: 600; }
+  .fk-late { color: var(--bad); }
+  .fk-note { color: var(--muted); font-size: 0.78rem; margin: 0.4rem 0 0; }
+  .fk-empty { color: var(--muted); font-style: italic; font-size: 0.85rem; }
+{% endblock %}
+
+{% block content %}
+<form class="lb-toolbar" method="get" action="/staffing/forklift">
+  <span class="lb-tool-label">Range:</span>
+  {% set windows = [('today', 'Today'), ('week', 'Week'), ('month', 'Month'), ('quarter', 'Quarter'), ('year', 'Year'), ('alltime', 'All Time')] %}
+  {% for wval, wlabel in windows %}
+    <a href="/staffing/forklift?window={{ wval }}"
+       class="lb-chip{% if window == wval and not custom_range_active %} lb-chip-on{% endif %}">{{ wlabel }}</a>
+  {% endfor %}
+  <details class="lb-custom-popover"{% if custom_range_active %} open{% endif %}>
+    <summary class="lb-chip{% if custom_range_active %} lb-chip-on{% endif %}">{% if custom_range_active %}Custom: {{ start }} → {{ end }}{% else %}Custom{% endif %}</summary>
+    <div class="lb-custom-panel">
+      <label>Start <input type="date" name="start" value="{{ start if custom_range_active else '' }}"></label>
+      <label>End <input type="date" name="end" value="{{ end if custom_range_active else '' }}"></label>
+      <button type="submit" class="lb-chip lb-custom-apply">Apply</button>
+    </div>
+  </details>
+</form>
+
+<div class="fk-lb-grid">
+
+  {# 🏅 Overall score — windowed average of eligible daily GOAT scores. #}
+  <div class="lb-section">
+    <div class="lb-section-header"><h3><span class="fk-emoji">🏅</span>Overall score</h3></div>
+    {% if lb.overall %}
+      <table class="lb-table">
+        <thead><tr><th>#</th><th>Driver</th><th class="num">Score</th><th class="num">Days</th></tr></thead>
+        <tbody>
+          {% for r in lb.overall %}
+            <tr class="{% if loop.index <= 3 %}fk-medal-{{ loop.index }}{% endif %}">
+              <td class="rank">{{ loop.index }}</td>
+              <td class="op"><a href="/staffing/people/{{ r.name }}">{{ r.name }}</a></td>
+              <td class="num">{{ '%.0f'|format(r.score) }}</td>
+              <td class="num">{{ r.days }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="fk-empty">No qualifying drivers in this range.</p>{% endif %}
+    <p class="fk-note">min {{ min_calls }} calls to qualify</p>
+  </div>
+
+  {# 📞 Most calls — volume-ranked (no gate), with the on-time/late split. #}
+  <div class="lb-section">
+    <div class="lb-section-header"><h3><span class="fk-emoji">📞</span>Most calls</h3></div>
+    {% if lb.most_calls %}
+      <table class="lb-table">
+        <thead><tr><th>#</th><th>Driver</th><th class="num">Calls</th><th class="num">On-time/Late</th></tr></thead>
+        <tbody>
+          {% for r in lb.most_calls %}
+            <tr class="{% if loop.index <= 3 %}fk-medal-{{ loop.index }}{% endif %}">
+              <td class="rank">{{ loop.index }}</td>
+              <td class="op"><a href="/staffing/people/{{ r.name }}">{{ r.name }}</a></td>
+              <td class="num">{{ r.calls }}</td>
+              <td class="num"><span class="fk-ontime">{{ r.on_time }}</span> / <span class="fk-late">{{ r.late }}</span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="fk-empty">No forklift calls in this range.</p>{% endif %}
+  </div>
+
+  {# ⏱️ On-time % — rate-ranked among drivers past the calls gate. #}
+  <div class="lb-section">
+    <div class="lb-section-header"><h3><span class="fk-emoji">⏱️</span>On-time %</h3></div>
+    {% if lb.on_time %}
+      <table class="lb-table">
+        <thead><tr><th>#</th><th>Driver</th><th class="num">On-time %</th><th class="num">Calls</th></tr></thead>
+        <tbody>
+          {% for r in lb.on_time %}
+            <tr class="{% if loop.index <= 3 %}fk-medal-{{ loop.index }}{% endif %}">
+              <td class="rank">{{ loop.index }}</td>
+              <td class="op"><a href="/staffing/people/{{ r.name }}">{{ r.name }}</a></td>
+              <td class="num pct">{{ '%.1f'|format(r.ontime_pct) }}%</td>
+              <td class="num">{{ r.calls }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="fk-empty">No qualifying drivers in this range.</p>{% endif %}
+    <p class="fk-note">min {{ min_calls }} calls to qualify</p>
+  </div>
+
+  {# ⚡ Fastest response — lowest avg response among gated drivers. #}
+  <div class="lb-section">
+    <div class="lb-section-header"><h3><span class="fk-emoji">⚡</span>Fastest response</h3></div>
+    {% if lb.fastest %}
+      <table class="lb-table">
+        <thead><tr><th>#</th><th>Driver</th><th class="num">Avg response</th><th class="num">Calls</th></tr></thead>
+        <tbody>
+          {% for r in lb.fastest %}
+            <tr class="{% if loop.index <= 3 %}fk-medal-{{ loop.index }}{% endif %}">
+              <td class="rank">{{ loop.index }}</td>
+              <td class="op"><a href="/staffing/people/{{ r.name }}">{{ r.name }}</a></td>
+              <td class="num">{{ '%.1f'|format((r.avg_ms or 0) / 1000.0) }}s</td>
+              <td class="num">{{ r.calls }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="fk-empty">No qualifying drivers in this range.</p>{% endif %}
+    <p class="fk-note">min {{ min_calls }} calls to qualify</p>
+  </div>
+
+</div>
+{% endblock %}

@@ -29,6 +29,7 @@ from .routes import (
     dashboard,
     exceptions,
     feedback,
+    forklift_leaderboards,
     goat_watch,
     timeclock,
     timeclock_time_off,
@@ -444,6 +445,7 @@ app.include_router(share.router)
 app.include_router(skills.router)
 app.include_router(people.router)
 app.include_router(leaderboards.router)
+app.include_router(forklift_leaderboards.router)
 app.include_router(past_schedules.router)
 app.include_router(time_off.router)
 app.include_router(time_off_approvals.router)
