@@ -100,6 +100,17 @@ def driver_rows_for_day(day) -> list[dict]:
     )
 
 
+def driver_days_between(start, end) -> list[dict]:
+    """All per-driver per-day rows in [start, end], ordered by day. The
+    range source for forklift_awards' scoring/leaderboard computations."""
+    from . import db
+    return db.query(
+        "SELECT * FROM forklift_driver_daily WHERE day BETWEEN %s AND %s "
+        "ORDER BY day",
+        (start, end),
+    )
+
+
 def _coerce_json(value):
     """psycopg2 returns JSONB as dict already; tolerate str just in case."""
     return json.loads(value) if isinstance(value, str) else (value or {})
