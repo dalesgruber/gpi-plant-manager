@@ -820,6 +820,11 @@ ALTER TABLE forklift_settings ADD COLUMN IF NOT EXISTS score_ontime_floor NUMERI
 ALTER TABLE forklift_settings ADD COLUMN IF NOT EXISTS score_fast_secs NUMERIC;
 ALTER TABLE forklift_settings ADD COLUMN IF NOT EXISTS score_slow_secs NUMERIC;
 ALTER TABLE forklift_settings ADD COLUMN IF NOT EXISTS score_min_calls INTEGER;
+-- Forklift SLA recommender (2026-06-29): target time-to-claim the crew is sized
+-- to (NULL = "auto" / 240s = 4 min default). Nullable override; additive +
+-- idempotent. Replaces the throughput/utilization knobs in the recommendation
+-- path (those columns stay, unread, per the prior redesign's approach).
+ALTER TABLE forklift_settings ADD COLUMN IF NOT EXISTS target_claim_seconds NUMERIC NULL;
 
 -- Department-driven rounding (2026-06-04). Named rounding "systems" (each a set
 -- of the four windows) are selected by the static department an employee works
