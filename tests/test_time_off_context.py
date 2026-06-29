@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from zira_dashboard import time_off_context as ctx
 
@@ -52,3 +52,87 @@ def test_request_amount_hours_and_days():
     assert ctx.request_amount(
         {"hour_from": None, "hour_to": None, "date_from": date(2026, 6, 30),
          "date_to": date(2026, 7, 2)}) == (3.0, "days")
+
+
+def _leave(pid, name, df, dt, *, depts=(), shape="full_day", hf=None, ht=None):
+    return {"person_odoo_id": pid, "name": name, "date_from": df, "date_to": dt,
+            "depts": set(depts), "shape": shape, "hour_from": hf, "hour_to": ht}
+
+
+def test_coverage_breakdown_peak_is_worst_single_day():
+    approved = [
+        _leave(2, "Juan", date(2026, 7, 6), date(2026, 7, 7), depts={"Recycling"}),
+        _leave(3, "Sam", date(2026, 7, 7), date(2026, 7, 7), depts={"Recycling"}),
+        _leave(4, "Dana", date(2026, 7, 6), date(2026, 7, 7), depts={"Shipping"}),
+    ]
+    result = ctx.coverage_breakdown(
+        approved, [], {}, {"Recycling"},
+        date(2026, 7, 6), date(2026, 7, 8), requester_odoo_id=1)
+
+    assert result["peak_count"] == 3            # Jul 7 has Juan, Sam, Dana
+    assert result["peak_date"] == date(2026, 7, 7)
+    assert result["peak_dept_count"] == 2       # Juan + Sam in Recycling
+    assert result["scope"] == "department"
+    assert result["dept_label"] == "Recycling"
+    assert result["severity"] == "warn"
+    # only days with someone off appear (Jul 8 had nobody -> skipped)
+    assert [d["date"] for d in result["by_day"]] == [date(2026, 7, 6), date(2026, 7, 7)]
+
+
+def test_coverage_breakdown_excludes_requester_and_dedupes_per_person():
+    approved = [_leave(1, "Me", date(2026, 7, 6), date(2026, 7, 6))]      # requester
+    pending = [_leave(2, "Juan", date(2026, 7, 6), date(2026, 7, 6))]
+    approved += [_leave(2, "Juan", date(2026, 7, 6), date(2026, 7, 6))]   # same person, approved
+    result = ctx.coverage_breakdown(
+        approved, pending, {}, set(),
+        date(2026, 7, 6), date(2026, 7, 6), requester_odoo_id=1)
+
+    assert result["peak_count"] == 1                       # requester excluded, Juan counted once
+    assert result["by_day"][0]["people"][0]["pending"] is False  # approved wins over pending
+
+
+def test_coverage_breakdown_holiday_is_flag_not_count():
+    result = ctx.coverage_breakdown(
+        [], [], {date(2026, 7, 6): "Independence Day"}, set(),
+        date(2026, 7, 6), date(2026, 7, 6), requester_odoo_id=1)
+
+    assert result["peak_count"] == 0
+    assert result["has_holiday"] is True
+    assert result["severity"] == "clear"
+    assert result["by_day"][0]["holiday"] == "Independence Day"
+
+
+def test_coverage_breakdown_pending_marked_and_partial_label():
+    pending = [_leave(2, "Lee", date(2026, 7, 6), date(2026, 7, 6),
+                      shape="late_arrival", hf=8.0, ht=9.0)]
+    result = ctx.coverage_breakdown(
+        [], pending, {}, set(),
+        date(2026, 7, 6), date(2026, 7, 6), requester_odoo_id=1)
+
+    person = result["by_day"][0]["people"][0]
+    assert person["pending"] is True
+    assert person["label"] == "arrives 9:00am"
+    assert result["severity"] == "ok"          # 1 off, no same-dept, below plant threshold
+
+
+def test_coverage_breakdown_zero_is_clear():
+    result = ctx.coverage_breakdown(
+        [], [], {}, set(), date(2026, 7, 6), date(2026, 7, 6), requester_odoo_id=1)
+    assert result == {
+        "severity": "clear", "peak_count": 0, "peak_date": None,
+        "peak_dept_count": 0, "scope": "plant", "dept_label": None,
+        "has_holiday": False, "by_day": [], "more_days": 0,
+    }
+
+
+def test_coverage_breakdown_caps_long_windows():
+    # 14 distinct off-days, each one person
+    approved = [_leave(100 + i, f"P{i}", date(2026, 7, 1) + timedelta(days=i),
+                       date(2026, 7, 1) + timedelta(days=i)) for i in range(14)]
+    result = ctx.coverage_breakdown(
+        approved, [], {}, set(),
+        date(2026, 7, 1), date(2026, 7, 14), requester_odoo_id=1, max_days=10)
+
+    assert len(result["by_day"]) == 10
+    assert result["more_days"] == 4
+    assert result["peak_count"] == 1           # peak computed over all days before the cap
