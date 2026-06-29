@@ -18,14 +18,14 @@ from datetime import date, datetime, time
 from . import app_settings, forklift_client, forklift_ingest, forklift_store, shift_config
 
 
-def _day_start_ms(day: date) -> int:
+def day_start_ms(day: date) -> int:
     """Epoch milliseconds at 00:00 plant-local on `day`."""
     start = datetime.combine(day, time.min, tzinfo=shift_config.SITE_TZ)
     return int(start.timestamp() * 1000)
 
 
 def snapshot_today(client, day: date) -> dict:
-    since = _day_start_ms(day)
+    since = day_start_ms(day)
     items = forklift_client.fetch_completions(since)
     drivers = forklift_client.fetch_drivers()
     id2name = {str(d.get("id")): d.get("name")

@@ -12,8 +12,16 @@ from zira_dashboard import forklift_store
 _log = logging.getLogger(__name__)
 
 ALLTIME_FLOOR = dt.date(2024, 1, 1)
+DEFAULT_MIN_CALLS = 50
 _CACHE: dict = {}
 _TTL = 300.0
+
+
+def empty_leaderboard() -> dict:
+    """Fresh empty-lists leaderboard shape. A new dict with fresh inner lists
+    each call so callers can't mutate a shared singleton's inner lists (a shallow
+    dict copy of a module constant would alias them)."""
+    return {"most_calls": [], "on_time": [], "fastest": [], "overall": []}
 
 
 def _cache(key, fn, default=None):
@@ -87,7 +95,7 @@ def monthly_badges(year: int, month: int, cfg: fs.ScoreConfig = fs.DEFAULT_SCORE
     return _cache(("monthly", year, month, _cfg_fp(cfg)), _f, default=[])
 
 
-def annual_best_ontime(year: int, min_calls: int = 50):
+def annual_best_ontime(year: int, min_calls: int = DEFAULT_MIN_CALLS):
     def _f():
         agg = _aggregate_year(year)
         elig = [a for a in agg if a["calls"] >= min_calls]
@@ -98,7 +106,7 @@ def annual_best_ontime(year: int, min_calls: int = 50):
     return _cache(("best_ontime", year, min_calls), _f)
 
 
-def annual_fastest(year: int, min_calls: int = 50):
+def annual_fastest(year: int, min_calls: int = DEFAULT_MIN_CALLS):
     def _f():
         agg = _aggregate_year(year)
         elig = [a for a in agg if a["calls"] >= min_calls]
@@ -179,9 +187,7 @@ def leaderboard(start: dt.date, end: dt.date,
                 "overall": overall}
     except Exception as exc:  # noqa: BLE001 - never raise into a request path
         _log.warning("forklift awards: leaderboard failed: %s", exc)
-        # Fresh literal each call so a caller can't mutate a shared singleton's
-        # inner lists (a shallow dict copy of a module constant would alias them).
-        return {"most_calls": [], "on_time": [], "fastest": [], "overall": []}
+        return empty_leaderboard()
 
 
 FORKLIFT_SCOPES = ("forklift_goat", "forklift_top_day",

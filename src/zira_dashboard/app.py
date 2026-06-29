@@ -251,7 +251,7 @@ def _capture_forklift_ontime() -> None:
     )
     try:
         today = plant_today()
-        start_ms = forklift_snapshot._day_start_ms(today)
+        start_ms = forklift_snapshot.day_start_ms(today)
         dash = forklift_client.fetch_dashboard(since=start_ms)
         id_to_name = {str(d.get("id")): d.get("name")
                       for d in (forklift_client.fetch_drivers() or [])

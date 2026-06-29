@@ -49,6 +49,18 @@ def test_annual_fastest_respects_min_calls(rows):
     assert f["name"] != "Juan"
 
 
+def test_empty_leaderboard_is_fresh_each_call():
+    a = fa.empty_leaderboard()
+    b = fa.empty_leaderboard()
+    # Exactly the four ranked lists.
+    assert set(a) == {"most_calls", "on_time", "fastest", "overall"}
+    # Fresh dict and fresh inner lists each call -> independent.
+    assert a is not b
+    a["most_calls"].append("x")
+    assert b["most_calls"] == []
+    assert all(a[k] is not b[k] for k in a)
+
+
 def test_awards_earned_by_driver_lists_goat(rows, monkeypatch):
     monkeypatch.setattr(fa, "_apply_overrides", lambda items: items)  # no overrides in test
     earned = fa.awards_earned_by_driver("Trent", dt.date(2026, 6, 1),

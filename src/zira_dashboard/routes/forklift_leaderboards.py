@@ -21,7 +21,7 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-FORKLIFT_MIN_CALLS = 50
+FORKLIFT_MIN_CALLS = forklift_awards.DEFAULT_MIN_CALLS
 
 _WINDOW_LABELS = {
     "today": "Today", "week": "Week", "month": "Month",
@@ -50,9 +50,7 @@ def forklift_leaderboards(
         )
     except Exception as exc:  # noqa: BLE001 - never 500 the page on a data hiccup
         _log.warning("forklift leaderboard: render context failed: %s", exc)
-        # Fresh literal so the fallback can't alias a shared module constant's
-        # inner lists (a shallow dict copy would).
-        lb = {"most_calls": [], "on_time": [], "fastest": [], "overall": []}
+        lb = forklift_awards.empty_leaderboard()
 
     label = "Custom" if custom_range_active else _WINDOW_LABELS.get(window, window)
     return templates.TemplateResponse(
