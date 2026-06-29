@@ -11,11 +11,14 @@ Display is the kiosk sign-in interstitial in ``routes/timeclock.py``.
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import date, datetime, timezone
 from typing import Any
 
 from . import db, shift_config
+
+_log = logging.getLogger(__name__)
 
 _NOTIFY_ENV = "KIOSK_TIME_OFF_NOTIFY_ENABLED"
 
@@ -99,18 +102,23 @@ def maybe_notify_resolution(
         a denial),
       - the leave is entirely in the past (date_to < today).
     """
-    if not notifications_enabled():
-        return
-    kind = _RESOLUTION_KIND.get(new.get("state"))
-    if kind is None:
-        return
-    if old.get("state") == "draft_cancel":
-        return
-    date_to = new.get("date_to")
-    today = today or _plant_today()
-    if date_to is None or date_to < today:
-        return
-    create_time_off_notification(new["person_odoo_id"], kind, new)
+    try:
+        if not notifications_enabled():
+            return
+        kind = _RESOLUTION_KIND.get(new.get("state"))
+        if kind is None:
+            return
+        if old.get("state") == "draft_cancel":
+            return
+        date_to = new.get("date_to")
+        today = today or _plant_today()
+        if date_to is None or date_to < today:
+            return
+        create_time_off_notification(new["person_odoo_id"], kind, new)
+    except Exception:  # best-effort: a notification must never break the poll
+        _log.warning(
+            "resolution notification failed for leave %s",
+            (new or {}).get("odoo_leave_id"), exc_info=True)
 
 
 def has_unacknowledged(person_odoo_id: int) -> bool:

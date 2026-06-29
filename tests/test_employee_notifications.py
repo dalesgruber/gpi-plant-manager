@@ -170,3 +170,17 @@ def test_no_notify_when_disabled(fake_db, monkeypatch):
     en.maybe_notify_resolution(_req("confirm"), _req("validate"),
                                today=date(2026, 6, 29))
     assert not fake_db["executes"]
+
+
+def test_maybe_notify_swallows_db_errors(fake_db, monkeypatch):
+    # A notification failure must never propagate out of the poll loop.
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+
+    def boom(sql, params=None):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(en.db, "execute", boom)
+
+    # Should not raise.
+    en.maybe_notify_resolution(_req("confirm"), _req("validate"),
+                               today=date(2026, 6, 29))
