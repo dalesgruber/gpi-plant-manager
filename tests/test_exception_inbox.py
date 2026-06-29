@@ -142,14 +142,14 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
     })
     monkeypatch.setattr(missing_wc, "current_rows", lambda: [{"attendance_id": 10}])
     monkeypatch.setattr(missed_punch_out, "current_rows", lambda: [{"attendance_id": 11}])
-    monkeypatch.setattr(exception_inbox, "_pending_time_off_count", lambda today: 4)
+    monkeypatch.setattr(exception_inbox, "_pending_time_off_counts", lambda today: (4, 2))
 
     summary = exception_inbox.build_summary()
 
     assert summary["today"] == "2026-06-19"
     assert summary["generated_at"] == "8:10 AM"
     assert summary["total"] == 11
-    assert summary["urgent_total"] == 4
+    assert summary["urgent_total"] == 6
     assert summary["follow_up_total"] == 1
     assert summary["source_errors"] == []
     assert summary["sections"] == {
@@ -160,6 +160,24 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
         "missed_punch_out": 1,
         "time_off": 4,
     }
+
+
+def test_pending_time_off_counts_include_past_due_urgent_count(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"n": 3, "past_due_n": 2}]
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    counts = exception_inbox._pending_time_off_counts(date(2026, 6, 19))
+
+    assert counts == (3, 2)
+    assert "COUNT(*) AS n" in captured["sql"]
+    assert "date_to < %s" in captured["sql"]
+    assert captured["params"] == (date(2026, 6, 19),)
 
 
 def test_pending_time_off_uses_window_count(monkeypatch):
@@ -193,10 +211,48 @@ def test_pending_time_off_uses_window_count(monkeypatch):
 
     assert captured["calls"] == 1
     assert "COUNT(*) OVER () AS total_count" in captured["sql"]
-    assert captured["params"] == (date(2026, 6, 19), 8)
+    assert captured["params"] == (8,)
     assert count == 4
     assert rows[0]["name"] == "Eli"
     assert rows[0]["row_key"] == "time_off:20:confirm"
+
+
+def test_pending_time_off_includes_and_flags_past_due_rows(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{
+            "id": 20,
+            "person_odoo_id": 7,
+            "odoo_leave_id": 99,
+            "name": "Eli",
+            "shape": "full",
+            "state": "confirm",
+            "date_from": date(2026, 6, 17),
+            "date_to": date(2026, 6, 17),
+            "hour_from": None,
+            "hour_to": None,
+            "sync_error": None,
+            "leave_type": "Vacation",
+            "total_count": 1,
+        }]
+
+    monkeypatch.setattr(db, "query", fake_query)
+    monkeypatch.setattr(
+        exception_inbox.time_off_context,
+        "coverage_breakdowns_for",
+        lambda rows: {},
+    )
+
+    _count, rows = exception_inbox._pending_time_off(date(2026, 6, 19), limit=8)
+
+    assert "date_to >= %s" not in captured["sql"]
+    assert captured["params"] == (8,)
+    assert rows[0]["past_due"] is True
+    assert rows[0]["priority"] == "urgent"
+    assert rows[0]["badge"] == "Past due"
 
 
 def test_pending_time_off_attaches_coverage(monkeypatch):
@@ -269,7 +325,7 @@ def _empty_inbox_sources(monkeypatch):
     monkeypatch.setattr(missing_wc, "current_rows", lambda: [])
     monkeypatch.setattr(missed_punch_out, "current_rows", lambda: [])
     monkeypatch.setattr(exception_inbox, "_pending_time_off", lambda today: (0, []))
-    monkeypatch.setattr(exception_inbox, "_pending_time_off_count", lambda today: 0)
+    monkeypatch.setattr(exception_inbox, "_pending_time_off_counts", lambda today: (0, 0))
     monkeypatch.setattr(exception_inbox, "_work_center_names", lambda: [])
 
 

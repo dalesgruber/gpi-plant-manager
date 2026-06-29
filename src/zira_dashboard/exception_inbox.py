@@ -85,19 +85,21 @@ def _row_key(kind: str, *parts) -> str:
 
 
 _PENDING_TIME_OFF_WHERE = (
-    "state IN ('draft', 'draft_edit', 'confirm', 'validate1') "
-    "AND date_to >= %s"
+    "r.state IN ('draft', 'draft_edit', 'confirm', 'validate1')"
 )
 
 
-def _pending_time_off_count(today: date) -> int:
+def _pending_time_off_counts(today: date) -> tuple[int, int]:
     from . import db
 
     count_rows = db.query(
-        f"SELECT COUNT(*) AS n FROM time_off_requests WHERE {_PENDING_TIME_OFF_WHERE}",
+        "SELECT COUNT(*) AS n, COUNT(*) FILTER (WHERE r.date_to < %s) AS past_due_n "
+        f"FROM time_off_requests r WHERE {_PENDING_TIME_OFF_WHERE}",
         (today,),
     )
-    return int(count_rows[0]["n"] if count_rows else 0)
+    if not count_rows:
+        return 0, 0
+    return int(count_rows[0]["n"] or 0), int(count_rows[0]["past_due_n"] or 0)
 
 
 def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
@@ -115,10 +117,12 @@ def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
         f"WHERE {_PENDING_TIME_OFF_WHERE} "
         "ORDER BY r.date_from, lower(COALESCE(p.name, '#' || r.person_odoo_id::text)) "
         "LIMIT %s",
-        (today, limit),
+        (limit,),
     )
-    shaped = [
-        {
+    shaped = []
+    for r in rows:
+        past_due = r["date_to"] < today
+        shaped.append({
             "id": r["id"],
             "person_odoo_id": r["person_odoo_id"],
             "date_from": r["date_from"],
@@ -128,8 +132,9 @@ def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
             "detail": f"{r['leave_type']} · {str(r['state']).replace('_', ' ')}",
             "state": r["state"],
             "sync_error": r.get("sync_error"),
-            "priority": "info",
-            "badge": "Approval",
+            "past_due": past_due,
+            "priority": "urgent" if past_due else "info",
+            "badge": "Past due" if past_due else "Approval",
             "row_key": _row_key("time_off", r["id"], r["state"]),
             "item_key": inbox_keys.time_off(r["id"]),
             "action": {
@@ -138,9 +143,7 @@ def _pending_time_off(today: date, limit: int = 8) -> tuple[int, list[dict]]:
                 "state": r["state"],
                 "odoo_leave_id": r.get("odoo_leave_id"),
             },
-        }
-        for r in rows
-    ]
+        })
     coverage = time_off_context.coverage_breakdowns_for(shaped)
     for row in shaped:
         row["coverage"] = coverage.get(row["id"])
@@ -187,8 +190,8 @@ def build_summary() -> dict:
     schedule_count = _capture(
         source_errors, "Plant Schedule", lambda: _plant_schedule_reminder()[0], 0
     )
-    pending_count = _capture(
-        source_errors, "Pending Time Off", lambda: _pending_time_off_count(today), 0
+    pending_count, pending_urgent_count = _capture(
+        source_errors, "Pending Time Off", lambda: _pending_time_off_counts(today), (0, 0)
     )
 
     assignment_count = int(assignments.get("count") or 0)
@@ -200,6 +203,7 @@ def build_summary() -> dict:
         + len(late.get("unscheduled_late") or [])
         + missing_count
         + missed_count
+        + pending_urgent_count
     )
     total = (
         assignment_count
