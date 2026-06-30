@@ -195,6 +195,7 @@ def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
         "predicted_scheduled_claim_seconds": None,
         "scheduled_prediction_overloaded": False,
         "scheduled_prediction_status": None,
+        "live_model": {"available": False},
         "target_seconds": resolved.target_claim_seconds,
         "backtest": None,
     }
@@ -230,6 +231,15 @@ def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
         "scheduled_prediction_overloaded": scheduled_overloaded,
         "scheduled_prediction_status": _status_for_prediction(
             scheduled_pred, resolved.target_claim_seconds, scheduled_overloaded),
+        "live_model": {
+            "available": True,
+            "recommended": rec.drivers,
+            "target_seconds": resolved.target_claim_seconds,
+            "lambda_per_hr": planned_lambda,
+            "mean_handle_seconds": mean_handle,
+            "calibration_k": calib.k,
+            "overloaded": rec.overloaded,
+        },
         "target_seconds": resolved.target_claim_seconds,
         "coverage": coverage,
         "backtest": {

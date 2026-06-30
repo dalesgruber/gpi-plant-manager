@@ -100,3 +100,15 @@ def test_staffing_print_hides_time_off_sync_note_and_top_aligns_context():
     assert ".section.timeoff {" in css
     assert "align-self: start;" in css
     assert "padding-top: 0;" in css
+
+
+def test_forklift_live_recalc_hooks_assignment_changes():
+    js = _script()
+
+    assert "function erlangCWaitSeconds(c, lambdaPerHr, meanHandleSeconds)" in js
+    assert "function recalcForkliftBaySummary()" in js
+    assert "window.FORKLIFT_LIVE_MODEL" in js
+    assert "details.sched-dd[data-loc=\"" in js
+    assert "recalcForkliftBaySummary();" in js
+    assert "Predicted Time-to-Claim " in js
+    assert "TTC overloaded" in js

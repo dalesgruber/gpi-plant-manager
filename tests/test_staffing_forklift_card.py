@@ -228,3 +228,9 @@ def test_forklift_card_scheduled_overload_is_red_without_numeric_ttc():
     assert "Predicted Time-to-Claim" not in page
     assert "TTC overloaded" in page
     assert "forklift-bay-summary danger" in page
+
+
+def test_staffing_template_exports_forklift_live_model():
+    html = _staffing_template()
+
+    assert "window.FORKLIFT_LIVE_MODEL = {{ forklift_live_model|tojson }};" in html

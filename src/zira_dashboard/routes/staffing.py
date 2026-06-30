@@ -284,8 +284,14 @@ def staffing_page(
         forklift_advisor_model = forklift_advisor.build_advisor(
             target_day=d, scheduled=_counts["tablets"], backups=_counts["backups"],
         )
+        forklift_live_model = dict(
+            forklift_advisor_model.get("live_model") or {"available": False}
+        )
+        if forklift_live_model.get("available"):
+            forklift_live_model["driver_wc_names"] = list(_wc_names)
     except Exception:
         forklift_advisor_model = {"available": False}
+        forklift_live_model = {"available": False}
 
     with _Phase(phases, "render"):
         response = templates.TemplateResponse(
@@ -323,6 +329,7 @@ def staffing_page(
                 "assignments_done": assignments_done,
                 "attributions_by_wc": attributions_by_wc,
                 "forklift_advisor": forklift_advisor_model,
+                "forklift_live_model": forklift_live_model,
             },
         )
 

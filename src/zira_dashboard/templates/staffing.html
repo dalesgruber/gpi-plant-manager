@@ -235,7 +235,7 @@
                       <span>Overloaded</span>
                       <span>Target missed</span>
                     {% elif forklift_advisor.recommended %}
-                      <span>{{ forklift_advisor.recommended }} Suggested</span>
+                      <span class="forklift-bay-suggested">{{ forklift_advisor.recommended }} Suggested</span>
                       {% if forklift_advisor.scheduled_prediction_overloaded %}
                         <span class="forklift-bay-prediction">TTC overloaded</span>
                       {% elif forklift_advisor.predicted_scheduled_claim_seconds is not none %}
@@ -364,6 +364,7 @@
   window.PARTIAL_RANGE_BY_NAME = {{ partial_range_by_name|tojson }};
   window.PARTIAL_HOURS_BY_NAME = {{ partial_hours_by_name|tojson }};
   window.TIME_OFF_NAMES = {{ time_off_names|tojson }};
+  window.FORKLIFT_LIVE_MODEL = {{ forklift_live_model|tojson }};
 </script>
 
 <script>

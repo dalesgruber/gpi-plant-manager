@@ -55,6 +55,12 @@ def test_build_advisor_predicts_time_to_claim_from_scheduled_drivers(monkeypatch
     assert out["predicted_scheduled_claim_seconds"] > out["target_seconds"] * 1.5
     assert out["scheduled_prediction_overloaded"] is False
     assert out["scheduled_prediction_status"] == "danger"
+    assert out["live_model"]["available"] is True
+    assert out["live_model"]["recommended"] == 6
+    assert out["live_model"]["lambda_per_hr"] == 97.0
+    assert out["live_model"]["mean_handle_seconds"] == 180.0
+    assert out["live_model"]["calibration_k"] == 1.0
+    assert out["live_model"]["target_seconds"] == out["target_seconds"]
 
 
 def test_build_advisor_marks_scheduled_prediction_overloaded(monkeypatch):
