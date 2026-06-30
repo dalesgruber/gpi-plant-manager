@@ -33,6 +33,51 @@ def test_build_advisor_uses_sla_recommender(monkeypatch):
     assert out["coverage"] is not None
 
 
+def test_build_advisor_predicts_time_to_claim_from_scheduled_drivers(monkeypatch):
+    """The recommendation is still target-sized, but the displayed prediction is
+    run against the actual scheduled driver count."""
+    from zira_dashboard import forklift_advisor as adv
+    from zira_dashboard import forklift_demand as dem
+    monkeypatch.setattr(adv, "_forecast",
+                        lambda target_day, history_samples, coldstart_calls_per_day: dem.DemandForecast(
+                            total_calls=500, by_hour={9: 97.0, 10: 40.0}, peak_hour=9,
+                            peak_calls=97.0, basis="history", n_days=8))
+    monkeypatch.setattr("zira_dashboard.forklift_store.mean_handle_seconds",
+                        lambda window_days=90: 180.0)
+    monkeypatch.setattr("zira_dashboard.forklift_store.calibration_samples",
+                        lambda window_days=90: [])
+    monkeypatch.setattr(adv.app_settings, "get_setting", lambda k: [])
+
+    out = adv.build_advisor(date(2026, 6, 30), scheduled=5, backups=0)
+
+    assert out["recommended"] == 6
+    assert out["predicted_claim_seconds"] <= out["target_seconds"]
+    assert out["predicted_scheduled_claim_seconds"] > out["target_seconds"] * 1.5
+    assert out["scheduled_prediction_overloaded"] is False
+    assert out["scheduled_prediction_status"] == "danger"
+
+
+def test_build_advisor_marks_scheduled_prediction_overloaded(monkeypatch):
+    from zira_dashboard import forklift_advisor as adv
+    from zira_dashboard import forklift_demand as dem
+    monkeypatch.setattr(adv, "_forecast",
+                        lambda target_day, history_samples, coldstart_calls_per_day: dem.DemandForecast(
+                            total_calls=500, by_hour={9: 97.0, 10: 40.0}, peak_hour=9,
+                            peak_calls=97.0, basis="history", n_days=8))
+    monkeypatch.setattr("zira_dashboard.forklift_store.mean_handle_seconds",
+                        lambda window_days=90: 180.0)
+    monkeypatch.setattr("zira_dashboard.forklift_store.calibration_samples",
+                        lambda window_days=90: [])
+    monkeypatch.setattr(adv.app_settings, "get_setting", lambda k: [])
+
+    out = adv.build_advisor(date(2026, 6, 30), scheduled=4, backups=0)
+
+    assert out["recommended"] == 6
+    assert out["predicted_scheduled_claim_seconds"] is None
+    assert out["scheduled_prediction_overloaded"] is True
+    assert out["scheduled_prediction_status"] == "danger"
+
+
 def test_build_advisor_overloaded_when_target_unreachable(monkeypatch):
     from zira_dashboard import forklift_advisor as adv
     from zira_dashboard import forklift_demand as dem

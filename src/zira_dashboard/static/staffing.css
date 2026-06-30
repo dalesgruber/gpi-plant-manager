@@ -313,9 +313,8 @@
     letter-spacing: 0;
     text-transform: none;
   }
-  table.sched td.bay .forklift-bay-status {
-    font-size: 0.9rem;
-    line-height: 1;
+  table.sched td.bay .forklift-bay-prediction {
+    margin-top: 0.28rem;
   }
   table.sched td.bay .forklift-bay-summary.ok { color: var(--accent); }
   table.sched td.bay .forklift-bay-summary.warn { color: var(--warn); }

@@ -7,6 +7,7 @@ available=False when there is no signal so the template degrades quietly.
 """
 from __future__ import annotations
 
+import math
 from datetime import date
 
 from . import (
@@ -129,6 +130,27 @@ def _recommend_for_target(forecast: "forklift_demand.DemandForecast",
     return forklift_queue.recommend_for_target(lam, mean_handle, target_seconds, k)
 
 
+def _status_for_prediction(predicted_seconds: float | None, target_seconds: float,
+                           overloaded: bool) -> str:
+    if overloaded or predicted_seconds is None:
+        return "danger"
+    if predicted_seconds <= target_seconds:
+        return "ok"
+    if predicted_seconds <= target_seconds * 1.5:
+        return "warn"
+    return "danger"
+
+
+def _scheduled_prediction(scheduled: int, lambda_per_hr: float, mean_handle: float,
+                          k: float) -> tuple[float | None, bool]:
+    if scheduled < 1:
+        return None, True
+    raw = forklift_queue.erlang_c_wait_seconds(scheduled, lambda_per_hr, mean_handle)
+    if not math.isfinite(raw):
+        return None, True
+    return k * raw, False
+
+
 def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
     cfg = _cfg()
     if not cfg.enabled:
@@ -170,6 +192,9 @@ def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
         "algo_recommended": None,
         "overloaded": False,
         "predicted_claim_seconds": None,
+        "predicted_scheduled_claim_seconds": None,
+        "scheduled_prediction_overloaded": False,
+        "scheduled_prediction_status": None,
         "target_seconds": resolved.target_claim_seconds,
         "backtest": None,
     }
@@ -182,12 +207,16 @@ def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
         return base
 
     calib = _fit_calibration(mean_handle)
+    _, planned_lambda = forklift_demand.demand_at_percentile(
+        forecast.by_hour, resolved.percentile)
     rec = _recommend_for_target(forecast, resolved, mean_handle, calib.k,
                                 resolved.target_claim_seconds)
     # Algorithm baseline = same calc at the DEFAULT target (the discreet tick).
     algo_rec = _recommend_for_target(
         forecast, resolved, mean_handle, calib.k,
         forklift_settings.DEFAULT_TARGET_CLAIM_SECONDS)
+    scheduled_pred, scheduled_overloaded = _scheduled_prediction(
+        scheduled, planned_lambda, mean_handle, calib.k)
 
     coverage = (forklift_demand.assess_coverage(rec.drivers, scheduled, backups)
                 if rec.drivers else None)
@@ -197,6 +226,10 @@ def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
         "algo_recommended": algo_rec.drivers,
         "overloaded": rec.overloaded,
         "predicted_claim_seconds": rec.predicted_seconds,
+        "predicted_scheduled_claim_seconds": scheduled_pred,
+        "scheduled_prediction_overloaded": scheduled_overloaded,
+        "scheduled_prediction_status": _status_for_prediction(
+            scheduled_pred, resolved.target_claim_seconds, scheduled_overloaded),
         "target_seconds": resolved.target_claim_seconds,
         "coverage": coverage,
         "backtest": {

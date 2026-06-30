@@ -95,6 +95,9 @@ def test_forklift_bay_cell_renders_compact_advisor_summary():
         "overloaded": False,
         "target_seconds": 240.0,                  # 4 min target
         "predicted_claim_seconds": 174.0,         # ~2.9 min predicted
+        "predicted_scheduled_claim_seconds": 174.0,
+        "scheduled_prediction_overloaded": False,
+        "scheduled_prediction_status": "ok",
         "coverage": coverage,
         "basis": "history",
         "n_days": 4,
@@ -106,8 +109,10 @@ def test_forklift_bay_cell_renders_compact_advisor_summary():
     )
     assert "Forklift" in rendered
     assert "3 Suggested" in rendered
-    assert "~2.9 Time-to-Claim" in rendered
-    assert "✓" in rendered
+    assert "Predicted Time-to-Claim 2.9" in rendered
+    assert "✓" not in rendered
+    assert "⚠" not in rendered
+    assert "!!" not in rendered
     assert "forklift-bay-summary ok" in rendered
 
 
@@ -126,6 +131,9 @@ def test_forklift_bay_cell_renders_shortage_severity():
         "overloaded": False,
         "target_seconds": 240.0,
         "predicted_claim_seconds": 174.0,
+        "predicted_scheduled_claim_seconds": 310.0,
+        "scheduled_prediction_overloaded": False,
+        "scheduled_prediction_status": "warn",
         "coverage": forklift_demand.assess_coverage(recommended=4, scheduled=3, backups=0),
         "basis": "history",
         "n_days": 4,
@@ -135,17 +143,21 @@ def test_forklift_bay_cell_renders_shortage_severity():
         bay={"name": "Forklift", "rows": [1, 2], "subtitle": None},
         forklift_advisor=model,
     )
-    assert "⚠" in rendered_warn
+    assert "⚠" not in rendered_warn
+    assert "!!" not in rendered_warn
     assert "forklift-bay-summary warn" in rendered_warn
 
     short_model = dict(model)
     short_model["coverage"] = forklift_demand.assess_coverage(
         recommended=4, scheduled=1, backups=0)  # gap == 3
+    short_model["predicted_scheduled_claim_seconds"] = 500.0
+    short_model["scheduled_prediction_status"] = "danger"
     rendered_short = templates.env.from_string(_extract_bay_cell()).render(
         bay={"name": "Forklift", "rows": [1, 2], "subtitle": None},
         forklift_advisor=short_model,
     )
-    assert "!!" in rendered_short
+    assert "⚠" not in rendered_short
+    assert "!!" not in rendered_short
     assert "forklift-bay-summary danger" in rendered_short
 
 
@@ -158,6 +170,9 @@ def test_forklift_card_shows_time_to_claim_target():
         "peak_label": "9:00–10:00", "hours": [(9, 1.0)],
         "recommended": 6, "algo_recommended": 6, "overloaded": False,
         "target_seconds": 240.0, "predicted_claim_seconds": 174.0,
+        "predicted_scheduled_claim_seconds": 174.0,
+        "scheduled_prediction_overloaded": False,
+        "scheduled_prediction_status": "ok",
         "coverage": forklift_demand.assess_coverage(recommended=6, scheduled=6, backups=0),
         "basis": "history", "n_days": 5, "backup_names": [],
     }
@@ -166,7 +181,7 @@ def test_forklift_card_shows_time_to_claim_target():
         forklift_advisor=model,
     )
     assert "6 Suggested" in page
-    assert "~2.9 Time-to-Claim" in page
+    assert "Predicted Time-to-Claim 2.9" in page
     assert "algorithm:" not in page
 
 
@@ -178,6 +193,9 @@ def test_forklift_card_overloaded_branch():
         "peak_label": "9:00–10:00", "hours": [(9, 1.0)],
         "recommended": None, "algo_recommended": None, "overloaded": True,
         "target_seconds": 240.0, "predicted_claim_seconds": None,
+        "predicted_scheduled_claim_seconds": None,
+        "scheduled_prediction_overloaded": True,
+        "scheduled_prediction_status": "danger",
         "coverage": None, "basis": "history", "n_days": 5, "backup_names": [],
     }
     page = templates.env.from_string(_extract_bay_cell()).render(
@@ -186,3 +204,27 @@ def test_forklift_card_overloaded_branch():
     )
     assert "overloaded" in page.lower()
     assert "Suggested" not in page
+
+
+def test_forklift_card_scheduled_overload_is_red_without_numeric_ttc():
+    from zira_dashboard import forklift_demand
+    from zira_dashboard.deps import templates
+    model = {
+        "available": True, "day_label": "Sat Jun 27", "total_calls": 420,
+        "peak_label": "9:00–10:00", "hours": [(9, 1.0)],
+        "recommended": 6, "algo_recommended": 6, "overloaded": False,
+        "target_seconds": 240.0, "predicted_claim_seconds": 174.0,
+        "predicted_scheduled_claim_seconds": None,
+        "scheduled_prediction_overloaded": True,
+        "scheduled_prediction_status": "danger",
+        "coverage": forklift_demand.assess_coverage(recommended=6, scheduled=4, backups=0),
+        "basis": "history", "n_days": 5, "backup_names": [],
+    }
+    page = templates.env.from_string(_extract_bay_cell()).render(
+        bay={"name": "Forklift", "rows": [1, 2], "subtitle": None},
+        forklift_advisor=model,
+    )
+    assert "6 Suggested" in page
+    assert "Predicted Time-to-Claim" not in page
+    assert "TTC overloaded" in page
+    assert "forklift-bay-summary danger" in page
