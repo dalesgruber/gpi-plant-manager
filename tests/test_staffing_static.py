@@ -9,6 +9,10 @@ def _script():
     return Path("src/zira_dashboard/static/staffing.js").read_text()
 
 
+def _print_css():
+    return Path("src/zira_dashboard/static/staffing-print.css").read_text()
+
+
 def test_staffing_partial_time_off_controls_name_the_person():
     html = _template()
     js = _script()
@@ -87,3 +91,12 @@ def test_staffing_slack_post_button_exposes_busy_state():
     assert 'class="publish-btn icon-btn share-btn" onclick="postToSlack(this)" title="Post to Slack" aria-label="Post to Slack" aria-busy="false"' in html
     assert "btn.setAttribute('aria-busy', 'true');" in js
     assert "btn.setAttribute('aria-busy', 'false');" in js
+
+
+def test_staffing_print_hides_time_off_sync_note_and_top_aligns_context():
+    css = _print_css()
+
+    assert ".timeoff .ts-note," in css
+    assert ".section.timeoff {" in css
+    assert "align-self: start;" in css
+    assert "padding-top: 0;" in css

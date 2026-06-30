@@ -40,6 +40,7 @@ header.app,
 .dd-summary-text .sep,
 .bay .bay-sub,
 .day-notes .notes-label .hint,
+.timeoff .ts-note,
 .custom-hours-banner,
 p.hint {
   display: none !important;
@@ -136,6 +137,12 @@ aside.panel.side {
   grid-area: side;
   margin: 0;
   display: block;
+}
+.section.timeoff {
+  align-self: start;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 main.panel {
   display: contents;
