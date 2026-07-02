@@ -268,3 +268,62 @@ def name_map(kind: str) -> dict[str, str]:
         (kind,),
     )
     return {r["forklift_name"]: r["plant_name"] for r in rows}
+
+
+def _active_people_by_first_name() -> dict[str, list[str]]:
+    """{first-name-casefold: [full plant name, ...]} over active, non-excluded
+    people. Used to auto-resolve the forklift app's first-name-only driver
+    names to full plant names when the first name is unambiguous."""
+    from . import db
+    try:
+        rows = db.query(
+            "SELECT name FROM people WHERE active = TRUE AND NOT excluded"
+        )
+    except Exception:  # noqa: BLE001 - resolution helper, degrade gracefully
+        return {}
+    idx: dict[str, list[str]] = {}
+    for r in rows:
+        parts = (r["name"] or "").split()
+        if not parts:
+            continue
+        idx.setdefault(parts[0].casefold(), []).append(r["name"])
+    return idx
+
+
+def resolve_forklift_to_plant(forklift_names) -> dict[str, str]:
+    """Map each forklift driver name to a display name. Priority:
+    manual `forklift_name_map` override → unique first-name roster match
+    (e.g. "Isidro" → "Isidro Moctezuma") → the raw forklift name when the
+    first name is shared (the three "Jesus"es) or unmatched."""
+    overrides = name_map("driver")
+    idx = _active_people_by_first_name()
+    out: dict[str, str] = {}
+    for fn in forklift_names:
+        if fn in overrides:
+            out[fn] = overrides[fn]
+            continue
+        parts = (fn or "").split()
+        matches = idx.get(parts[0].casefold(), []) if parts else []
+        out[fn] = matches[0] if len(matches) == 1 else fn
+    return out
+
+
+def resolve_plant_to_forklift(plant_name: str) -> str | None:
+    """Inverse of :func:`resolve_forklift_to_plant` for a single plant name.
+    Manual override (reversed) wins; else the person's first name when it's
+    unique in the roster (that's how the forklift app labels them); else the
+    plant name unchanged (a direct forklift_name == plant_name match). A
+    shared first name (e.g. "Jesus") therefore never resolves to a single
+    driver, so one driver's stats can't land on the wrong person's card —
+    that filter simply finds no matching driver rows."""
+    overrides = name_map("driver")
+    fk = next((f for f, pl in overrides.items() if pl == plant_name), None)
+    if fk is not None:
+        return fk
+    if plant_name in overrides:
+        return None  # itself a mapped forklift name with a plant override
+    parts = (plant_name or "").split()
+    if not parts:
+        return None
+    matches = _active_people_by_first_name().get(parts[0].casefold(), [])
+    return parts[0] if len(matches) == 1 else plant_name

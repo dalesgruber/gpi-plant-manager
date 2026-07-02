@@ -24,20 +24,26 @@ router = APIRouter()
 
 def _apply_display_names(lb: dict) -> None:
     """Set `display_name` on every leaderboard row, resolving the forklift
-    first-name to its full plant name via the driver name-map. Best-effort:
-    on any failure every row falls back to its raw `name`."""
+    first-name to its full plant name (manual name-map override, else a
+    unique first-name roster match). Best-effort: on any failure every row
+    falls back to its raw `name`."""
+    names = {
+        r.get("name")
+        for rows in lb.values() if isinstance(rows, list)
+        for r in rows if isinstance(r, dict) and r.get("name")
+    }
     try:
         from .. import forklift_store
-        nm = forklift_store.name_map("driver") or {}
+        resolved = forklift_store.resolve_forklift_to_plant(names)
     except Exception as exc:  # noqa: BLE001 - display sugar, never 500
-        _log.warning("forklift leaderboard: name-map lookup failed: %s", exc)
-        nm = {}
+        _log.warning("forklift leaderboard: name resolution failed: %s", exc)
+        resolved = {}
     for rows in lb.values():
         if not isinstance(rows, list):
             continue
         for r in rows:
             if isinstance(r, dict):
-                r["display_name"] = nm.get(r.get("name"), r.get("name"))
+                r["display_name"] = resolved.get(r.get("name"), r.get("name"))
 
 FORKLIFT_MIN_CALLS = forklift_awards.DEFAULT_MIN_CALLS
 

@@ -24,19 +24,14 @@ _FORKLIFT_LOOKBACK_DAYS = 90
 
 
 def _resolve_forklift_name(name: str) -> str | None:
-    """Map a plant `name` to its forklift display name.
-
-    name_map("driver") is {forklift_name: plant_name}; the player card holds a
-    plant name, so reverse it. Fall back to a direct match (forklift_name ==
-    plant name) when there's no explicit mapping. Returns None only when the
-    name is itself a mapped forklift name with no reverse entry."""
+    """Map a plant `name` to its forklift driver name (manual name-map
+    override, else the person's first name when unique in the roster —
+    how the forklift app labels them). Returns None for a shared first
+    name so one driver's forklift stats never land on the wrong card.
+    Shared with the forklift leaderboard via forklift_store."""
     from .. import forklift_store
 
-    nm = forklift_store.name_map("driver") or {}
-    forklift_name = next((fk for fk, pl in nm.items() if pl == name), None)
-    if forklift_name is None and name not in nm:
-        forklift_name = name  # try a direct match against the driver name
-    return forklift_name
+    return forklift_store.resolve_plant_to_forklift(name)
 
 
 def _forklift_for_person(name: str, today: date, cfg) -> dict | None:
