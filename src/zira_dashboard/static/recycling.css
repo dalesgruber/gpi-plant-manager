@@ -14,6 +14,10 @@
     --warn: #a16207;
     --warn-dim: #fef3c7;
     --bad-dim: #fee2e2;
+    /* Cumulative-progress bars are informational, not pass/fail — a neutral
+       blue so being "behind the linear pace line" mid-shift doesn't read as
+       failure (the pace line already carries the ahead/behind signal). */
+    --cum-bar: #3b82f6;
   }
   * { box-sizing: border-box; }
   body {
@@ -106,13 +110,23 @@
     gap: 3px;
   }
   /* KPI values scale with container height AND width — height alone let a
-     tall, narrow card render "1,023" wider than the card and clip it. */
-  .grid-stack-item-content .val {
-    font-size: clamp(1.56rem, min(49cqh, 18cqw), 8rem);
+     tall, narrow card render "1,023" wider than the card and clip it.
+     Direct-child selector so bar-row .val elements are untouched.
+     Flex + wrap lets the secondary metric drop to its own line under the
+     number when the card is too narrow to fit both side by side. */
+  .grid-stack-item-content > .val {
+    font-size: clamp(1.56rem, min(70cqh, 28cqw), 12rem);
     line-height: 1.05;
     flex: 0 0 auto;
     white-space: nowrap;  /* never wrap "76 %" onto a second line */
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 0.35em;
+    justify-content: center;
   }
+  .grid-stack-item-content.align-left  > .val { justify-content: flex-start; }
+  .grid-stack-item-content.align-right > .val { justify-content: flex-end; }
   /* Smaller, dimmer parenthesized side-metric inside a .val (e.g. the
      "(52.3-D4)" next to pallets/hr/person on the recycling dashboard).
      Sits inline-flush to the baseline of the main number, ~32% of its
@@ -123,9 +137,8 @@
     font-weight: 500;
     color: var(--muted);
     opacity: 0.55;
-    margin-left: 0.4em;
-    vertical-align: baseline;
     letter-spacing: 0.02em;
+    white-space: nowrap; /* wraps below the number as one unit, never mid-text */
   }
   .grid-stack-item-content .label {
     font-size: clamp(0.78rem, 10cqh, 1.25rem);
@@ -732,12 +745,13 @@
   }
   .cum-progress .bar {
     width: 100%;
-    background: var(--good);
+    background: var(--cum-bar);
     border-radius: 2px 2px 0 0;
     min-height: 1px;
     position: relative;
   }
-  .cum-progress .col.miss .bar { background: var(--bad); }
+  /* hit/miss no longer recolor the bar (see --cum-bar); the pace line shows
+     ahead vs behind. Classes kept for the tooltip/JS contract. */
   .cum-progress .col.in-progress .bar { opacity: 0.7; }
   .cum-progress .bar-label {
     position: absolute;
@@ -768,7 +782,8 @@
   }
   .cum-progress .target-line polyline {
     fill: none;
-    stroke: var(--muted);
+    stroke: var(--fg);
+    stroke-dasharray: 4 3;
     stroke-width: 1.5;
     stroke-linecap: round;
     stroke-linejoin: round;
