@@ -632,7 +632,7 @@ def _render_recycling(
             "customs": customs_all,
             "now_label": now_label,
             "shift_start_label": shift_start_label,
-            "refreshed_at": now.strftime("%H:%M:%S UTC"),
+            "refreshed_at": now.astimezone(shift_config.SITE_TZ).strftime("%-I:%M:%S %p"),
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
             # GOAT Watch banner data — live contenders (only on today)
@@ -897,7 +897,7 @@ def _render_new_dept(
                 len(present_assignments.get(r.station.name, []))
                 for r in new_repairs
             ),
-            "refreshed_at": now.strftime("%H:%M:%S UTC"),
+            "refreshed_at": now.astimezone(shift_config.SITE_TZ).strftime("%-I:%M:%S %p"),
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
             # NEW GOAT alerts surface on every dashboard so a record-breaker

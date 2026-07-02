@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from .. import shift_config
 from ..deps import (
     _filter_stations,
     _fmt_duration,
@@ -112,7 +113,7 @@ def index(
             "by_category": by_category,
             "counts": counts,
             "top_units": top,
-            "refreshed_at": now.strftime("%H:%M:%S UTC"),
+            "refreshed_at": now.astimezone(shift_config.SITE_TZ).strftime("%-I:%M:%S %p"),
             "active_vs": "work_centers",
             "active_dashboard_key": "vs_work_centers",
         },

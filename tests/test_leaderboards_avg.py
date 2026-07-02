@@ -104,10 +104,11 @@ def test_averages_empty_records_returns_empty_list():
     assert averages_for_wc([], 30.0, _const_productive, "units") == []
 
 
-def test_averages_zero_target_yields_zero_pct():
+def test_averages_zero_target_yields_no_pct():
+    # No goal configured → avg_pct is None (renders "—"), never a bogus 0%.
     records = [_rec(date(2026, 4, 27), "Alice", "WC1", 200)]
     rows = averages_for_wc(records, 0.0, _const_productive, "pct")
-    assert rows[0]["avg_pct"] == 0.0
+    assert rows[0]["avg_pct"] is None
     assert rows[0]["avg_units"] == 200.0  # units math still works
 
 
@@ -156,17 +157,17 @@ def test_group_averages_sort_and_rank():
     assert rows[0]["rank"] == 1
 
 
-def test_group_averages_unknown_wc_target_yields_zero_pct_for_that_record():
-    # If a record's WC isn't in target_by_wc, treat its expected as 0 and pct as 0
-    # (don't crash). Units math is unaffected.
+def test_group_averages_unknown_wc_target_excluded_from_pct():
+    # If a record's WC isn't in target_by_wc there is no goal to measure
+    # against — the day contributes no pct sample (it must not read as a
+    # 0% day and drag the average down). Units math is unaffected.
     target_by_wc = {"WC1": 30.0}
     records = [
         _rec(date(2026, 4, 27), "Alice", "WC1",      210),  # pct = 1.0
-        _rec(date(2026, 4, 28), "Alice", "WC-Other", 100),  # pct = 0.0
+        _rec(date(2026, 4, 28), "Alice", "WC-Other", 100),  # no goal — excluded
     ]
     rows = averages_for_group(records, target_by_wc, _const_productive, "pct")
-    # avg_pct = (1.0 + 0.0) / 2
-    assert abs(rows[0]["avg_pct"] - 0.5) < 1e-9
+    assert abs(rows[0]["avg_pct"] - 1.0) < 1e-9
     assert rows[0]["avg_units"] == 155.0
 
 

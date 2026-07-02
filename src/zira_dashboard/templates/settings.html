@@ -715,8 +715,10 @@
            {% if active_section != 'forklift' %}style="display:none"{% endif %}>
     <h2>Forklift Demand Advisor</h2>
     <p class="help">
-      The scheduler's right rail shows a forklift-driver recommendation for the
-      next working day. Each adjustment below is <strong>auto</strong> by default
+      The scheduler shows a forklift-driver recommendation on the
+      <strong>Forklift</strong> bay label (e.g. &ldquo;6 Suggested &middot;
+      Predicted Time-to-Claim 4.9 min&rdquo;) for the day being scheduled.
+      Each adjustment below is <strong>auto</strong> by default
       (it follows the algorithm's own data-derived value, marked with a grey
       &#9662; tick); drag a slider to override it, or tap &#8635; to snap it back.
       No redeploy needed.
@@ -727,7 +729,7 @@
     <form method="post" action="/settings/forklift" id="forklift-form"
           style="margin-top:1rem;max-width:600px"
           {% if fl_avail %}
-          data-hour-values="{{ forklift.hour_values|tojson }}"
+          data-hour-values='{{ forklift.hour_values|tojson }}'
           data-algo-throughput="{{ forklift.algo_values.throughput }}"
           data-algo-util="{{ forklift.algo_values.utilization }}"
           data-algo-percentile="{{ forklift.algo_values.percentile }}"
@@ -984,8 +986,10 @@
 
         {# Live worked example: recomputes the 0-100 score client-side as sliders
            move (same normalization as forklift_score); grey baseline stays fixed. #}
+        {# tojson escapes ' but NOT " — the attribute must be single-quoted or
+           the JSON's first double quote terminates it and the example dies. #}
         <div id="score-example"
-             data-sample="{{ forklift.score_sample|tojson }}"
+             data-sample='{{ forklift.score_sample|tojson }}'
              style="border:1px solid var(--border,#e5e7eb);border-radius:0.5rem;
                     padding:0.7rem 0.9rem;margin:0.6rem 0;background:rgba(0,0,0,.02)">
           <div style="font-size:0.82rem;color:#555">

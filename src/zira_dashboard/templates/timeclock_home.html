@@ -2,7 +2,11 @@
 {% block title %}Clock In / Out{% endblock %}
 {% block content %}
 <div class="k-header">
-  <span>Tap your name to clock in or out</span>
+  {# Everyone shares this screen, so both languages always show (the
+     per-person `bilingual` flag only applies after a name is picked). #}
+  <span>Tap your name to clock in or out
+    <span style="display:block;font-size:0.72em;font-weight:500;opacity:0.75">Toca tu nombre para marcar entrada o salida</span>
+  </span>
   <div style="display: flex; align-items: center; gap: 1rem;">
     {# Who's Out shortcut — opens the public calendar glance (10s idle-return). #}
     <a href="/timeclock/whos-out" class="k-icon-btn" aria-label="Who's Out" title="Who's Out">
@@ -24,7 +28,7 @@
   </div>
   {% endif %}
   <input
-    type="text" id="filter" placeholder="Search your name…"
+    type="text" id="filter" placeholder="Search your name… · Busca tu nombre…"
     aria-label="Search your name"
     autocomplete="off" autofocus
     style="font-size: 2rem; padding: 1rem 1.5rem; border-radius: 0.75rem;

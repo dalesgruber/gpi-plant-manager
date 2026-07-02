@@ -308,7 +308,7 @@
       summary.title = 'Scheduled drivers overloaded';
     } else {
       const minutes = predicted / 60;
-      prediction.textContent = 'Predicted Time-to-Claim ' + minutes.toFixed(1);
+      prediction.textContent = 'Predicted Time-to-Claim ' + minutes.toFixed(1) + ' min';
       summary.title = 'Predicted scheduled time-to-claim: ' + minutes.toFixed(1) + ' min';
     }
   }

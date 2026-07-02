@@ -140,7 +140,7 @@
     modal.hidden = false;
     document.documentElement.style.overflow = 'hidden';
     if (!panelLoaded) {
-      window.gpiFetch('/changelog')
+      window.gpiFetch('/changelog?fragment=1')
         .then(function (r) { return r.text(); })
         .then(function (htmlText) {
           body.innerHTML = htmlText;

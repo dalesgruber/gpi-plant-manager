@@ -55,7 +55,7 @@
                     <td>{{ r.day_label }}</td>
                     {% if is_group %}<td>{{ r.wc }}</td>{% endif %}
                     <td class="num">{{ r.units|round|int }}</td>
-                    <td class="num pct">{{ '%.0f' % (r.pct * 100) }}%</td>
+                    <td class="num pct">{% if r.pct is none %}<span class="lb-no-goal" title="No goal configured for this work center">&mdash;</span>{% else %}{{ '%.0f' % (r.pct * 100) }}%{% endif %}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -73,7 +73,7 @@
    onclick="openLbPopup(this)">{{ r.name }}</button>{{ cert_badges(r.name, person_certs) }}{{ goat_badges(r.name, goat_holders()) }} <span class="lb-name-count">({{ r.name_count }})</span></td>
                     {% if is_group %}<td>{{ r.top_wc }}</td>{% endif %}
                     <td class="num">{{ r.avg_units|round|int }}</td>
-                    <td class="num pct">{{ '%.0f' % (r.avg_pct * 100) }}%</td>
+                    <td class="num pct">{% if r.avg_pct is none %}<span class="lb-no-goal" title="No goal configured for this work center">&mdash;</span>{% else %}{{ '%.0f' % (r.avg_pct * 100) }}%{% endif %}</td>
                   </tr>
 {% endmacro %}
 

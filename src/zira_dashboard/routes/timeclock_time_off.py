@@ -54,6 +54,7 @@ from ..time_off_wizard import (
     shape_to_hour_bounds as _shape_to_hour_bounds,
 )
 from .timeclock import (
+    _expired_redirect,
     _is_time_off_only,
     _mint_token,
     _person_by_id,
@@ -123,7 +124,7 @@ def time_off_landing(request: Request, token: str):
     """
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -158,7 +159,7 @@ def request_shape(request: Request, token: str):
     """
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -412,7 +413,7 @@ def request_details(request: Request, token: str, shape: str = "full_day"):
     render the form with an invalid shape value)."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -513,7 +514,7 @@ def request_submit(
     in ``time_off_sync.retry_unsynced_requests`` will keep retrying."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -683,7 +684,7 @@ def mine_list(request: Request, token: str):
     view with the fresh token already baked into the href."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -711,7 +712,7 @@ def mine_detail(request: Request, token: str, rid: int):
     leaks data, never crashes."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -757,7 +758,7 @@ def mine_cancel(
     employee."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -839,7 +840,7 @@ def mine_edit(request: Request, token: str, rid: int):
     different shape)."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -902,7 +903,7 @@ def mine_edit_submit(
     retrying if the immediate push fails, same as the new-request flow."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
@@ -1083,7 +1084,7 @@ def time_off_calendar(request: Request, token: str, month: str | None = None):
     identical to the other routes in this module."""
     person_id = _verify_token(token)
     if person_id is None:
-        return RedirectResponse(url="/timeclock", status_code=303)
+        return _expired_redirect(request)
     p = _person_by_id(person_id)
     if not p:
         return RedirectResponse(url="/timeclock", status_code=303)

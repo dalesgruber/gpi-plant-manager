@@ -11,6 +11,14 @@
   {% include "_timeclock_brand.html" %}
 </div>
 <div class="k-main" style="align-items: center;">
+  {% if time_off_only %}
+    {# Salaried staff skip the punch dashboard entirely — say so, or the
+       missing clock in/out button reads as "the kiosk is broken for me". #}
+    <p style="max-width: 720px; text-align: center; margin: 0.75rem 0 0;
+              color: #475569; font-size: 1.05rem;">
+      {{ t("You're salaried, so there's nothing to clock — just request time off below.") }}
+    </p>
+  {% endif %}
   {% if sync_warning %}
     <div class="k-warning" style="max-width: 720px; text-align: left;">
       <strong>Heads up — {{ sync_warning.count }} of your recent

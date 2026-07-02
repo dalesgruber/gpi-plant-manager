@@ -239,7 +239,7 @@
                       {% if forklift_advisor.scheduled_prediction_overloaded %}
                         <span class="forklift-bay-prediction">TTC overloaded</span>
                       {% elif forklift_advisor.predicted_scheduled_claim_seconds is not none %}
-                        <span class="forklift-bay-prediction">Predicted Time-to-Claim {{ '%.1f'|format(forklift_advisor.predicted_scheduled_claim_seconds / 60.0) }}</span>
+                        <span class="forklift-bay-prediction">Predicted Time-to-Claim {{ '%.1f'|format(forklift_advisor.predicted_scheduled_claim_seconds / 60.0) }} min</span>
                       {% else %}
                         <span class="forklift-bay-prediction">TTC building</span>
                       {% endif %}

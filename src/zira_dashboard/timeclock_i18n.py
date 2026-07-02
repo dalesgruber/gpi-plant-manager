@@ -140,6 +140,9 @@ TRANSLATIONS: dict[str, str] = {
         "Ya tienes tiempo libre para estas fechas, así que no podemos agregar otro. Cancela tu solicitud con el botón Mis solicitudes o comunícate con la gerencia para obtener ayuda.",
     "Go to My Requests": "Ir a Mis solicitudes",
     "OK": "Aceptar",
+    # --- time off: salaried landing ---
+    "You're salaried, so there's nothing to clock — just request time off below.":
+        "Eres asalariado, así que no necesitas marcar entrada ni salida — solo solicita tu tiempo libre aquí abajo.",
     # --- time off: submitted ---
     "Request Submitted": "Solicitud enviada",
     "Your time-off request from {start} to {end} is pending approval.":

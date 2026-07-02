@@ -105,9 +105,10 @@
     justify-content: stretch;
     gap: 3px;
   }
-  /* KPI values scale with container height; clamp keeps them readable at extremes */
+  /* KPI values scale with container height AND width — height alone let a
+     tall, narrow card render "1,023" wider than the card and clip it. */
   .grid-stack-item-content .val {
-    font-size: clamp(1.56rem, 49cqh, 8rem);
+    font-size: clamp(1.56rem, min(49cqh, 18cqw), 8rem);
     line-height: 1.05;
     flex: 0 0 auto;
     white-space: nowrap;  /* never wrap "76 %" onto a second line */

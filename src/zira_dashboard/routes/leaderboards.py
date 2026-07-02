@@ -56,12 +56,15 @@ def averages_for_wc(
         total_units = sum(r["units"] for r in recs)
         avg_units = total_units / days_worked
 
+        # Days without a configured goal contribute no pct sample; a person
+        # with no goal-days at all gets avg_pct=None (renders "—", not "0%").
         pct_per_day: list[float] = []
         for r in recs:
             prod_hr = productive_minutes_for(r["day"]) / 60.0
             expected = target_per_hour * prod_hr
-            pct_per_day.append((r["units"] / expected) if expected > 0 else 0.0)
-        avg_pct = sum(pct_per_day) / len(pct_per_day) if pct_per_day else 0.0
+            if expected > 0:
+                pct_per_day.append(r["units"] / expected)
+        avg_pct = sum(pct_per_day) / len(pct_per_day) if pct_per_day else None
 
         out.append({
             "name": person,
@@ -71,7 +74,8 @@ def averages_for_wc(
         })
 
     if mode == "pct":
-        out.sort(key=lambda r: (-r["avg_pct"], -r["name_count"], r["name"].lower()))
+        out.sort(key=lambda r: (-(r["avg_pct"] if r["avg_pct"] is not None else -1.0),
+                        -r["name_count"], r["name"].lower()))
     else:
         out.sort(key=lambda r: (-r["avg_units"], -r["name_count"], r["name"].lower()))
 
@@ -106,6 +110,7 @@ def averages_for_group(
         total_units = sum(r["units"] for r in recs)
         avg_units = total_units / days_worked
 
+        # Same None-means-no-goal convention as averages_for_wc.
         pct_per_day: list[float] = []
         wc_counts: dict[str, int] = {}
         for r in recs:
@@ -113,8 +118,9 @@ def averages_for_group(
             prod_hr = productive_minutes_for(r["day"]) / 60.0
             target = target_per_hour_by_wc.get(r["wc"], 0.0)
             expected = target * prod_hr
-            pct_per_day.append((r["units"] / expected) if expected > 0 else 0.0)
-        avg_pct = sum(pct_per_day) / len(pct_per_day) if pct_per_day else 0.0
+            if expected > 0:
+                pct_per_day.append(r["units"] / expected)
+        avg_pct = sum(pct_per_day) / len(pct_per_day) if pct_per_day else None
 
         # top_wc: highest count; tiebreak alphabetical by WC name.
         top_wc = min(wc_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0]
@@ -128,7 +134,8 @@ def averages_for_group(
         })
 
     if mode == "pct":
-        out.sort(key=lambda r: (-r["avg_pct"], -r["name_count"], r["name"].lower()))
+        out.sort(key=lambda r: (-(r["avg_pct"] if r["avg_pct"] is not None else -1.0),
+                        -r["name_count"], r["name"].lower()))
     else:
         out.sort(key=lambda r: (-r["avg_units"], -r["name_count"], r["name"].lower()))
 
@@ -230,7 +237,7 @@ def staffing_leaderboards(
             day = r["day"]
             day_label = f"{day.strftime('%a')} {day.month}/{day.day}"
             expected = target_per_day
-            pct = (r["units"] / expected) if expected > 0 else 0.0
+            pct = (r["units"] / expected) if expected > 0 else None
             rows.append({
                 "rank": i,
                 "name": r["person"],
@@ -327,7 +334,7 @@ def staffing_leaderboards(
                 "day_label": f"{day.strftime('%a')} {day.month}/{day.day}",
                 "wc": r["wc"],
                 "units": r["units"],
-                "pct": (r["units"] / target) if target > 0 else 0.0,
+                "pct": (r["units"] / target) if target > 0 else None,
             })
 
         g_set = group_settings_dict.get(group_name, {"sort_order": 0, "is_inactive": False})
