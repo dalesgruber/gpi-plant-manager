@@ -327,3 +327,107 @@ def test_attribution_per_day_reads_from_production_daily():
 
     db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s",
                (_date(2099, 9, 1), _date(2099, 9, 30)))
+
+
+# --- Declared-absent (person, day) production is excluded everywhere ---
+# A stray meter unit crediting someone who was manager-declared Absent must
+# not count as a worked day (leaderboards) or a stat (player card). Covers
+# all three production_daily read paths.
+
+def _insert_absence(db, day, emp_id, name):
+    db.execute(
+        "INSERT INTO manual_absences (day, emp_id, name) VALUES (%s, %s, %s) "
+        "ON CONFLICT DO NOTHING",
+        (day, emp_id, name),
+    )
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_daily_records_excludes_declared_absent_days():
+    from zira_dashboard import db, precompute
+
+    db.init_pool(); db.bootstrap_schema()
+    lo, hi = _date(2099, 10, 1), _date(2099, 10, 31)
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))
+    precompute.upsert_production_daily([
+        # phantom 1-unit day on a date Alice was declared absent
+        {"day": _date(2099, 10, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 1.0, "downtime": 0.0, "hours": 0.0,
+         "days_worked": 1.0},
+        # a normal worked day that must still show
+        {"day": _date(2099, 10, 2), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 800.0, "downtime": 1.0, "hours": 8.0,
+         "days_worked": 1.0},
+    ])
+    _insert_absence(db, _date(2099, 10, 1), "E1", "Alice")
+
+    out = production_history.daily_records(lo, hi)
+    days = {(r["day"], r["person"]) for r in out}
+    assert (_date(2099, 10, 1), "Alice") not in days  # phantom absent day dropped
+    assert (_date(2099, 10, 2), "Alice") in days       # real day kept
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_attribution_range_excludes_declared_absent_days():
+    from zira_dashboard import db, precompute
+
+    db.init_pool(); db.bootstrap_schema()
+    lo, hi = _date(2099, 11, 1), _date(2099, 11, 30)
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))
+    precompute.upsert_production_daily([
+        {"day": _date(2099, 11, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 1.0, "downtime": 0.0, "hours": 0.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 11, 2), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 800.0, "downtime": 1.0, "hours": 8.0,
+         "days_worked": 1.0},
+    ])
+    _insert_absence(db, _date(2099, 11, 1), "E1", "Alice")
+
+    out = production_history.attribution_range(lo, hi)
+    # Only the non-absent day contributes — no phantom day inflating the totals.
+    assert out["Alice"]["WC1"]["units"] == 800.0
+    assert out["Alice"]["WC1"]["days_worked"] == 1.0
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="Postgres test needs DATABASE_URL",
+)
+def test_attribution_per_day_excludes_declared_absent_days():
+    from zira_dashboard import db, precompute
+
+    db.init_pool(); db.bootstrap_schema()
+    lo, hi = _date(2099, 12, 1), _date(2099, 12, 31)
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))
+    precompute.upsert_production_daily([
+        {"day": _date(2099, 12, 1), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 1.0, "downtime": 0.0, "hours": 0.0,
+         "days_worked": 1.0},
+        {"day": _date(2099, 12, 2), "emp_id": "E1", "name": "Alice",
+         "wc_name": "WC1", "units": 800.0, "downtime": 1.0, "hours": 8.0,
+         "days_worked": 1.0},
+    ])
+    _insert_absence(db, _date(2099, 12, 1), "E1", "Alice")
+
+    by_day = dict(production_history.attribution_per_day(lo, hi))
+    assert "Alice" not in by_day[_date(2099, 12, 1)]   # absent day empty
+    assert by_day[_date(2099, 12, 2)]["Alice"]["WC1"]["units"] == 800.0
+
+    db.execute("DELETE FROM production_daily WHERE day BETWEEN %s AND %s", (lo, hi))
+    db.execute("DELETE FROM manual_absences WHERE day BETWEEN %s AND %s", (lo, hi))

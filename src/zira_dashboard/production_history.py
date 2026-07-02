@@ -207,6 +207,11 @@ def attribution_per_day(
     Returns one (day, attribution_dict) tuple per day in the range,
     in date-ascending order. Empty days return ({}). Reads from
     production_daily.
+
+    Production on a (person, day) the person was manager-declared Absent
+    (a `manual_absences` row) is excluded — a stray meter unit crediting
+    someone who was out shouldn't count as a worked day. Undo the absence
+    to restore the day's production.
     """
     from datetime import timedelta
     from . import db
@@ -225,6 +230,11 @@ def attribution_per_day(
                units, downtime, hours, days_worked
         FROM production_daily
         WHERE day BETWEEN %s AND %s
+          AND NOT EXISTS (
+            SELECT 1 FROM manual_absences ma
+            WHERE ma.day = production_daily.day
+              AND ma.name = production_daily.name
+          )
         """,
         (start, end),
     )
@@ -250,6 +260,10 @@ def attribution_range(
     {person: {wc: {units, downtime, hours, days_worked}}} envelope so
     callers (player cards, leaderboards via rank_by_category) don't
     have to change.
+
+    Excludes (person, day) pairs the person was manager-declared Absent
+    (see attribution_per_day), so declared-absent days don't inflate
+    days-worked or produce phantom low-output rows.
     """
     from . import db
     rows = db.query(
@@ -262,6 +276,11 @@ def attribution_range(
                SUM(days_worked) AS days_worked
         FROM production_daily
         WHERE day BETWEEN %s AND %s
+          AND NOT EXISTS (
+            SELECT 1 FROM manual_absences ma
+            WHERE ma.day = production_daily.day
+              AND ma.name = production_daily.name
+          )
         GROUP BY name, wc_name
         """,
         (start, end),

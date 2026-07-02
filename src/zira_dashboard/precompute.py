@@ -172,6 +172,11 @@ def daily_records_in_range(start: date, end: date) -> list[dict]:
                units, downtime, hours
         FROM production_daily
         WHERE day BETWEEN %s AND %s AND units > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM manual_absences ma
+            WHERE ma.day = production_daily.day
+              AND ma.name = production_daily.name
+          )
         """,
         (start, end),
     )
