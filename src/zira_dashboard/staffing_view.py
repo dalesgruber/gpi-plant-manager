@@ -54,16 +54,21 @@ def build_staffing_bays(roster, sched, time_off_entries, publish_blocked):
     all_active_people = sorted(p.name for p in active_people)
 
     # Per-person hours-off-today (for partial entries) so the scheduler
-    # can show a badge next to their name.
+    # can show a badge next to their name. Full days carry hours=None (the
+    # sync layer normalizes whole-shift windows to full_day), so any positive
+    # off-span is a genuine partial — no shift-length threshold needed.
     partial_hours_by_name: dict[str, float] = {
         e["name"]: e["hours"]
         for e in time_off_entries
-        if e.get("hours") is not None and e["hours"] < 8 and e["hours"] > 0
+        if e.get("hours") is not None and e["hours"] > 0
     }
+    # Badge text prefers the shaped timing label ("arrives 11:30am" /
+    # "leaves 2:00pm" / "gone 10:00am–12:00pm") — a bare off-window range is
+    # ambiguous about whether it's the hours here or the hours gone.
     partial_range_by_name: dict[str, str] = {
-        e["name"]: e["time_range"]
+        e["name"]: (e.get("timing_label") or e["time_range"])
         for e in time_off_entries
-        if e.get("time_range") and e.get("hours") is not None and e["hours"] < 8
+        if e.get("time_range") and e.get("hours") is not None and e["hours"] > 0
     }
     # Per-partial clear key. Every partial gets a × button; the value
     # carries either a request_id (StratusTime time-off request path)
@@ -72,7 +77,7 @@ def build_staffing_bays(roster, sched, time_off_entries, publish_blocked):
     # and don't appear here.
     partial_clear_by_name: dict[str, dict] = {}
     for e in time_off_entries:
-        if e.get("hours") is None or not (0 < e["hours"] < 8):
+        if e.get("hours") is None or e["hours"] <= 0:
             continue
         key: dict = {}
         if e.get("request_id"):

@@ -840,3 +840,180 @@ def test_upsert_insert_validate_calls_notify(monkeypatch, fake_db):
     time_off_sync._upsert_one(leave, None)
 
     notify.assert_called_once()
+
+
+# --------------------------------------------------------------------------
+# _mirror_shape_and_hours — canonical shape + off-window normalization.
+# The mirror shape drives EVERY screen (staffing calendar pills, scheduler
+# Time Off card + roster exclusion, kiosk Who's Out): partials must come out
+# as late_arrival / early_leave / midday_gap with their off-window, and
+# whole-day windows must come out full_day with no hours.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def company_shift(monkeypatch):
+    """Pin the company shift window (7:00am-3:30pm) so classification is
+    deterministic without a global_schedule row behind schedule_store."""
+    monkeypatch.setattr(
+        time_off_sync, "_company_shift_bounds", lambda: (7.0, 15.5))
+
+
+def _odoo_leave(**over):
+    """Minimal Odoo hr.leave dict; False = Odoo's empty-field marker."""
+    base = {
+        "id": 555, "employee_id": [5, "Bob"],
+        "holiday_status_id": [1, "PTO"], "state": "validate",
+        "request_date_from": "2026-07-06", "request_date_to": "2026-07-06",
+        "request_hour_from": False, "request_hour_to": False,
+        "request_unit_hours": False,
+        "date_from": False, "date_to": False,
+        "number_of_days": 0.5, "number_of_hours": 4.0, "name": "PTO",
+    }
+    base.update(over)
+    return base
+
+
+def test_mirror_full_day_duration_short_circuits(company_shift):
+    # number_of_days >= 1 is authoritative full-day, whatever else rides along.
+    leave = _odoo_leave(
+        number_of_days=1.0, request_unit_hours=True,
+        request_hour_from=6.0, request_hour_to=14.5,
+        date_from="2026-07-06 12:00:00", date_to="2026-07-06 20:30:00")
+    assert time_off_sync._mirror_shape_and_hours(leave) == ("full_day", None, None)
+
+
+def test_mirror_hour_window_anchored_at_start_is_late_arrival(company_shift):
+    # A kiosk "arrives late" request stores (shift_start, arrival); when it
+    # round-trips through Odoo the poller must NOT clobber it to midday_gap.
+    leave = _odoo_leave(
+        number_of_days=0.25, request_unit_hours=True,
+        request_hour_from=7.0, request_hour_to=9.0)
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "late_arrival", 7.0, 9.0)
+
+
+def test_mirror_hour_window_anchored_at_end_is_early_leave(company_shift):
+    leave = _odoo_leave(
+        number_of_days=0.18, request_unit_hours=True,
+        request_hour_from=14.0, request_hour_to=15.5)
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "early_leave", 14.0, 15.5)
+
+
+def test_mirror_interior_hour_window_is_midday_gap(company_shift):
+    leave = _odoo_leave(
+        number_of_days=0.25, request_unit_hours=True,
+        request_hour_from=10.0, request_hour_to=12.0)
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "midday_gap", 10.0, 12.0)
+
+
+def test_mirror_full_shift_hour_window_normalizes_to_full_day(company_shift):
+    # Full unpaid day entered with hour bounds and a sub-1.0 computed
+    # duration (Odoo counts 8 working hours of an 8.5h shift) — the window
+    # covers the whole shift, so it must NOT render as a partial.
+    leave = _odoo_leave(
+        number_of_days=0.94, request_unit_hours=True,
+        request_hour_from=7.0, request_hour_to=15.5)
+    assert time_off_sync._mirror_shape_and_hours(leave) == ("full_day", None, None)
+
+
+def test_mirror_half_day_morning_from_utc_datetimes(company_shift):
+    # HR-entered half days (request_unit_half) carry NO request-hour bounds;
+    # the off-window comes from the date_from/date_to UTC datetimes Odoo
+    # computes. July = America/Chicago CDT (UTC-5): 12:00-16:30 UTC is
+    # 7:00am-11:30am local -> morning off -> arrives 11:30am.
+    leave = _odoo_leave(
+        number_of_days=0.5,
+        date_from="2026-07-06 12:00:00", date_to="2026-07-06 16:30:00")
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "late_arrival", 7.0, 11.5)
+
+
+def test_mirror_half_day_afternoon_from_utc_datetimes(company_shift):
+    # 16:30-20:30 UTC = 11:30am-3:30pm CDT -> afternoon off -> leaves 11:30am.
+    leave = _odoo_leave(
+        number_of_days=0.5,
+        date_from="2026-07-06 16:30:00", date_to="2026-07-06 20:30:00")
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "early_leave", 11.5, 15.5)
+
+
+def test_mirror_half_day_winter_uses_cst_offset(company_shift):
+    # January = CST (UTC-6): 13:00-17:30 UTC is 7:00am-11:30am local.
+    leave = _odoo_leave(
+        number_of_days=0.5,
+        request_date_from="2026-01-12", request_date_to="2026-01-12",
+        date_from="2026-01-12 13:00:00", date_to="2026-01-12 17:30:00")
+    assert time_off_sync._mirror_shape_and_hours(leave) == (
+        "late_arrival", 7.0, 11.5)
+
+
+def test_mirror_datetimes_spanning_local_days_fall_back_to_full_day(company_shift):
+    # A window that crosses local midnight carries no usable single-day
+    # off-window -> full_day, never a bogus partial.
+    leave = _odoo_leave(
+        number_of_days=0.9,
+        date_from="2026-07-06 12:00:00", date_to="2026-07-08 20:30:00")
+    assert time_off_sync._mirror_shape_and_hours(leave) == ("full_day", None, None)
+
+
+def test_mirror_nothing_usable_is_full_day(company_shift):
+    # No duration, no hour bounds, no datetimes (all Odoo False) -> full_day.
+    leave = _odoo_leave(number_of_days=False)
+    assert time_off_sync._mirror_shape_and_hours(leave) == ("full_day", None, None)
+
+
+def test_poll_inserts_half_day_as_partial_shape(monkeypatch, fake_db, company_shift):
+    """End-to-end poll: an HR-entered half-day (no request-hour bounds) must
+    INSERT as a partial shape with its off-window, not as a bare full day."""
+    _reset_poll_state()
+    fake_db["query_result"] = []  # not in local mirror yet
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+        lambda s, e, **kw: [_odoo_leave(state="validate")
+                            | {"date_from": "2026-07-06 12:00:00",
+                               "date_to": "2026-07-06 16:30:00"}])
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change",
+                        lambda old, new: None)
+    monkeypatch.setattr(time_off_sync.employee_notifications,
+                        "maybe_notify_resolution", lambda old, new: None)
+
+    time_off_sync.poll_odoo_leaves()
+
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO time_off_requests" in e[0]]
+    assert inserts, "expected INSERT for the new half-day leave"
+    params = inserts[0][1]
+    # (person, shape, holiday_status, date_from, date_to, hour_from, hour_to, ...)
+    assert params[1] == "late_arrival"
+    assert params[5] == 7.0 and params[6] == 11.5
+
+
+def test_poll_preserves_kiosk_late_arrival_shape(monkeypatch, fake_db, company_shift):
+    """A kiosk 'arrives late' row that round-trips through Odoo must keep its
+    late_arrival shape — the poller used to clobber it to midday_gap, which
+    degraded 'arrives 9:00am' labels into a bare time range."""
+    _reset_poll_state()
+    existing_row = {
+        "id": 1, "person_odoo_id": 5, "odoo_leave_id": 555,
+        "state": "validate", "shape": "late_arrival",
+        "holiday_status_id": 1,
+        "date_from": date(2026, 7, 6), "date_to": date(2026, 7, 6),
+        "hour_from": 7.0, "hour_to": 9.0,
+        "working_hours_json": None,
+    }
+    fake_db["query_result"] = [existing_row]
+    monkeypatch.setattr(time_off_sync.odoo_client, "fetch_leaves_for_range",
+        lambda s, e, **kw: [_odoo_leave(
+            number_of_days=0.25, request_unit_hours=True,
+            request_hour_from=7.0, request_hour_to=9.0)])
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change",
+                        lambda old, new: None)
+
+    time_off_sync.poll_odoo_leaves()
+
+    assert not any("UPDATE time_off_requests" in e[0]
+                   for e in fake_db["executes"]), (
+        "poller must not rewrite a kiosk late_arrival row whose window is "
+        "unchanged")

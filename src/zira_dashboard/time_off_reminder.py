@@ -56,11 +56,11 @@ def _body_key(shape: str | None, hf: str, ht: str) -> str:
     """The English message template (also the `t()` glossary key) for a
     partial-day reminder, chosen by shape + which hour bounds we have.
 
-    In practice an approved (state='validate') row reaches here as
-    'midday_gap': the poller's _mirror_shape_and_hours collapses partial
-    leaves to that shape on sync. The late_arrival/early_leave arms are kept
-    as forward-compatible handling in case that mapping ever preserves the
-    finer shapes.
+    The poller's _mirror_shape_and_hours classifies every partial window
+    against the company shift, so approved rows arrive with their real shape:
+    late_arrival ("not due in until X"), early_leave ("can leave at X"), or a
+    genuine midday_gap ("off from X to Y"). The midday_gap arm doubles as the
+    fallback for any partial we can't classify.
     """
     if shape == "late_arrival":
         return ("Heads up — {day}, you're not due in until {ht} (approved)."

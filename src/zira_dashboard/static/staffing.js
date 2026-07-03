@@ -524,10 +524,10 @@
   // Per-person metadata (reserve flag) for routing add-backs to the right list.
   const __peopleMeta = window.PEOPLE_META;
 
-  // Partial-day off windows (name -> "10:00am–11:00am" / hours). Used to
-  // re-attach the amber "off" badge when a partial person is moved back into
-  // Unscheduled/Reserves dynamically (e.g. after clearing them from a WC), so
-  // the off-window note follows them without a full reload.
+  // Partial-day off labels (name -> "arrives 11:30am" / "gone 10am–12pm" /
+  // hours). Used to re-attach the amber "off" badge when a partial person is
+  // moved back into Unscheduled/Reserves dynamically (e.g. after clearing
+  // them from a WC), so the off note follows them without a full reload.
   const __partialRangeByName = window.PARTIAL_RANGE_BY_NAME;
   const __partialHoursByName = window.PARTIAL_HOURS_BY_NAME;
 

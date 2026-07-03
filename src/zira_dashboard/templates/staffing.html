@@ -71,7 +71,9 @@
       {% if time_off_entries %}
         <ul class="time-off-list">
           {% for e in time_off_entries %}
-            {% set is_partial = e.hours is not none and e.hours < 8 %}
+            {# Full days carry hours=None (the sync layer normalizes whole-shift
+               windows to full_day); any positive off-span is a genuine partial. #}
+            {% set is_partial = e.hours is not none and e.hours > 0 %}
             {% set is_absent = e.derived or e.manual_absent %}
             {# Partial clears are name+day based (clear_partial_by_name), so they
                work for Odoo entries too; cleared partials are already filtered

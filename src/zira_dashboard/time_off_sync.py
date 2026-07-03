@@ -57,8 +57,10 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from . import db, employee_notifications, odoo_client, time_off_balances
+from . import db, employee_notifications, odoo_client, schedule_store, time_off_balances
+from .shift_config import SITE_TZ
 from .staffing import TIME_OFF_KEY
+from .time_off_calendar import classify_off_window
 
 _log = logging.getLogger(__name__)
 
@@ -451,25 +453,88 @@ def _coerce_odoo_float(value: Any) -> float | None:
     return float(value)
 
 
-def _mirror_shape_and_hours(leave: dict[str, Any]) -> tuple[str, float | None, float | None]:
-    """Normalize Odoo's hour-unit metadata into our mirror shape.
+def _company_shift_bounds() -> tuple[float, float]:
+    """Company shift window in decimal hours (e.g. 7:00–15:30 → (7.0, 15.5)).
 
-    ``request_unit_hours`` alone is not enough to mean "partial": Odoo can
-    still send it on full-day/hour-unit leaves, and some rows only populate
-    one bound (e.g. ``request_hour_to=3.5``). If Odoo's computed duration is
-    a full day, or if the hour window is incomplete/invalid, mirror it as
-    full-day so downstream reports do not render bogus partial-hour absence.
-    """
+    Same "company schedule is enough for a glance" reasoning as the staffing
+    calendar's ``_company_shift_len`` — per-person resource calendars only
+    matter for the kiosk's own validation. Falls back to ``DEFAULT_SCHEDULE``
+    on any store hiccup so a schedule-table blip can't kill a poll tick."""
+    try:
+        sched = schedule_store.current()
+    except Exception:  # noqa: BLE001 — classification must survive a DB blip
+        sched = schedule_store.DEFAULT_SCHEDULE
+    return (
+        sched.shift_start.hour + sched.shift_start.minute / 60.0,
+        sched.shift_end.hour + sched.shift_end.minute / 60.0,
+    )
+
+
+def _local_day_window(leave: dict[str, Any]) -> tuple[float, float] | None:
+    """Off-window in local decimal hours from the leave's ``date_from``/
+    ``date_to`` UTC datetimes, or None when they don't describe one.
+
+    This is the only timing signal Odoo gives for half-day (am/pm) leaves —
+    ``request_unit_half`` rows carry NO request-hour bounds, but Odoo computes
+    the exact datetime window from the employee's resource calendar. Only a
+    window whose two ends land on the same ``SITE_TZ`` calendar day is usable;
+    anything else (multi-day spans, missing/garbled values) → None so the
+    caller falls back to full-day rather than render a bogus partial."""
+    raw_from, raw_to = leave.get("date_from"), leave.get("date_to")
+    if not isinstance(raw_from, str) or not isinstance(raw_to, str):
+        return None
+    try:
+        dt_from = datetime.fromisoformat(raw_from).replace(
+            tzinfo=timezone.utc).astimezone(SITE_TZ)
+        dt_to = datetime.fromisoformat(raw_to).replace(
+            tzinfo=timezone.utc).astimezone(SITE_TZ)
+    except ValueError:
+        return None
+    if dt_to <= dt_from or dt_from.date() != dt_to.date():
+        return None
+
+    def _dec(dt: datetime) -> float:
+        # Round to the mirror columns' NUMERIC(4,2) precision.
+        return round(dt.hour + dt.minute / 60.0 + dt.second / 3600.0, 2)
+
+    return (_dec(dt_from), _dec(dt_to))
+
+
+def _mirror_shape_and_hours(leave: dict[str, Any]) -> tuple[str, float | None, float | None]:
+    """Normalize one Odoo hr.leave into the canonical mirror shape + window.
+
+    Resolution order:
+
+    1. ``number_of_days >= 1`` → full-day, whatever hour metadata rides along
+       (hour-unit leave types round-trip full days with full-shift bounds).
+    2. A valid ``request_hour_from``/``request_hour_to`` window (hour-unit
+       partials, including everything the kiosk pushes). Incomplete/invalid
+       bounds (e.g. only ``request_hour_to=3.5``) are ignored, not trusted.
+    3. The ``date_from``/``date_to`` datetime window — the only signal
+       half-day (am/pm) leaves carry.
+    4. Nothing usable → full-day (there's no timing to show anyway).
+
+    Any window from steps 2–3 is then classified against the company shift
+    (``classify_off_window``): whole-shift windows come out ``full_day``, and
+    genuine partials come out ``late_arrival``/``early_leave``/``midday_gap``
+    so the screens read "arrives 9:00am" / "leaves 2:00pm" / "gone 10–12"
+    instead of a shapeless time range. Shift-relative classification is also
+    what keeps kiosk-originated shapes stable across Odoo round-trips."""
     number_of_days = _coerce_odoo_float(leave.get("number_of_days"))
     if number_of_days is not None and number_of_days >= 1:
         return "full_day", None, None
-    if not bool(leave.get("request_unit_hours")):
+    window: tuple[float, float] | None = None
+    if bool(leave.get("request_unit_hours")):
+        hour_from = _coerce_odoo_float(leave.get("request_hour_from"))
+        hour_to = _coerce_odoo_float(leave.get("request_hour_to"))
+        if hour_from is not None and hour_to is not None and hour_to > hour_from:
+            window = (hour_from, hour_to)
+    if window is None:
+        window = _local_day_window(leave)
+    if window is None:
         return "full_day", None, None
-    hour_from = _coerce_odoo_float(leave.get("request_hour_from"))
-    hour_to = _coerce_odoo_float(leave.get("request_hour_to"))
-    if hour_from is None or hour_to is None or hour_to <= hour_from:
-        return "full_day", None, None
-    return "midday_gap", hour_from, hour_to
+    shift_from, shift_to = _company_shift_bounds()
+    return classify_off_window(window[0], window[1], shift_from, shift_to)
 
 
 def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
@@ -524,8 +589,6 @@ def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
             cascade_on_state_change(existing, new_row)
             employee_notifications.maybe_notify_resolution(existing, new_row)
     else:
-        # We can't tell late/early/midday from Odoo alone, so valid partial
-        # windows use midday_gap, the most permissive partial-day shape.
         db.execute(
             "INSERT INTO time_off_requests "
             "(person_odoo_id, originating_kiosk_user, shape, "

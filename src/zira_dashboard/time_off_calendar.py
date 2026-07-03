@@ -19,7 +19,7 @@ def label_for(r: dict) -> str:
       - ``full_day``   -> ``"full day"``
       - ``late_arrival`` -> ``"arrives 9:00am"`` (arrival = hour_to)
       - ``early_leave``  -> ``"leaves 2:00pm"`` (leave = hour_from)
-      - ``midday_gap``   -> ``"10:00am–12:00pm"`` (gap = hour_from..hour_to)
+      - ``midday_gap``   -> ``"gone 10:00am–12:00pm"`` (gap = hour_from..hour_to)
     """
     if r["shape"] == "full_day":
         return "full day"
@@ -29,7 +29,7 @@ def label_for(r: dict) -> str:
         return f"arrives {fmt_decimal_hour(ht)}"
     if r["shape"] == "early_leave":
         return f"leaves {fmt_decimal_hour(hf)}"
-    return f"{fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
+    return f"gone {fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
 
 
 # How much shorter than the full company shift an off-window may be and still
@@ -41,21 +41,56 @@ _FULL_DAY_TOL = 0.5
 def is_full_day(shape, hour_from, hour_to, shift_len: float) -> bool:
     """Whether a leave row occupies essentially the whole working day.
 
-    ``full_day`` shape is always full. Hour-bounded leaves need a closer
-    look: leaves entered directly in Odoo and synced in are tagged
-    ``midday_gap`` whenever they carry hour bounds (``time_off_sync`` can't
-    tell late/early/gap from Odoo alone), so a full *unpaid* day off arrives
-    here looking like a partial. We recover the distinction from the
-    off-window span: if it covers at least the whole company shift
-    (``shift_len`` decimal hours, minus a small tolerance) the person is out
-    all day; the three genuine partials (arrive late / leave early / mid-day
-    gap) only ever cover part of it. Missing bounds → treat as full (there's
-    no timing to show anyway)."""
+    ``full_day`` shape is always full. Hour-bounded rows are judged by their
+    off-window span: covering at least the whole company shift (``shift_len``
+    decimal hours, minus a small tolerance) means the person is out all day;
+    the three genuine partials (arrive late / leave early / mid-day gap) only
+    ever cover part of it. ``time_off_sync`` normalizes whole-shift windows
+    to ``full_day`` at mirror time via :func:`classify_off_window` (which
+    shares this span rule), so this is a safety net for rows written before
+    that normalization existed. Missing bounds → treat as full (there's no
+    timing to show anyway)."""
     if shape == "full_day":
         return True
     if hour_from is None or hour_to is None:
         return True
     return (float(hour_to) - float(hour_from)) >= shift_len - _FULL_DAY_TOL
+
+
+# How far from a shift boundary an off-window endpoint may sit and still count
+# as anchored to it. Odoo-computed windows (half-day am/pm from a resource
+# calendar) don't always start exactly on the company shift boundary.
+_ANCHOR_TOL = 0.25
+
+
+def classify_off_window(
+    hour_from, hour_to, shift_from: float, shift_to: float,
+) -> tuple[str, float | None, float | None]:
+    """Normalize an off-window (decimal hours) into the canonical mirror shape.
+
+    The four shapes carry the reading the screens render:
+
+      - covers essentially the whole shift (same span rule as
+        :func:`is_full_day`)                  -> ``('full_day', None, None)``
+      - anchored at shift start               -> ``('late_arrival', hf, ht)``
+        (off until ``hour_to`` — "arrives X")
+      - anchored at shift end                 -> ``('early_leave', hf, ht)``
+        (off from ``hour_from`` — "leaves X")
+      - interior slice                        -> ``('midday_gap', hf, ht)``
+        ("gone X–Y")
+
+    Shift-relative classification is what lets Odoo-sourced windows (which
+    carry no late/early/gap distinction of their own) and kiosk-originated
+    requests (which store exactly these windows) normalize to the same shape,
+    so a kiosk "arrives 9:00am" survives its Odoo round-trip."""
+    hf, ht = float(hour_from), float(hour_to)
+    if is_full_day(None, hf, ht, shift_to - shift_from):
+        return ("full_day", None, None)
+    if hf <= shift_from + _ANCHOR_TOL:
+        return ("late_arrival", hf, ht)
+    if ht >= shift_to - _ANCHOR_TOL:
+        return ("early_leave", hf, ht)
+    return ("midday_gap", hf, ht)
 
 
 def parse_holiday_date(s):

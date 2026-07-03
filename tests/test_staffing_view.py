@@ -337,7 +337,7 @@ def test_full_day_off_retained_in_assigned_but_dropped_from_headcount(patch_wcs)
 
 
 # --------------------------------------------------------------------------
-# (f) partial hours only for 0 < hours < 8; full-day in time_off_names
+# (f) partial hours for any positive off-span; full-day in time_off_names
 # --------------------------------------------------------------------------
 
 def test_partial_hours_window_and_full_day_routing(patch_wcs):
@@ -345,29 +345,36 @@ def test_partial_hours_window_and_full_day_routing(patch_wcs):
                 {"required": ("Repair",), "min": 1, "max": 1, "defaults": []})])
     roster = [_person("P", Repair=2)]
     entries = [
-        {"name": "Partial", "hours": 4.0, "time_range": "8a-12p", "request_id": 77},
+        {"name": "Partial", "hours": 4.0, "time_range": "8a-12p",
+         "timing_label": "arrives 12:00pm", "request_id": 77},
         {"name": "FullDay", "hours": None},
         {"name": "ZeroHrs", "hours": 0.0},
-        {"name": "EightHrs", "hours": 8.0},
+        {"name": "LongPartial", "hours": 8.0, "time_range": "7a-3p", "request_id": 88},
         {"name": "EmpIdOnly", "hours": 2.0, "time_range": "1p-3p", "emp_id": 555},
     ]
     m = staffing_view.build_staffing_bays(
         roster=roster, sched=_sched({"Repair 1": ["P"]}),
         time_off_entries=entries, publish_blocked=0,
     )
-    # Only 0 < hours < 8 land in partial_hours_by_name.
-    assert m["partial_hours_by_name"] == {"Partial": 4.0, "EmpIdOnly": 2.0}
-    assert m["partial_range_by_name"] == {"Partial": "8a-12p", "EmpIdOnly": "1p-3p"}
+    # Any positive off-span is a partial — including one ≥8h on a longer
+    # shift. (Whole-shift windows never get here: the sync layer normalizes
+    # them to full_day with hours=None.)
+    assert m["partial_hours_by_name"] == {
+        "Partial": 4.0, "LongPartial": 8.0, "EmpIdOnly": 2.0}
+    # Badge text prefers the shaped timing label; bare range is the fallback.
+    assert m["partial_range_by_name"] == {
+        "Partial": "arrives 12:00pm", "LongPartial": "7a-3p",
+        "EmpIdOnly": "1p-3p"}
     # Clear keys: request_id wins, else emp_id (as str).
     assert m["partial_clear_by_name"] == {
         "Partial": {"request_id": 77},
+        "LongPartial": {"request_id": 88},
         "EmpIdOnly": {"emp_id": "555"},
     }
-    # Full-day only in the Time Off panel; zero/eight-hour entries are
-    # neither partial nor full-day (hours is not None) so they appear nowhere.
+    # Full-day only in the Time Off panel; a zero-hour entry is neither
+    # partial nor full-day (hours is not None) so it appears nowhere.
     assert m["time_off_names"] == ["FullDay"]
     assert m["partial_hours_by_name"].get("ZeroHrs") is None
-    assert m["partial_hours_by_name"].get("EightHrs") is None
 
 
 # --------------------------------------------------------------------------

@@ -39,15 +39,17 @@ def test_label_for_early_leave_uses_hour_from():
     assert label == "leaves 2:00pm"
 
 
-def test_label_for_midday_gap_is_hour_from_to_range():
+def test_label_for_midday_gap_reads_gone_hour_from_to_range():
+    # "gone" prefix so the pill reads as a sentence ("gone 10:00am–12:00pm"),
+    # matching the scheduler's timing label wording.
     label = c.label_for({"shape": "midday_gap", "hour_from": 10.0, "hour_to": 12.0})
-    assert label == f"10:00am{NDASH}12:00pm"
+    assert label == f"gone 10:00am{NDASH}12:00pm"
 
 
 def test_label_for_none_hour_coerced_to_zero_without_crashing():
     # hour_from=None must coerce to 0 (12:00am), not raise.
     label = c.label_for({"shape": "midday_gap", "hour_from": None, "hour_to": 12.0})
-    assert label == f"12:00am{NDASH}12:00pm"
+    assert label == f"gone 12:00am{NDASH}12:00pm"
 
 
 # ---------- is_full_day: full vs genuine-partial from the off-window span ----------
@@ -83,6 +85,57 @@ def test_is_full_day_tolerance_absorbs_small_shortfalls():
 def test_is_full_day_true_when_hour_bounds_missing():
     # No timing to show → treat as full so nothing leaks a bogus time.
     assert c.is_full_day("midday_gap", None, None, SHIFT_LEN) is True
+
+
+# ---------- classify_off_window: canonical shape from window vs shift ----------
+
+# Standard plant shift bounds: 7:00am–3:30pm.
+SHIFT_FROM, SHIFT_TO = 7.0, 15.5
+
+
+def test_classify_full_shift_window_is_full_day():
+    # An unpaid full day entered in Odoo with hour bounds must normalize to
+    # full_day (no hours), not a bogus "partial gone 7:00am–3:30pm".
+    assert c.classify_off_window(7.0, 15.5, SHIFT_FROM, SHIFT_TO) == (
+        "full_day", None, None)
+
+
+def test_classify_near_full_window_is_full_day_within_span_tolerance():
+    # Mirrors is_full_day's 0.5h tolerance for lunch/rounding shortfalls.
+    assert c.classify_off_window(7.0, 15.0, SHIFT_FROM, SHIFT_TO) == (
+        "full_day", None, None)
+
+
+def test_classify_window_wider_than_shift_is_full_day():
+    # Odoo default calendars can produce windows beyond the plant shift.
+    assert c.classify_off_window(6.0, 16.0, SHIFT_FROM, SHIFT_TO) == (
+        "full_day", None, None)
+
+
+def test_classify_window_anchored_at_shift_start_is_late_arrival():
+    # Off from shift start until 9:00 → the person ARRIVES at 9:00.
+    assert c.classify_off_window(7.0, 9.0, SHIFT_FROM, SHIFT_TO) == (
+        "late_arrival", 7.0, 9.0)
+
+
+def test_classify_window_anchored_at_shift_end_is_early_leave():
+    # Off from 2:00 to shift end → the person LEAVES at 2:00.
+    assert c.classify_off_window(14.0, 15.5, SHIFT_FROM, SHIFT_TO) == (
+        "early_leave", 14.0, 15.5)
+
+
+def test_classify_interior_window_is_midday_gap():
+    assert c.classify_off_window(10.0, 12.0, SHIFT_FROM, SHIFT_TO) == (
+        "midday_gap", 10.0, 12.0)
+
+
+def test_classify_anchor_tolerance_absorbs_15_minutes():
+    # Odoo-computed windows (e.g. half-day am/pm from a resource calendar)
+    # don't always start exactly on the company shift boundary.
+    assert c.classify_off_window(7.25, 11.0, SHIFT_FROM, SHIFT_TO)[0] == "late_arrival"
+    assert c.classify_off_window(11.5, 15.25, SHIFT_FROM, SHIFT_TO)[0] == "early_leave"
+    # Beyond the tolerance it's a genuine interior gap.
+    assert c.classify_off_window(7.5, 11.0, SHIFT_FROM, SHIFT_TO)[0] == "midday_gap"
 
 
 # ---------- parse_holiday_date: tolerant date coercion ----------
@@ -229,7 +282,7 @@ def test_fan_out_midday_gap_is_partial_with_label():
     (entry,) = out[date(2026, 6, 2)]
     assert entry["name"] == "Bob"
     assert entry["full"] is False
-    assert entry["label"] == f"10:00am{NDASH}12:00pm"
+    assert entry["label"] == f"gone 10:00am{NDASH}12:00pm"
     # Raw shape + bounds ride along so a shift-aware consumer can refine
     # full-vs-partial via is_full_day.
     assert entry["shape"] == "midday_gap"

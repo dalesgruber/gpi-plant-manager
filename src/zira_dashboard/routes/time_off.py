@@ -46,9 +46,10 @@ def _odoo_time_off_by_day(
     preserve here so they get the distinct red styling in the template.
 
     Per-leave we recompute ``full`` against the company shift length via
-    :func:`is_full_day` — Odoo-synced leaves arrive tagged ``midday_gap``
-    whenever they carry hour bounds, so a full *unpaid* day off would
-    otherwise look (and read its time) like a partial. Only genuine partials
+    :func:`is_full_day` — a safety net for mirror rows written before
+    ``time_off_sync`` normalized whole-shift hour windows to ``full_day``
+    (a full *unpaid* day off used to arrive tagged ``midday_gap`` and would
+    otherwise look, and read its time, like a partial). Only genuine partials
     keep a timing ``label``; full days blank it so the template shows the name
     alone (green) and reserves the gold partial styling + time for the three
     leave-early / arrive-late / mid-day-gap shapes."""

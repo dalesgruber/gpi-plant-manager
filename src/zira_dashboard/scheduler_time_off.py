@@ -107,9 +107,11 @@ def time_off_entries_for_day(day: _date) -> list[dict]:
         })
     cleared = _cleared_partial_names(day)
     if cleared:
+        # Any positive off-span is a partial (full days carry hours=None);
+        # only partials are clearable, so full-day rows never get dropped.
         out = [
             e for e in out
-            if not (0 < (e["hours"] or 0) < 8 and e["name"] in cleared)
+            if not ((e["hours"] or 0) > 0 and e["name"] in cleared)
         ]
     # Manually declared absences become full-day "Absent" entries (rendered
     # light red via the template's manual_absent -> .absent class). An absence
