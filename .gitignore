@@ -50,3 +50,4 @@ schedules.bak/
 skill_columns_meta.json
 skill_filter.json
 .worktrees/
+tz_backup.json
