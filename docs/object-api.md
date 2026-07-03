@@ -119,6 +119,26 @@ Readable fields: `id`, `odoo_id`, `name`, `active`, `reserve`, `excluded`,
 
 Writable fields: `active`, `reserve`, `excluded`, `spanish_speaker`.
 
+### `plant.skill`
+
+Skill definitions synced from Odoo.
+
+Readable fields: `id`, `odoo_id`, `name`, `skill_type`, `sort_order`.
+
+This model is read-only.
+
+### `plant.person_skill`
+
+Skill levels for people. IDs use `person_id:skill_id`.
+
+Readable fields: `id`, `person_id`, `person_odoo_id`, `person_name`,
+`skill_id`, `skill_name`, `skill_type`, `level`.
+
+Create fields: `person_id` or `person_name`, `skill_id` or `skill_name`,
+`level`.
+
+Writable fields: `level`. Set `level` to `0` to remove the skill row.
+
 ### `plant.work_center`
 
 Configured plant work centers.
@@ -175,6 +195,19 @@ curl -s "$GPI_BASE_URL/api/v1/object/execute" \
     "model": "plant.person",
     "method": "write",
     "args": [[123], {"reserve": true}]
+  }'
+```
+
+Set a skill level by names:
+
+```sh
+curl -s "$GPI_BASE_URL/api/v1/object/execute" \
+  -H "Authorization: Bearer $GPI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "plant.person_skill",
+    "method": "create",
+    "args": [{"person_name": "Dale", "skill_name": "Repair", "level": 3}]
   }'
 ```
 
