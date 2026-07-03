@@ -548,6 +548,42 @@ CREATE TABLE IF NOT EXISTS goat_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_goat_alerts_day ON goat_alerts (achieved_day);
 
+-- Server-to-server API keys for the Odoo-like object API.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id           SERIAL PRIMARY KEY,
+  name         TEXT NOT NULL,
+  key_prefix   TEXT NOT NULL,
+  key_hash     TEXT NOT NULL UNIQUE,
+  scopes       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  allowed_ips  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_by   TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS api_keys_active_idx
+  ON api_keys (key_hash) WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS api_audit_log (
+  id              BIGSERIAL PRIMARY KEY,
+  api_key_id      INTEGER REFERENCES api_keys(id),
+  app_name        TEXT NOT NULL,
+  actor           TEXT,
+  model           TEXT,
+  method          TEXT,
+  request_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status          TEXT NOT NULL,
+  error_code      TEXT,
+  duration_ms     INTEGER,
+  client_ip       TEXT,
+  user_agent      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS api_audit_log_created_idx
+  ON api_audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS api_audit_log_key_idx
+  ON api_audit_log (api_key_id, created_at DESC);
+
 -- Long-lived signed device tokens for shop-floor TV displays.
 -- Bound to /tv/* paths in middleware. Revocation is instant via
 -- setting `revoked_at` (no blacklist cache needed).
