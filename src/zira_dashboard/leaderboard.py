@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
@@ -162,6 +163,7 @@ def _adjusted_downtime(
     if not intervals:
         return 0
     breaks_by_day: dict[date, Any] = {}  # shared memo — one breaks_for() per local date
+    sample_times = sorted(ts for ts, _units in samples)
     total_minutes = 0.0
     for event_end, duration_min in downtime_rows:
         # The meter stamps each reading at the END of the interval it covers,
@@ -172,6 +174,16 @@ def _adjusted_downtime(
         # of the morning's production, inflating every producing station's
         # downtime by ~an hour at shift start.
         event_start = event_end - timedelta(minutes=duration_min)
+        # A stopped duration cannot truthfully span across a production
+        # reading. Zira can emit zero-unit Stopped rows whose duration reaches
+        # back over productive rows, so clip the claimed stop to the latest
+        # production sample inside the window before intersecting it with
+        # active intervals.
+        sample_idx = bisect_left(sample_times, event_end) - 1
+        if sample_idx >= 0:
+            latest_sample = sample_times[sample_idx]
+            if latest_sample > event_start:
+                event_start = latest_sample
         for ai_start, ai_end in intervals:
             overlap_start = max(event_start, ai_start)
             overlap_end = min(event_end, ai_end)

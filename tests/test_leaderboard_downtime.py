@@ -195,3 +195,25 @@ def test_fetch_station_day_ignores_stopped_status_on_productive_rows(monkeypatch
 
     assert total.units == 130
     assert total.downtime_minutes == 0
+
+
+def test_adjusted_downtime_trims_stop_duration_that_crosses_production(_lunch_1130_to_1200):
+    """A stopped-duration row cannot reach backward across a production sample.
+
+    Live Zira data can emit a zero-unit Stopped row at the top of the hour with
+    a long duration even though productive readings exist inside that duration.
+    Production inside the claimed stopped window proves the machine was not
+    continuously down, so downtime can only start after the latest production
+    sample in that window.
+    """
+    day = date(2026, 7, 3)
+    samples = [
+        (_utc(6, 5, day), 40),
+        (_utc(6, 30, day), 45),
+        (_utc(6, 55, day), 63),
+    ]
+    downtime_rows = [(_utc(7, 0, day), 55)]  # Claims 06:05 -> 07:00, crossing production.
+    end_of_day = _utc(7, 24, day)
+
+    result = leaderboard._adjusted_downtime(downtime_rows, samples, end_of_day)
+    assert result == 5
