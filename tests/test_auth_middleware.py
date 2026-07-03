@@ -88,6 +88,19 @@ def test_bypass_list(mini_app):
     assert c.get("/auth/login").status_code == 200
 
 
+def test_object_api_path_bypasses_session_redirect(mini_app):
+    from starlette.responses import JSONResponse
+
+    @mini_app.get("/api/v1/object/ping")
+    def _api():
+        return JSONResponse({"ok": True})
+
+    c = TestClient(mini_app)
+    r = c.get("/api/v1/object/ping", follow_redirects=False)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
 def test_auth_disabled_env_var_bypasses_everything(mini_app, monkeypatch):
     monkeypatch.setenv("AUTH_DISABLED", "1")
     c = TestClient(mini_app)

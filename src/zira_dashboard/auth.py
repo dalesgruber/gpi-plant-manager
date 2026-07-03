@@ -158,6 +158,7 @@ from starlette.responses import RedirectResponse
 _BYPASS_PREFIXES = (
     "/auth/",      # login + callback + logout
     "/static/",    # CSS/JS/images
+    "/api/v1/object/",  # server-to-server bearer-auth API owns its own auth
 )
 _BYPASS_EXACT = frozenset({
     "/healthz",
