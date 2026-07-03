@@ -229,7 +229,7 @@ def test_daily_records_reads_from_production_daily():
     production_history.attribution_for = poison
     try:
         out = production_history.daily_records(
-            _date(2099, 7, 1), _date(2099, 7, 31), client=None
+            _date(2099, 7, 1), _date(2099, 7, 31)
         )
     finally:
         production_history.attribution_for = saved
@@ -267,7 +267,7 @@ def test_attribution_range_reads_from_production_daily():
     production_history.attribution_for = poison
     try:
         out = production_history.attribution_range(
-            _date(2099, 8, 1), _date(2099, 8, 31), client=None
+            _date(2099, 8, 1), _date(2099, 8, 31)
         )
     finally:
         production_history.attribution_for = saved
@@ -308,7 +308,7 @@ def test_attribution_per_day_reads_from_production_daily():
     production_history.attribution_for = poison
     try:
         out = production_history.attribution_per_day(
-            _date(2099, 9, 1), _date(2099, 9, 30), client=None
+            _date(2099, 9, 1), _date(2099, 9, 30)
         )
     finally:
         production_history.attribution_for = saved
