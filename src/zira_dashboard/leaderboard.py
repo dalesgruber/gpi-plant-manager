@@ -246,7 +246,16 @@ def fetch_station_day(
             event_dt = _parse_event_date(r.get("event_date"))
             event_local = event_dt.astimezone(SITE_TZ) if event_dt else None
             in_shift_now = event_local is not None and _in_shift_local(event_local)
-            if status and status != WORKING_STATUS and isinstance(duration, (int, float)) and in_shift_now:
+            # Positive-unit rows prove production happened at this timestamp.
+            # Some Zira rows still carry a non-working status/duration there;
+            # let the next zero-unit stop row account for real downtime.
+            if (
+                u_int == 0
+                and status
+                and status != WORKING_STATUS
+                and isinstance(duration, (int, float))
+                and in_shift_now
+            ):
                 downtime_rows.append((event_dt, int(duration)))
             if u_int > 0 and event_dt is not None and in_shift_now:
                 samples.append((event_dt, u_int))

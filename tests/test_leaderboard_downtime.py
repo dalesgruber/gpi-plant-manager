@@ -14,6 +14,7 @@ import pytest
 
 from zira_dashboard import leaderboard
 from zira_dashboard.shift_config import SITE_TZ
+from zira_dashboard.stations import Station
 
 
 class _Break:
@@ -43,6 +44,10 @@ def _local(h: int, m: int = 0, day: date | None = None) -> datetime:
 
 def _utc(h: int, m: int = 0, day: date | None = None) -> datetime:
     return _local(h, m, day).astimezone(timezone.utc)
+
+
+def _iso_z(h: int, m: int = 0, day: date | None = None) -> str:
+    return _utc(h, m, day).isoformat().replace("+00:00", "Z")
 
 
 def test_minutes_in_breaks_no_overlap(_lunch_1130_to_1200):
@@ -136,3 +141,57 @@ def test_adjusted_downtime_ignores_overnight_stop_stamped_at_shift_start(_lunch_
 
     result = leaderboard._adjusted_downtime(downtime_rows, samples, end_of_day)
     assert result == 0
+
+
+def test_fetch_station_day_ignores_stopped_status_on_productive_rows(monkeypatch):
+    """A row with units is production evidence, not downtime evidence.
+
+    Zira can return a non-working status/duration on the same reading that
+    carries positive units. Counting that row as a continuous stopped interval
+    makes the Downtime Report claim the station was down for the same minutes
+    it was producing pallets.
+    """
+    day = date(2026, 7, 3)
+    monkeypatch.setattr(leaderboard, "is_workday", lambda d: True)
+    monkeypatch.setattr(leaderboard, "shift_start_for", lambda d: time(6, 0))
+    monkeypatch.setattr(leaderboard, "shift_end_for", lambda d: time(14, 30))
+    monkeypatch.setattr(leaderboard, "breaks_for", lambda d: ())
+
+    class _Client:
+        def get_readings(self, **kwargs):
+            return {
+                "data": [
+                    {
+                        "event_date": _iso_z(6, 5, day),
+                        "units": 40,
+                        "status": "Working",
+                        "duration": 0,
+                    },
+                    {
+                        "event_date": _iso_z(6, 30, day),
+                        "units": 45,
+                        "status": "Working",
+                        "duration": 0,
+                    },
+                    {
+                        "event_date": _iso_z(7, 0, day),
+                        "units": 45,
+                        "status": "Stopped",
+                        "duration": 55,
+                    },
+                ],
+                "lastValue": None,
+            }
+
+    station = Station(meter_id="d3", name="Dismantler 3", category="Dismantler", cell="Recycling")
+    start_iso, end_iso = leaderboard.day_window_utc(day)
+    total = leaderboard.fetch_station_day(
+        _Client(),
+        station,
+        start_iso,
+        end_iso,
+        now_utc=_utc(7, 14, day),
+    )
+
+    assert total.units == 130
+    assert total.downtime_minutes == 0
