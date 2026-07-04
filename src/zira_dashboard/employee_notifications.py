@@ -111,16 +111,35 @@ def suppress_resolution(
     Odoo copy of a leave it just approved locally; the poller observing
     that refuse must not raise a "denied" popup. Deliberately ignores the
     kill-switch: the row must exist even while popups are disabled, in
-    case the feature is re-enabled later."""
+    case the feature is re-enabled later.
+
+    ON CONFLICT DO UPDATE (not DO NOTHING): a stale UNacknowledged popup
+    of the same kind may already exist — suppression must neutralize it
+    too, while leaving an already-acknowledged timestamp untouched."""
     title, body = _render(kind, req)
     db.execute(
         "INSERT INTO employee_notifications "
         "(person_odoo_id, kind, time_off_request_id, odoo_leave_id, "
         " title, body, leave_date_from, leave_date_to, acknowledged_at) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now()) "
-        "ON CONFLICT (time_off_request_id, kind) DO NOTHING",
+        "ON CONFLICT (time_off_request_id, kind) DO UPDATE "
+        "SET acknowledged_at = "
+        "COALESCE(employee_notifications.acknowledged_at, now())",
         (person_odoo_id, kind, req.get("id"), req.get("odoo_leave_id"),
          title, body, req.get("date_from"), req.get("date_to")),
+    )
+
+
+def unsuppress_resolution(time_off_request_id: int, kind: str) -> None:
+    """Undo ``suppress_resolution`` when the operation it protected was
+    aborted: delete the pre-acknowledged row so a future genuine
+    resolution of this kind can still notify. Only acknowledged rows are
+    touched — a live (unacknowledged) popup is never deleted."""
+    db.execute(
+        "DELETE FROM employee_notifications "
+        "WHERE time_off_request_id = %s AND kind = %s "
+        "AND acknowledged_at IS NOT NULL",
+        (time_off_request_id, kind),
     )
 
 

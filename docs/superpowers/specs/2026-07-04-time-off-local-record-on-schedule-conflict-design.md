@@ -57,19 +57,23 @@ with `_friendly_odoo_error`):
 
 1. **Pre-insert a suppression notification** — a pre-acknowledged
    `(time_off_request_id, 'time_off_denied')` row in `employee_notifications`
-   (new helper, `ON CONFLICT DO NOTHING`). The unique index makes any later
-   poller-generated "denied" popup for this request a silent no-op. This closes the
-   race where a poll tick lands between the Odoo refuse and our local write.
+   (new helper; `ON CONFLICT DO UPDATE` acking any pre-existing row, so even a
+   stale unacknowledged "denied" popup is neutralized). The unique index makes any
+   later poller-generated "denied" popup for this request a silent no-op. This
+   closes the race where a poll tick lands between the Odoo refuse and our local
+   write. If the fallback aborts (refuse fails), the suppression row is deleted
+   again (`unsuppress_resolution`, acknowledged rows only) so a later genuine
+   Odoo-side denial can still notify.
 2. **Refuse the leave in Odoo** (`refuse_leave`). Odoo permits refusing from
    `confirm`/`validate1` regardless of calendars. If the refuse itself fails, abort the
    fallback and return the friendly 500 exactly as today (nothing recorded; retry later).
    The still-pending Odoo copy would otherwise resurrect pending cards via the poller.
 3. **Record locally**: `UPDATE time_off_requests SET state='validate',
-   local_record=TRUE, synced_to_odoo=TRUE, sync_error=<marker text>, last_pushed_at,
-   updated_at` and fire `time_off_sync.cascade_on_state_change` + cache busts (sibling
-   of `_set_time_off_state`; kept separate because that helper nulls `sync_error`).
-   The marker text in `sync_error` documents *why* the row is local-only; nothing
-   renders `sync_error` for non-pending rows.
+   local_record=TRUE, synced_to_odoo=TRUE, sync_error=NULL, last_pushed_at,
+   updated_at` and fire `time_off_sync.cascade_on_state_change` + cache busts
+   (sibling of `_set_time_off_state`). `sync_error` stays NULL — the kiosk detail
+   page renders it as a red error box, so the *why* lives in the decision audit,
+   the inbox log, and the Odoo chatter note instead.
 4. **Best-effort chatter note** on the refused Odoo leave explaining that the absence
    was approved and recorded in Plant Manager and the Odoo copy was closed because the
    Working Schedule does not include the day(s). Failure is logged, not surfaced.
@@ -95,6 +99,21 @@ a re-click hits the existing `state == 'validate'` no-op guard.
   already refused; `action_refuse` from `refuse` raises) and just settle the row
   locally. This keeps the employee-initiated kiosk cancel of a locally-recorded
   absence from wedging the retry sweep.
+- `_push_edit`: defense in depth — if a `draft_edit` ever lands on a `local_record`
+  row, skip the Odoo write and settle the row back to `state='validate'` instead of
+  writing to the refused leave (which would strand the row or drag it to `confirm`).
+
+### Manager deny & kiosk edit of a local record
+
+- `_refuse_time_off_sync` skips `refuse_leave` for `local_record` rows (the Odoo
+  copy is already refused — the RPC would raise forever) and settles locally; the
+  deny reason still posts to the Odoo chatter. `_set_time_off_state` now also
+  clears `local_record`, handing ownership back to the poller once local and Odoo
+  states agree again. This keeps deny as the manager's undo for a fallback approval.
+- The kiosk **Edit** flow is closed for `local_record` rows: the detail template
+  hides the Edit button, and both edit routes bounce even a hand-crafted request
+  (an edit would write to the refused Odoo leave and corrupt the record). Kiosk
+  **Cancel** stays available and settles locally via the `_push_cancel` guard.
 
 ### Employee-facing surfaces
 

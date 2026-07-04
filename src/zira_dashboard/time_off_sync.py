@@ -225,7 +225,24 @@ def _push_edit(row: dict[str, Any]) -> None:
 
     Caller staged the new values in the row before flipping state to
     ``'draft_edit'`` — we just translate them to Odoo field names.
+
+    Local records must never get here (the kiosk edit routes reject
+    them), but if one does, writing to its refused Odoo copy would either
+    raise forever in the sweep or drag the row back to ``'confirm'`` —
+    settle it back to its approved local state instead.
     """
+    if row.get("local_record"):
+        _log.warning(
+            "push_edit skipped for local record row %s — restoring "
+            "state='validate'", row["id"],
+        )
+        db.execute(
+            "UPDATE time_off_requests SET state = 'validate', "
+            "synced_to_odoo = TRUE, sync_error = NULL, "
+            "last_pushed_at = now(), updated_at = now() WHERE id = %s",
+            (row["id"],),
+        )
+        return
     fields: dict[str, Any] = {
         "request_date_from": row["date_from"].isoformat(),
         "request_date_to": row["date_to"].isoformat(),

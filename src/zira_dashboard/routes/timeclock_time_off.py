@@ -620,7 +620,7 @@ def _load_request(rid: int, person_odoo_id: int) -> dict | None:
     rows = db.query(
         "SELECT id, person_odoo_id, originating_kiosk_user, shape, "
         "holiday_status_id, date_from, date_to, hour_from, hour_to, "
-        "note, state, odoo_leave_id, sync_error "
+        "note, state, odoo_leave_id, sync_error, local_record "
         "FROM time_off_requests WHERE id = %s AND person_odoo_id = %s",
         (rid, person_odoo_id),
     )
@@ -837,7 +837,11 @@ def mine_edit(request: Request, token: str, rid: int):
     type list stays consistent with the row's existing shape — an edit
     keeps the same shape (changing shape mid-edit would mean a different
     request entirely; the user can cancel and re-submit if they need a
-    different shape)."""
+    different shape).
+
+    Locally-recorded absences (``local_record``) are not editable: their
+    Odoo copy sits refused, so ``_push_edit`` has nothing valid to write
+    to — bounce to the list (the detail page hides Edit for them too)."""
     person_id = _verify_token(token)
     if person_id is None:
         return _expired_redirect(request)
@@ -845,7 +849,7 @@ def mine_edit(request: Request, token: str, rid: int):
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
     row = _load_request(rid, p["odoo_id"])
-    if not row:
+    if not row or row.get("local_record"):
         return RedirectResponse(
             url=f"/timeclock/time-off/mine/{_mint_token(person_id)}",
             status_code=303,
@@ -908,7 +912,9 @@ def mine_edit_submit(
     if not p or not p.get("odoo_id"):
         return RedirectResponse(url="/timeclock", status_code=303)
     row = _load_request(rid, p["odoo_id"])
-    if not row:
+    # local_record rows are not editable (their Odoo copy sits refused) —
+    # reject even a hand-crafted POST, mirroring the mine_edit GET guard.
+    if not row or row.get("local_record"):
         return RedirectResponse(
             url=f"/timeclock/time-off/mine/{_mint_token(person_id)}",
             status_code=303,

@@ -210,8 +210,9 @@ def test_suppress_resolution_inserts_pre_acknowledged_row(fake_db):
     # Born acknowledged — must never render on the kiosk interstitial.
     assert "acknowledged_at" in sql
     assert "now()" in sql
-    # Same dedupe arm as regular notifications.
-    assert "ON CONFLICT (time_off_request_id, kind) DO NOTHING" in sql
+    # Same dedupe arm as regular notifications, but DO UPDATE so a
+    # pre-existing unacked popup gets neutralized too.
+    assert "ON CONFLICT (time_off_request_id, kind) DO UPDATE" in sql
     assert 5 in params
     assert 71 in params
     assert "time_off_denied" in params
@@ -230,3 +231,35 @@ def test_suppress_resolution_ignores_kill_switch(fake_db, monkeypatch):
 
     assert any("INSERT INTO employee_notifications" in e[0]
                for e in fake_db["executes"])
+
+
+def test_suppress_resolution_acks_a_preexisting_unacknowledged_row(fake_db):
+    # A stale UNacked "denied" popup can already exist (earlier Odoo-side
+    # refuse that was later reset). Suppression must neutralize it, not
+    # no-op past it — otherwise the employee sees "denied" for an absence
+    # the app just approved. Hence DO UPDATE, not DO NOTHING.
+    req = {
+        "id": 73, "person_odoo_id": 7, "odoo_leave_id": 90,
+        "date_from": date(2026, 7, 3), "date_to": date(2026, 7, 3),
+    }
+
+    en.suppress_resolution(7, req, kind="time_off_denied")
+
+    sql = fake_db["executes"][0][0]
+    assert "ON CONFLICT (time_off_request_id, kind) DO UPDATE" in sql
+    assert "COALESCE(employee_notifications.acknowledged_at, now())" in sql
+
+
+def test_unsuppress_resolution_deletes_only_acknowledged_rows(fake_db):
+    # Abort-path cleanup: remove the pre-acked suppression row so a future
+    # genuine Odoo-side denial can still notify. Never touch a live
+    # (unacknowledged) popup.
+    en.unsuppress_resolution(71, kind="time_off_denied")
+
+    deletes = [e for e in fake_db["executes"]
+               if "DELETE FROM employee_notifications" in e[0]]
+    assert len(deletes) == 1
+    sql, params = deletes[0]
+    assert "acknowledged_at IS NOT NULL" in sql
+    assert 71 in params
+    assert "time_off_denied" in params

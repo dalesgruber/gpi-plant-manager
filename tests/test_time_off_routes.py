@@ -566,3 +566,90 @@ def test_submit_conflict_renders_modal(monkeypatch):
     assert r.status_code == 409
     assert "You already have time off for this time" in r.text
     assert "/timeclock/time-off/mine/" in r.text
+
+
+# --------------------------------------------------------------------------
+# local_record rows (absence recorded despite an Odoo work-schedule
+# rejection; the Odoo copy sits refused). The kiosk must not offer Edit —
+# _push_edit would write to the refused hr.leave and strand the row — and
+# the edit routes must bounce even a hand-crafted POST. Cancel stays
+# available (its push path settles locally).
+# --------------------------------------------------------------------------
+
+
+def _local_record_row(rid, pid):
+    from datetime import date as _date
+    return {
+        "id": rid, "person_odoo_id": pid, "originating_kiosk_user": True,
+        "shape": "full_day", "holiday_status_id": 1,
+        "date_from": _date(2026, 7, 3), "date_to": _date(2026, 7, 3),
+        "hour_from": None, "hour_to": None, "note": None,
+        "state": "validate", "odoo_leave_id": 999, "sync_error": None,
+        "local_record": True,
+    }
+
+
+def _wire_local_record_kiosk(monkeypatch):
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._verify_token", lambda t: 1)
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._person_by_id",
+        lambda pid: {"id": 1, "name": "T", "odoo_id": 5,
+                     "spanish_speaker": False})
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._load_request",
+        lambda rid, pid: _local_record_row(rid, pid))
+
+
+def test_mine_detail_hides_edit_for_local_record(monkeypatch):
+    _wire_local_record_kiosk(monkeypatch)
+    client = TestClient(app)
+    r = client.get("/timeclock/time-off/mine/anytoken/42")
+    assert r.status_code == 200
+    assert "Edit Request" not in r.text
+    assert "Cancel This Request" in r.text
+
+
+def test_edit_get_bounces_local_record_row(monkeypatch):
+    _wire_local_record_kiosk(monkeypatch)
+    client = TestClient(app)
+    r = client.get("/timeclock/time-off/mine/anytoken/42/edit",
+                   follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_edit_post_rejects_local_record_row(monkeypatch):
+    _wire_local_record_kiosk(monkeypatch)
+    updates = []
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._update_request_row",
+        lambda **kw: updates.append(kw))
+    queued = []
+    monkeypatch.setattr(
+        "zira_dashboard.routes.timeclock_time_off._queue_push",
+        lambda rid: queued.append(rid))
+    client = TestClient(app)
+    r = client.post(
+        "/timeclock/time-off/mine/anytoken/42/edit",
+        data={
+            "shape": "full_day", "holiday_status_id": "1",
+            "date_from": "2026-07-10", "date_to": "2026-07-10",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert updates == []
+    assert queued == []
+
+
+def test_load_request_selects_local_record(monkeypatch):
+    import zira_dashboard.routes.timeclock_time_off as mod
+    seen = {}
+
+    def fake_query(sql, params=None):
+        seen["sql"] = sql
+        return []
+
+    monkeypatch.setattr(mod.db, "query", fake_query)
+    mod._load_request(42, 5)
+    assert "local_record" in seen["sql"]

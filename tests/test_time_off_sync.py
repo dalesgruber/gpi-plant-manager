@@ -1162,3 +1162,29 @@ def test_push_cancel_local_record_skips_odoo(monkeypatch, fake_db):
     settles = [e for e in fake_db["executes"]
                if "SET state = 'refuse'" in e[0]]
     assert len(settles) == 1
+
+
+def test_push_edit_local_record_skips_odoo_and_restores_validate(
+        monkeypatch, fake_db):
+    """Defense in depth: the kiosk edit routes reject local records, but if
+    a draft_edit ever lands on one, the push must not write to the refused
+    Odoo leave — it settles the row back to its approved local state."""
+    from unittest.mock import MagicMock
+    fake_db["query_result"] = [{
+        "id": 9, "person_odoo_id": 5, "shape": "full_day",
+        "holiday_status_id": 1,
+        "date_from": date(2026, 7, 10), "date_to": date(2026, 7, 10),
+        "hour_from": None, "hour_to": None, "note": None,
+        "state": "draft_edit", "odoo_leave_id": 88,
+        "local_record": True,
+    }]
+    write = MagicMock()
+    monkeypatch.setattr(time_off_sync.odoo_client, "write_leave", write)
+
+    time_off_sync.push_one(9)
+
+    write.assert_not_called()
+    settles = [e for e in fake_db["executes"]
+               if "SET state = 'validate'" in e[0]]
+    assert len(settles) == 1
+    assert "synced_to_odoo = TRUE" in settles[0][0]

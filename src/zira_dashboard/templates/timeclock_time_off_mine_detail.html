@@ -74,12 +74,16 @@
 
     {% if request_row.originating_kiosk_user
           and request_row.state not in ("cancel", "refuse", "draft_cancel") %}
+      {# Locally-recorded absences aren't editable — their Odoo copy sits
+         refused, so there is nothing valid for an edit to write to. #}
+      {% if not request_row.local_record %}
       <a href="/timeclock/time-off/mine/{{ token }}/{{ request_row.id }}/edit"
          class="k-btn"
          style="display: block; text-align: center; margin-top: 2rem;
                 min-width: 280px; width: 100%; text-decoration: none;">
         {{ t("Edit Request") }}
       </a>
+      {% endif %}
       <form method="post"
             action="/timeclock/time-off/mine/{{ token }}/{{ request_row.id }}/cancel"
             class="time-off-cancel-form"

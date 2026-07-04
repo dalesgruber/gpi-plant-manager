@@ -72,7 +72,7 @@ def _load_time_off_request(request_id: int) -> dict[str, Any] | None:
     rows = db.query(
         "SELECT r.id, r.person_odoo_id, r.originating_kiosk_user, r.shape, "
         "r.holiday_status_id, r.date_from, r.date_to, r.hour_from, r.hour_to, "
-        "r.note, r.state, r.odoo_leave_id, r.sync_error, "
+        "r.note, r.state, r.odoo_leave_id, r.sync_error, r.local_record, "
         "COALESCE(p.name, '#' || r.person_odoo_id::text) AS person_name, "
         "COALESCE(lt.name, 'Time off') AS leave_type "
         "FROM time_off_requests r "
@@ -296,9 +296,13 @@ def _sync_to_odoo_if_needed(row: dict[str, Any]) -> dict[str, Any] | JSONRespons
 def _set_time_off_state(old: dict[str, Any], state: str) -> None:
     from .. import db, time_off_sync
 
+    # local_record = FALSE: a state set through a route matches what Odoo
+    # holds (or is about to hold), so a previously locally-owned row hands
+    # ownership back to the poller.
     db.execute(
         "UPDATE time_off_requests SET state = %s, synced_to_odoo = TRUE, "
-        "sync_error = NULL, last_pushed_at = now(), updated_at = now() "
+        "sync_error = NULL, local_record = FALSE, "
+        "last_pushed_at = now(), updated_at = now() "
         "WHERE id = %s",
         (state, old["id"]),
     )
@@ -308,12 +312,6 @@ def _set_time_off_state(old: dict[str, Any], state: str) -> None:
     _refresh_time_off_surfaces()
 
 
-# Written into `sync_error` on locally-recorded rows: not an error to
-# retry, a breadcrumb explaining why the row is detached from Odoo's state.
-_LOCAL_RECORD_SYNC_NOTE = (
-    "Recorded locally only — Odoo's Working Schedule doesn't include the "
-    "requested day(s); the Odoo request was refused with a note."
-)
 _LOCAL_RECORD_DECISION_REASON = (
     "Recorded in Plant Manager only — Odoo Working Schedule does not "
     "include the requested day(s)"
@@ -333,15 +331,16 @@ _LOCAL_RECORD_WARNING = (
 def _record_time_off_locally(old: dict[str, Any]) -> None:
     """Sibling of ``_set_time_off_state`` for the local-record fallback:
     approve the row locally and flag it ``local_record`` so the poller
-    neither overwrites nor deletes it. ``sync_error`` keeps a breadcrumb
-    (nothing renders it for non-pending rows)."""
+    neither overwrites nor deletes it. ``sync_error`` is cleared — the
+    kiosk detail page renders it as a red error, and the why lives in the
+    decision audit, the inbox log, and the Odoo chatter note."""
     from .. import db, time_off_sync
 
     db.execute(
         "UPDATE time_off_requests SET state = 'validate', "
-        "local_record = TRUE, synced_to_odoo = TRUE, sync_error = %s, "
+        "local_record = TRUE, synced_to_odoo = TRUE, sync_error = NULL, "
         "last_pushed_at = now(), updated_at = now() WHERE id = %s",
-        (_LOCAL_RECORD_SYNC_NOTE, old["id"]),
+        (old["id"],),
     )
     new = dict(old)
     new["state"] = "validate"
@@ -385,6 +384,15 @@ def _approve_locally_despite_schedule_conflict(
         except Exception:  # noqa: BLE001 — abort: leave must not stay pending
             log.warning("local-record fallback aborted: Odoo refuse failed "
                         "for leave %s", leave_id, exc_info=True)
+            try:
+                # Don't leak the suppression row: a later genuine
+                # Odoo-side denial of this still-pending request must
+                # still be able to notify.
+                employee_notifications.unsuppress_resolution(
+                    row["id"], kind="time_off_denied")
+            except Exception:  # noqa: BLE001
+                log.warning("suppression cleanup failed for request %s",
+                            row["id"], exc_info=True)
             return None
     _record_time_off_locally(row)
     if leave_id is not None:
@@ -563,10 +571,14 @@ def _refuse_time_off_sync(
 
     leave_id = row.get("odoo_leave_id")
     if leave_id is not None:
-        try:
-            odoo_client.refuse_leave(int(leave_id))
-        except Exception as e:
-            return _json_error(_friendly_odoo_error(e), 500)
+        # Locally-recorded approvals already hold a refused Odoo copy —
+        # action_refuse on it raises. The deny settles locally; the reason
+        # still lands on the Odoo chatter below.
+        if not row.get("local_record"):
+            try:
+                odoo_client.refuse_leave(int(leave_id))
+            except Exception as e:
+                return _json_error(_friendly_odoo_error(e), 500)
         try:
             odoo_client.post_leave_message(int(leave_id), reason)
         except Exception as e:  # noqa: BLE001 -- denial already succeeded

@@ -89,6 +89,9 @@ def _wire_fallback(monkeypatch, row, events):
         employee_notifications, "suppress_resolution",
         lambda pid, req, kind: events.append(("suppress", pid, req["id"], kind)))
     monkeypatch.setattr(
+        employee_notifications, "unsuppress_resolution",
+        lambda rid, kind: events.append(("unsuppress", rid, kind)))
+    monkeypatch.setattr(
         db, "execute",
         lambda sql, params=None: events.append(("sql", sql, params)))
     monkeypatch.setattr(
@@ -126,6 +129,10 @@ def test_approve_records_locally_when_odoo_rejects_schedule(monkeypatch):
                      if e[0] == "sql" and "local_record = TRUE" in e[1]]
     assert len(local_updates) == 1
     assert "state = 'validate'" in local_updates[0][1]
+    # sync_error is rendered on the employee's kiosk detail page — the
+    # local-record marker must not surface there as a red error.
+    assert "sync_error = NULL" in local_updates[0][1]
+    assert not [e for e in events if e[0] == "unsuppress"]
     assert ("cascade", "confirm", "validate") in events
 
     # Ordering: popup suppression BEFORE the Odoo refuse (closes the poll
@@ -172,6 +179,11 @@ def test_approve_falls_back_to_500_when_refuse_also_fails(monkeypatch):
     assert not [e for e in events if e[0] == "cascade"]
     decision.assert_not_called()
     inbox_event.assert_not_called()
+    # The pre-inserted suppression row must not outlive the aborted
+    # fallback — a later genuine Odoo-side denial must still notify.
+    assert ("unsuppress", 71, "time_off_denied") in events
+    tags = [e[0] for e in events]
+    assert tags.index("unsuppress") > tags.index("suppress")
 
 
 def test_approve_local_record_tolerates_chatter_failure(monkeypatch):
@@ -238,3 +250,93 @@ def test_refuse_surfaces_clean_message_when_odoo_rejects(monkeypatch):
     err = _body(resp)["error"]
     assert "<Fault" not in err
     assert "Some other Odoo problem" in err
+
+
+def test_approve_fallback_survives_suppression_failure(monkeypatch):
+    """The suppression insert is belt-and-braces, not load-bearing: a DB
+    blip there must not abort the local recording."""
+    events: list = []
+    row = _fallback_row()
+    decision, _inbox_event = _wire_fallback(monkeypatch, row, events)
+
+    from zira_dashboard import employee_notifications
+
+    def _suppress_boom(_pid, _req, kind):
+        raise RuntimeError("employee_notifications unavailable")
+
+    monkeypatch.setattr(employee_notifications, "suppress_resolution",
+                        _suppress_boom)
+
+    resp = exceptions_route._approve_time_off_sync(71, source="inbox")
+
+    assert resp.status_code == 200
+    assert _body(resp)["recorded_locally"] is True
+    decision.assert_called_once()
+
+
+def test_refuse_local_record_row_settles_locally_without_odoo(monkeypatch):
+    """Denying a locally-recorded approval must not call action_refuse on
+    the already-refused Odoo copy (Odoo raises) — it settles locally,
+    clearing local_record so Odoo owns the (now agreeing) row again."""
+    from unittest.mock import MagicMock
+
+    from zira_dashboard import db, odoo_client, time_off_sync
+
+    row = dict(_fallback_row(), state="validate", local_record=True)
+    monkeypatch.setattr(exceptions_route, "_load_time_off_request", lambda rid: row)
+    refuse = MagicMock()
+    monkeypatch.setattr(odoo_client, "refuse_leave", refuse)
+    chatter = MagicMock()
+    monkeypatch.setattr(odoo_client, "post_leave_message", chatter)
+    executed: list = []
+    monkeypatch.setattr(db, "execute",
+                        lambda sql, params=None: executed.append((sql, params)))
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change",
+                        lambda old, new: None)
+    monkeypatch.setattr(exceptions_route, "_refresh_time_off_surfaces", lambda: None)
+    monkeypatch.setattr(exceptions_route.time_off_audit, "record_decision", MagicMock())
+    monkeypatch.setattr(exceptions_route.inbox_log, "log_event_safe", MagicMock())
+
+    resp = exceptions_route._refuse_time_off_sync(
+        71, reason="Recorded by mistake", source="inbox")
+
+    assert resp.status_code == 200
+    assert _body(resp)["ok"] is True
+    refuse.assert_not_called()
+    # Deny reason still lands on the Odoo copy's chatter (best-effort).
+    chatter.assert_called_once()
+    settles = [e for e in executed if "state = %s" in e[0] or "'refuse'" in e[0]]
+    assert settles, "expected the local settle UPDATE"
+
+
+def test_set_time_off_state_clears_local_record(monkeypatch):
+    """Once a manager settles a row through a route, Odoo and the mirror
+    agree again — the poller may resume ownership."""
+    from zira_dashboard import db, time_off_sync
+
+    executed: list = []
+    monkeypatch.setattr(db, "execute",
+                        lambda sql, params=None: executed.append((sql, params)))
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change",
+                        lambda old, new: None)
+    monkeypatch.setattr(exceptions_route, "_refresh_time_off_surfaces", lambda: None)
+
+    exceptions_route._set_time_off_state(
+        {"id": 71, "state": "validate", "local_record": True}, "refuse")
+
+    assert len(executed) == 1
+    assert "local_record = FALSE" in executed[0][0]
+
+
+def test_load_time_off_request_selects_local_record(monkeypatch):
+    from zira_dashboard import db
+
+    seen = {}
+
+    def fake_query(sql, params=None):
+        seen["sql"] = sql
+        return []
+
+    monkeypatch.setattr(db, "query", fake_query)
+    exceptions_route._load_time_off_request(71)
+    assert "local_record" in seen["sql"]
