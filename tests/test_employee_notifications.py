@@ -184,3 +184,49 @@ def test_maybe_notify_swallows_db_errors(fake_db, monkeypatch):
     # Should not raise.
     en.maybe_notify_resolution(_req("confirm"), _req("validate"),
                                today=date(2026, 6, 29))
+
+
+# --------------------------------------------------------------------------
+# suppress_resolution — pre-acknowledged insert that arms the dedupe index
+# so a later poller-generated popup of the same kind is silently swallowed.
+# Used by the local-record fallback (approve despite an Odoo work-schedule
+# rejection): the fallback refuses the Odoo copy, and the employee must
+# never see a "denied" popup for a request the app actually approved.
+# --------------------------------------------------------------------------
+
+
+def test_suppress_resolution_inserts_pre_acknowledged_row(fake_db):
+    req = {
+        "id": 71, "person_odoo_id": 5, "odoo_leave_id": 88,
+        "date_from": date(2026, 7, 3), "date_to": date(2026, 7, 3),
+    }
+
+    en.suppress_resolution(5, req, kind="time_off_denied")
+
+    inserts = [e for e in fake_db["executes"]
+               if "INSERT INTO employee_notifications" in e[0]]
+    assert len(inserts) == 1
+    sql, params = inserts[0]
+    # Born acknowledged — must never render on the kiosk interstitial.
+    assert "acknowledged_at" in sql
+    assert "now()" in sql
+    # Same dedupe arm as regular notifications.
+    assert "ON CONFLICT (time_off_request_id, kind) DO NOTHING" in sql
+    assert 5 in params
+    assert 71 in params
+    assert "time_off_denied" in params
+
+
+def test_suppress_resolution_ignores_kill_switch(fake_db, monkeypatch):
+    # The suppression row must be written even while popups are disabled:
+    # it protects against the flag being re-enabled later.
+    monkeypatch.setenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", "0")
+    req = {
+        "id": 72, "person_odoo_id": 6, "odoo_leave_id": 89,
+        "date_from": date(2026, 7, 3), "date_to": date(2026, 7, 3),
+    }
+
+    en.suppress_resolution(6, req, kind="time_off_denied")
+
+    assert any("INSERT INTO employee_notifications" in e[0]
+               for e in fake_db["executes"])

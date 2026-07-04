@@ -129,7 +129,7 @@ def push_one(request_id: int) -> None:
     rows = db.query(
         "SELECT id, person_odoo_id, shape, holiday_status_id, "
         "date_from, date_to, hour_from, hour_to, note, "
-        "state, odoo_leave_id "
+        "state, odoo_leave_id, local_record "
         "FROM time_off_requests WHERE id = %s",
         (request_id,),
     )
@@ -246,8 +246,13 @@ def _push_edit(row: dict[str, Any]) -> None:
 
 
 def _push_cancel(row: dict[str, Any]) -> None:
-    """Refuse an existing Odoo hr.leave (pending-cancel or approved-cancel)."""
-    odoo_client.refuse_leave(row["odoo_leave_id"])
+    """Refuse an existing Odoo hr.leave (pending-cancel or approved-cancel).
+
+    Local records skip the RPC: their Odoo copy is already refused (the
+    approve fallback settled it), and ``action_refuse`` from ``'refuse'``
+    raises — the cancel settles locally only."""
+    if not row.get("local_record"):
+        odoo_client.refuse_leave(row["odoo_leave_id"])
     db.execute(
         "UPDATE time_off_requests SET state = 'refuse', "
         "synced_to_odoo = TRUE, sync_error = NULL, "
@@ -430,7 +435,7 @@ def _existing_rows_by_leave_id(odoo_leave_ids: list[int]) -> dict[int, dict]:
     rows = db.query(
         "SELECT id, person_odoo_id, state, shape, holiday_status_id, "
         "date_from, date_to, hour_from, hour_to, working_hours_json, "
-        "odoo_leave_id "
+        "odoo_leave_id, local_record "
         "FROM time_off_requests WHERE odoo_leave_id = ANY(%s)",
         (odoo_leave_ids,),
     )
@@ -564,6 +569,11 @@ def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
     note = leave.get("name") or None
 
     if existing is not None:
+        if existing.get("local_record"):
+            # This row's state is owned locally (absence recorded despite an
+            # Odoo work-schedule rejection; the Odoo copy sits refused). The
+            # mirror must not touch it.
+            return
         # Compare every field the UPDATE below writes; identical means the
         # tick has nothing to do for this row — skip the write.
         unchanged = (
@@ -583,12 +593,20 @@ def _upsert_one(leave: dict[str, Any], existing: dict[str, Any] | None) -> None:
         new_row["date_to"] = date_to
         new_row["hour_from"] = hour_from
         new_row["hour_to"] = hour_to
-        db.execute(
+        # NOT local_record + RETURNING close a race: ``existing`` comes from
+        # a map pre-fetched at the top of the poll pass, and the approve
+        # fallback can claim the row as a local record mid-pass. When the
+        # guarded write lands on nothing, behave as if the row were flagged
+        # all along — no cascade, no kiosk popup.
+        updated = db.query(
             "UPDATE time_off_requests SET state = %s, shape = %s, date_from = %s, "
             "date_to = %s, hour_from = %s, hour_to = %s, "
-            "last_pulled_at = now(), updated_at = now() WHERE id = %s",
+            "last_pulled_at = now(), updated_at = now() "
+            "WHERE id = %s AND NOT local_record RETURNING id",
             (state, shape, date_from, date_to, hour_from, hour_to, existing["id"]),
         )
+        if not updated:
+            return
         if existing["state"] != state:
             cascade_on_state_change(existing, new_row)
             employee_notifications.maybe_notify_resolution(existing, new_row)
@@ -635,13 +653,15 @@ def _delete_missing_from_odoo(
     allocation immediately rather than waiting for the 10-min balance sweep.
 
     Unsynced kiosk drafts (``odoo_leave_id IS NULL``) are never touched —
-    the WHERE clause excludes them."""
+    the WHERE clause excludes them. So are ``local_record`` rows: their
+    refused Odoo copy may legitimately be deleted by HR later, but the
+    locally-recorded absence must survive that."""
     rows = db.query(
         "SELECT id, state, person_odoo_id, shape, holiday_status_id, "
         "date_from, date_to, hour_from, hour_to, working_hours_json, "
         "odoo_leave_id "
         "FROM time_off_requests "
-        "WHERE odoo_leave_id IS NOT NULL "
+        "WHERE odoo_leave_id IS NOT NULL AND NOT local_record "
         "AND date_to >= %s AND date_from <= %s",
         (start_d, end_d),
     )

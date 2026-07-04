@@ -675,7 +675,9 @@
             rowStatus(row, 'Moved forward; refreshing...', false);
             setTimeout(function () { window.location.reload(); }, 600);
           } else if (resp && resp.ok) {
-            resolveRow(row, 'Approved');
+            resolveRow(row, resp.recorded_locally
+              ? 'Approved — recorded here (Odoo schedule conflict)'
+              : 'Approved');
           } else {
             failRow(row, (resp && resp.error) || 'Approval failed.');
           }

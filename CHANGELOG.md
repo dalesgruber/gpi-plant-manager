@@ -7,6 +7,12 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
      (anything ungrouped renders as "Highlights"). An entry with a Features
      group shows a green "New feature" badge in the What's New panel. -->
 
+## 2026-07-04
+
+### Fixes
+
+- **Absences on non-scheduled days now record instead of failing.** Approving time off for a day the employee's Odoo Working Schedule doesn't include (e.g. a Friday when the schedule is Mon–Thu) used to hard-fail with "Odoo won't approve this — ask HR to fix their Working Schedule," leaving the request stuck in the pending queue. The approval now goes through: the absence is recorded here (it shows on the scheduler, both calendars, coverage counts, and the employee's My Requests as Approved), while the Odoo copy is closed as refused with an explanatory note since Odoo can't represent time off on a non-working day. The kiosk will never show the employee a mistaken "denied" popup for these, and the Recent Decisions list spells out that the record lives in Plant Manager only. HR fixing the Working Schedule (the weekly conflict task) remains the long-term cleanup.
+
 ## 2026-07-03
 
 ### Fixes

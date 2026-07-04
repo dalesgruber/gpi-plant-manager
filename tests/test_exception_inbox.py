@@ -1133,3 +1133,12 @@ def test_exceptions_css_has_coverage_chip_styles():
     assert ".cov-wrap:hover .cov-tip" in css
     assert ".cov-wrap.cov-open .cov-tip" in css
     assert ".cov-same" in css
+
+
+def test_exceptions_js_labels_locally_recorded_approvals():
+    js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
+
+    # Local-record fallback (Odoo work-schedule rejection): the resolved row
+    # must be labeled as recorded-here rather than a plain "Approved".
+    assert "resp.recorded_locally" in js
+    assert "recorded here" in js

@@ -458,7 +458,7 @@ def test_poll_skips_update_when_row_unchanged(monkeypatch, fake_db):
                         lambda old, new: cascades.append((old, new)))
     time_off_sync.poll_odoo_leaves()
     assert not any("UPDATE time_off_requests" in e[0]
-                   for e in fake_db["executes"])
+                   for e in fake_db["executes"] + fake_db["queries"])
     assert cascades == []
 
 
@@ -491,8 +491,8 @@ def test_poll_self_heals_one_day_leave_with_incomplete_hour_bounds(monkeypatch, 
 
     time_off_sync.poll_odoo_leaves()
 
-    updates = [e for e in fake_db["executes"]
-               if "UPDATE time_off_requests" in e[0]]
+    updates = [q for q in fake_db["queries"]
+               if q[0].startswith("UPDATE time_off_requests")]
     assert updates, "expected stale partial mirror row to be corrected"
     sql, params = updates[0]
     assert "shape = %s" in sql
@@ -531,7 +531,7 @@ def test_poll_keeps_hour_unit_full_day_with_complete_bounds_full_day(monkeypatch
     time_off_sync.poll_odoo_leaves()
 
     assert not any("UPDATE time_off_requests" in e[0]
-                   for e in fake_db["executes"])
+                   for e in fake_db["executes"] + fake_db["queries"])
 
 
 def test_poll_incremental_tick_filters_by_write_date_and_skips_deletes(
@@ -804,6 +804,7 @@ def test_upsert_update_calls_notify_on_state_change(monkeypatch, fake_db):
         "request_hour_from": False, "request_hour_to": False,
         "name": "PTO",
     }
+    fake_db["query_result"] = [{"id": 1}]  # guarded UPDATE ... RETURNING id
     notify = MagicMock()
     monkeypatch.setattr(time_off_sync.employee_notifications,
                         "maybe_notify_resolution", notify)
@@ -1037,6 +1038,127 @@ def test_poll_preserves_kiosk_late_arrival_shape(monkeypatch, fake_db, company_s
     time_off_sync.poll_odoo_leaves()
 
     assert not any("UPDATE time_off_requests" in e[0]
-                   for e in fake_db["executes"]), (
+                   for e in fake_db["executes"] + fake_db["queries"]), (
         "poller must not rewrite a kiosk late_arrival row whose window is "
         "unchanged")
+
+
+# --------------------------------------------------------------------------
+# local_record — rows whose state is owned locally (absence recorded despite
+# an Odoo work-schedule rejection). The mirror engine must leave them alone:
+# no state clobber, no cascade, no kiosk popup, no deletion, no push RPC.
+# --------------------------------------------------------------------------
+
+
+def test_upsert_skips_local_record_rows(monkeypatch, fake_db):
+    """A flagged row is invisible to the poller: Odoo's refused copy must
+    not overwrite the locally-approved state (or notify anyone)."""
+    from unittest.mock import MagicMock
+    existing = {
+        "id": 1, "person_odoo_id": 5, "state": "validate", "shape": "full_day",
+        "date_from": date(2026, 7, 3), "date_to": date(2026, 7, 3),
+        "hour_from": None, "hour_to": None, "odoo_leave_id": 88,
+        "local_record": True,
+    }
+    leave = {
+        "id": 88, "state": "refuse",
+        "employee_id": (5, "X"), "holiday_status_id": (1, "Absence"),
+        "request_date_from": "2026-07-03", "request_date_to": "2026-07-03",
+        "number_of_days": 1, "request_unit_hours": False,
+        "request_hour_from": False, "request_hour_to": False,
+        "name": "Absence",
+    }
+    notify = MagicMock()
+    cascade = MagicMock()
+    monkeypatch.setattr(time_off_sync.employee_notifications,
+                        "maybe_notify_resolution", notify)
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change", cascade)
+
+    time_off_sync._upsert_one(leave, existing)
+
+    assert fake_db["executes"] == []
+    assert fake_db["queries"] == []
+    notify.assert_not_called()
+    cascade.assert_not_called()
+
+
+def test_upsert_update_guard_blocks_stale_map_races(monkeypatch, fake_db):
+    """The poller pre-fetches its row map in one batch; a row can become a
+    local record between that fetch and this row's turn. The UPDATE itself
+    must exclude local records (WHERE ... NOT local_record ... RETURNING),
+    and when the guarded write lands on nothing, neither the cascade nor
+    the kiosk notification may fire."""
+    from unittest.mock import MagicMock
+    existing = {
+        "id": 1, "person_odoo_id": 5, "state": "confirm", "shape": "full_day",
+        "date_from": date(2026, 7, 3), "date_to": date(2026, 7, 3),
+        "hour_from": None, "hour_to": None, "odoo_leave_id": 88,
+        "local_record": False,
+    }
+    leave = {
+        "id": 88, "state": "refuse",
+        "employee_id": (5, "X"), "holiday_status_id": (1, "Absence"),
+        "request_date_from": "2026-07-03", "request_date_to": "2026-07-03",
+        "number_of_days": 1, "request_unit_hours": False,
+        "request_hour_from": False, "request_hour_to": False,
+        "name": "Absence",
+    }
+    fake_db["query_result"] = []  # guarded UPDATE matched no row
+    notify = MagicMock()
+    cascade = MagicMock()
+    monkeypatch.setattr(time_off_sync.employee_notifications,
+                        "maybe_notify_resolution", notify)
+    monkeypatch.setattr(time_off_sync, "cascade_on_state_change", cascade)
+
+    time_off_sync._upsert_one(leave, existing)
+
+    updates = [q for q in fake_db["queries"]
+               if q[0].startswith("UPDATE time_off_requests")]
+    assert len(updates) == 1
+    assert "NOT local_record" in updates[0][0]
+    assert "RETURNING" in updates[0][0]
+    notify.assert_not_called()
+    cascade.assert_not_called()
+
+
+def test_existing_rows_fetch_includes_local_record(fake_db):
+    time_off_sync._existing_rows_by_leave_id([88])
+    assert fake_db["queries"], "expected the batched SELECT"
+    assert "local_record" in fake_db["queries"][0][0]
+
+
+def test_delete_missing_never_targets_local_record_rows(fake_db):
+    """The full-pass deletion sweep must exclude local records at the SQL
+    level — if HR later deletes the refused Odoo copy, the local absence
+    record survives."""
+    time_off_sync._delete_missing_from_odoo(
+        set(), date(2026, 7, 1), date(2026, 7, 31))
+    assert fake_db["queries"], "expected the candidate SELECT"
+    assert "NOT local_record" in fake_db["queries"][0][0]
+
+
+def test_push_cancel_local_record_skips_odoo(monkeypatch, fake_db):
+    """Employee cancels a locally-recorded absence from the kiosk: the Odoo
+    copy is already refused (action_refuse from 'refuse' raises), so the
+    cancel must settle locally without any RPC."""
+    from unittest.mock import MagicMock
+    fake_db["query_result"] = [{
+        "id": 9, "person_odoo_id": 5, "shape": "full_day",
+        "holiday_status_id": 1,
+        "date_from": date(2026, 7, 10), "date_to": date(2026, 7, 10),
+        "hour_from": None, "hour_to": None, "note": None,
+        "state": "draft_cancel", "odoo_leave_id": 88,
+        "local_record": True,
+    }]
+    refuse = MagicMock()
+    monkeypatch.setattr(time_off_sync.odoo_client, "refuse_leave", refuse)
+
+    time_off_sync.push_one(9)
+
+    refuse.assert_not_called()
+    # push_one's own SELECT must carry the flag (the fake bypasses SQL, so
+    # pin the column in the statement text too).
+    assert "local_record" in fake_db["queries"][0][0]
+    settles = [e for e in fake_db["executes"]
+               if "SET state = 'refuse'" in e[0]]
+    assert len(settles) == 1

@@ -99,6 +99,31 @@ def create_time_off_notification(
     )
 
 
+def suppress_resolution(
+    person_odoo_id: int, req: dict[str, Any], kind: str,
+) -> None:
+    """Pre-insert an already-acknowledged notification of ``kind`` so the
+    unique (time_off_request_id, kind) index swallows any future
+    poller-generated popup of that kind for this request.
+
+    Used when a route settles a leave in Odoo in a way the employee must
+    NOT be told about — e.g. the local-record approve fallback refuses the
+    Odoo copy of a leave it just approved locally; the poller observing
+    that refuse must not raise a "denied" popup. Deliberately ignores the
+    kill-switch: the row must exist even while popups are disabled, in
+    case the feature is re-enabled later."""
+    title, body = _render(kind, req)
+    db.execute(
+        "INSERT INTO employee_notifications "
+        "(person_odoo_id, kind, time_off_request_id, odoo_leave_id, "
+        " title, body, leave_date_from, leave_date_to, acknowledged_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now()) "
+        "ON CONFLICT (time_off_request_id, kind) DO NOTHING",
+        (person_odoo_id, kind, req.get("id"), req.get("odoo_leave_id"),
+         title, body, req.get("date_from"), req.get("date_to")),
+    )
+
+
 def maybe_notify_resolution(
     old: dict[str, Any], new: dict[str, Any], today: date | None = None,
 ) -> None:

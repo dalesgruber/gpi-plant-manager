@@ -88,19 +88,38 @@ def _json_error(message: str, status_code: int) -> JSONResponse:
     return JSONResponse({"ok": False, "error": message}, status_code=status_code)
 
 
+# Odoo's hr.leave ValidationError when the employee's Working Schedule has
+# no attendance on the requested day(s). Locale-dependent by nature — the
+# API user's language must stay English for this (and _friendly_odoo_error)
+# to match.
+_WORK_SCHEDULE_CONFLICT_SNIPPET = "not supposed to work during that period"
+
+
+def _fault_text(e: Exception) -> str:
+    """The useful text of an Odoo/xmlrpc exception, whitespace-collapsed.
+    xmlrpc Faults stringify as the noisy ``<Fault N: '...'>`` repr; the
+    real message lives on ``.faultString``."""
+    msg = getattr(e, "faultString", None) or str(e)
+    return " ".join(str(msg).split())
+
+
+def _is_work_schedule_conflict(e: Exception) -> bool:
+    return _WORK_SCHEDULE_CONFLICT_SNIPPET in _fault_text(e)
+
+
 def _friendly_odoo_error(e: Exception) -> str:
     """Turn an Odoo/xmlrpc exception into a clean, user-facing message.
 
-    xmlrpc Faults stringify as the noisy ``<Fault N: '...'>`` repr (with
-    literal ``\\n``); the useful text lives on ``.faultString``. Collapse
-    whitespace so it fits the inbox's one-line status. For Odoo's
+    Collapse whitespace so it fits the inbox's one-line status. For Odoo's
     work-schedule rejection ("not supposed to work during that period"),
     prepend a hint on how to resolve it — that one is a Working Schedule
     data issue HR fixes in Odoo, not something the manager can force here.
+    (The approve path normally records such absences locally instead; this
+    message only surfaces when that fallback itself could not settle the
+    Odoo copy.)
     """
-    msg = getattr(e, "faultString", None) or str(e)
-    msg = " ".join(str(msg).split())
-    if "not supposed to work during that period" in msg:
+    msg = _fault_text(e)
+    if _WORK_SCHEDULE_CONFLICT_SNIPPET in msg:
         return (
             "Odoo won't approve this — the employee's Working Schedule in "
             "Odoo doesn't include the requested day(s). Ask HR to fix their "
@@ -289,6 +308,139 @@ def _set_time_off_state(old: dict[str, Any], state: str) -> None:
     _refresh_time_off_surfaces()
 
 
+# Written into `sync_error` on locally-recorded rows: not an error to
+# retry, a breadcrumb explaining why the row is detached from Odoo's state.
+_LOCAL_RECORD_SYNC_NOTE = (
+    "Recorded locally only — Odoo's Working Schedule doesn't include the "
+    "requested day(s); the Odoo request was refused with a note."
+)
+_LOCAL_RECORD_DECISION_REASON = (
+    "Recorded in Plant Manager only — Odoo Working Schedule does not "
+    "include the requested day(s)"
+)
+_LOCAL_RECORD_CHATTER = (
+    "Approved and recorded in GPI Plant Manager. Odoo could not validate "
+    "this request because the employee's Working Schedule does not include "
+    "the requested day(s), so this Odoo copy was closed as refused. The "
+    "Plant Manager record is authoritative for this absence."
+)
+_LOCAL_RECORD_WARNING = (
+    "Odoo couldn't validate this (the Working Schedule doesn't include the "
+    "day(s)); recorded here instead and the Odoo copy was closed with a note."
+)
+
+
+def _record_time_off_locally(old: dict[str, Any]) -> None:
+    """Sibling of ``_set_time_off_state`` for the local-record fallback:
+    approve the row locally and flag it ``local_record`` so the poller
+    neither overwrites nor deletes it. ``sync_error`` keeps a breadcrumb
+    (nothing renders it for non-pending rows)."""
+    from .. import db, time_off_sync
+
+    db.execute(
+        "UPDATE time_off_requests SET state = 'validate', "
+        "local_record = TRUE, synced_to_odoo = TRUE, sync_error = %s, "
+        "last_pushed_at = now(), updated_at = now() WHERE id = %s",
+        (_LOCAL_RECORD_SYNC_NOTE, old["id"]),
+    )
+    new = dict(old)
+    new["state"] = "validate"
+    new["local_record"] = True
+    time_off_sync.cascade_on_state_change(old, new)
+    _refresh_time_off_surfaces()
+
+
+def _approve_locally_despite_schedule_conflict(
+    row: dict[str, Any],
+    *,
+    actor_upn: str | None,
+    actor_name: str | None,
+    source: str | None,
+) -> JSONResponse | None:
+    """Odoo won't validate a leave whose Working Schedule lacks the
+    requested day(s) — record the absence locally instead of hard-failing.
+
+    Order matters: (1) pre-suppress the would-be "denied" kiosk popup (the
+    poller may observe the refuse before our local write lands), (2) refuse
+    the Odoo copy — the only settled state Odoo allows here, (3) approve the
+    local row as a poller-proof ``local_record``, (4) best-effort chatter
+    note on the refused leave. Returns None when the Odoo refuse fails, so
+    the caller falls back to the friendly 500 and nothing is half-recorded.
+    """
+    import logging
+
+    from .. import employee_notifications, odoo_client
+
+    log = logging.getLogger(__name__)
+    leave_id = row.get("odoo_leave_id")
+    try:
+        employee_notifications.suppress_resolution(
+            row["person_odoo_id"], row, kind="time_off_denied")
+    except Exception:  # noqa: BLE001 — belt-and-braces guard, not load-bearing
+        log.warning("denied-popup suppression failed for request %s",
+                    row["id"], exc_info=True)
+    if leave_id is not None:
+        try:
+            odoo_client.refuse_leave(int(leave_id))
+        except Exception:  # noqa: BLE001 — abort: leave must not stay pending
+            log.warning("local-record fallback aborted: Odoo refuse failed "
+                        "for leave %s", leave_id, exc_info=True)
+            return None
+    _record_time_off_locally(row)
+    if leave_id is not None:
+        try:
+            odoo_client.post_leave_message(int(leave_id), _LOCAL_RECORD_CHATTER)
+        except Exception as e:  # noqa: BLE001 — record already settled
+            log.warning("chatter post failed for leave %s (local record "
+                        "still applied): %s", leave_id, e)
+    time_off_audit.record_decision(
+        request_id=row["id"],
+        odoo_leave_id=leave_id,
+        person_odoo_id=row.get("person_odoo_id"),
+        person_name=row.get("person_name"),
+        leave_type=row.get("leave_type"),
+        date_from=row.get("date_from"),
+        date_to=row.get("date_to"),
+        hour_from=row.get("hour_from"),
+        hour_to=row.get("hour_to"),
+        action="approve",
+        result_state="validate",
+        reason=_LOCAL_RECORD_DECISION_REASON,
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source=source,
+    )
+    inbox_log.log_event_safe(
+        item_kind="time_off",
+        item_key=inbox_keys.time_off(row["id"]),
+        person_name=row.get("person_name"),
+        category_label="Time off",
+        action="approve",
+        outcome="Approved (recorded locally)",
+        after_value="validate",
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source=source,
+        reversible=False,
+    )
+    return JSONResponse({
+        "ok": True,
+        "state": "validate",
+        "approved": True,
+        "recorded_locally": True,
+        "warning": _LOCAL_RECORD_WARNING,
+        "decision": _decision_summary(
+            row,
+            action="approve",
+            result_state="validate",
+            reason=_LOCAL_RECORD_DECISION_REASON,
+            actor_upn=actor_upn,
+            actor_name=actor_name,
+            source=source,
+        ),
+    })
+
+
 def _approve_time_off_sync(
     request_id: int,
     actor_upn: str | None = None,
@@ -314,6 +466,12 @@ def _approve_time_off_sync(
     try:
         final_state = odoo_client.approve_leave(int(synced["odoo_leave_id"])) or synced["state"]
     except Exception as e:
+        if _is_work_schedule_conflict(e):
+            fallback = _approve_locally_despite_schedule_conflict(
+                synced, actor_upn=actor_upn, actor_name=actor_name,
+                source=source)
+            if fallback is not None:
+                return fallback
         return _json_error(_friendly_odoo_error(e), 500)
     if final_state not in _TIME_OFF_STATES:
         return _json_error(f"unexpected Odoo state {final_state}", 500)

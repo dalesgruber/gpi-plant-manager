@@ -710,11 +710,18 @@ CREATE TABLE IF NOT EXISTS time_off_requests (
   odoo_leave_id            INTEGER,
   synced_to_odoo           BOOLEAN NOT NULL DEFAULT FALSE,
   sync_error               TEXT,
+  local_record             BOOLEAN NOT NULL DEFAULT FALSE,
   last_pulled_at           TIMESTAMPTZ,
   last_pushed_at           TIMESTAMPTZ,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- `local_record` = TRUE marks a row whose state is owned by this app, not
+-- Odoo: an absence approved here after Odoo refused to validate the leave
+-- because the employee's Working Schedule doesn't include the day(s). The
+-- poller must neither overwrite nor delete such rows (their Odoo copy was
+-- settled as refused).
+ALTER TABLE time_off_requests ADD COLUMN IF NOT EXISTS local_record BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS time_off_requests_person_date_idx
   ON time_off_requests (person_odoo_id, date_from);
 CREATE INDEX IF NOT EXISTS time_off_requests_range_idx

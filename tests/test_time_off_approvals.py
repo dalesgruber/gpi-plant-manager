@@ -203,3 +203,20 @@ def test_approvals_js_removes_resolved_rows_and_updates_pending_counts():
     assert "btn.click()" in js
     assert "bumpPendingCount(-1);" in js
     assert "No pending time-off requests." in js
+
+
+def test_approvals_js_labels_locally_recorded_approvals():
+    from pathlib import Path
+
+    js = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "zira_dashboard"
+        / "static"
+        / "time_off_approvals.js"
+    ).read_text(encoding="utf-8")
+
+    # Approvals that Odoo rejected for a Working Schedule conflict resolve
+    # as local records — the row label must say so, not a plain "Approved".
+    assert "resp.recorded_locally" in js
+    assert "recorded here" in js

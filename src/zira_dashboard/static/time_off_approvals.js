@@ -129,7 +129,9 @@
             setTimeout(function () { window.location.reload(); }, 600);
           } else if (resp && resp.ok) {
             prependDecision(resp.decision);
-            done(row, 'Approved');
+            done(row, resp.recorded_locally
+              ? 'Approved — recorded here (Odoo schedule conflict)'
+              : 'Approved');
           } else {
             busy(row, false);
             status(row, (resp && resp.error) || 'Approval failed.', true);
