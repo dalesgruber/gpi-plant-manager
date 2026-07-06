@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import time as _time
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -42,17 +41,9 @@ def _clamp(raw) -> int:
     return max(0, min(60, v))
 
 
-def _parse_hhmm(raw: str | None) -> _time | None:
-    if not isinstance(raw, str):
-        return None
-    raw = raw.strip()
-    if not raw:
-        return None
-    try:
-        hh, mm = raw.split(":")
-        return _time(int(hh), int(mm))
-    except (ValueError, AttributeError):
-        return None
+# Form time inputs are HH:MM strings; schedule_store's parser is the shared
+# canon for that shape (also reused by the saturday/work-schedule stores).
+_parse_hhmm = schedule_store._parse_time
 
 
 def _hours_display(work_hours: dict) -> str:

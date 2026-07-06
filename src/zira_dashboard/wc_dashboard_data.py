@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
 
 def slug_for_wc(name: str) -> str:
     """URL-safe slug derived from a work-center name.
@@ -27,7 +29,7 @@ def slug_for_wc(name: str) -> str:
     """
     s = (name or "").strip().lower()
     # Replace every run of non-alphanumeric chars with a single hyphen.
-    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = _NON_ALNUM.sub("-", s)
     # Strip leading + trailing hyphens.
     return s.strip("-")
 

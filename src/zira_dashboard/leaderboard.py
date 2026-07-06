@@ -398,14 +398,16 @@ def cached_leaderboard(
 
     by_meter: dict[str, StationTotal] = {}
     missing: list[Station] = []
+    missing_meters: set[str] = set()
     for s in stations:
-        if s.meter_id in by_meter or any(m.meter_id == s.meter_id for m in missing):
+        if s.meter_id in by_meter or s.meter_id in missing_meters:
             continue
         hit = cache.peek((s.meter_id, day_key))
         if hit is not None:
             by_meter[s.meter_id] = hit
         else:
             missing.append(s)
+            missing_meters.add(s.meter_id)
 
     if missing:
         fetched: list[StationTotal] | None = None
