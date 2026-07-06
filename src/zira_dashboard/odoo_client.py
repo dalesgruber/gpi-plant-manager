@@ -1231,6 +1231,25 @@ def refuse_leave(leave_id: int) -> None:
     execute("hr.leave", "action_refuse", [leave_id])
 
 
+def draft_leave(leave_id: int) -> None:
+    """Call hr.leave.action_draft — resets a refused/cancelled leave back to
+    'draft' so it can re-enter the approval workflow (used by the local-
+    record backfill to replay a leave Odoo previously rejected)."""
+    execute("hr.leave", "action_draft", [leave_id])
+
+
+def fetch_leave_state(leave_id: int) -> str | None:
+    """Current hr.leave state, or None when the record no longer exists.
+    search_read (not read) so a deleted leave returns [] instead of
+    raising."""
+    rows = execute(
+        "hr.leave", "search_read",
+        [("id", "=", leave_id)],
+        fields=["state"],
+    )
+    return rows[0]["state"] if rows else None
+
+
 def post_leave_message(leave_id: int, body: str) -> None:
     """Post a message to an hr.leave's chatter so the employee is notified.
 

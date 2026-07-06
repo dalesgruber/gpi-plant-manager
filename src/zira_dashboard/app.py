@@ -290,6 +290,14 @@ async def _tick_calendar_conflicts():
     await asyncio.to_thread(calendar_conflict_monitor.run_once)
 
 
+async def _tick_time_off_backfill():
+    """Replay locally-recorded absences (local_record rows) into Odoo once
+    Odoo will accept them — e.g. after HR scopes a holiday record or fixes
+    a Working Schedule. No-ops (zero RPCs) while no local records exist."""
+    from . import time_off_local_backfill
+    await asyncio.to_thread(time_off_local_backfill.run_once)
+
+
 # (name, tick coroutine, interval seconds). `name` is used only in the
 # "warmer tick failed" log line. Intervals are unchanged from the original
 # per-loop functions this registry replaced.
@@ -310,6 +318,7 @@ _WARMERS = [
     ("forklift snapshot", _tick_forklift, 600),
     ("Inbox reconcile", _tick_inbox_reconcile, 60),
     ("calendar conflicts", _tick_calendar_conflicts, 21600),
+    ("time-off local backfill", _tick_time_off_backfill, 3600),
     ("page-usage flush", _tick_page_usage, 60),
 ]
 

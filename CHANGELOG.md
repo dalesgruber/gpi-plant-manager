@@ -9,6 +9,10 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-07-04
 
+### Features
+
+- **Locally-recorded absences now flow back into Odoo automatically.** When an absence had to be recorded app-only (Odoo rejected it because the day had no working hours — usually a company holiday record like the observed 4th of July, or a Working Schedule gap), a new background job keeps checking whether Odoo would accept it now. As soon as the underlying Odoo data is corrected — the holiday scoped or removed, or the schedule fixed — the app replays the leave through Odoo's normal approval flow and the absence becomes a regular approved Time Off record, fully visible to HR in Odoo. Until then it stays safely recorded here. The job is careful: it only touches Odoo when a dry-run check says approval will succeed, and it re-closes the Odoo copy if anything surprises it.
+
 ### Fixes
 
 - **Absences on non-scheduled days now record instead of failing.** Approving time off for a day the employee's Odoo Working Schedule doesn't include (e.g. a Friday when the schedule is Mon–Thu) used to hard-fail with "Odoo won't approve this — ask HR to fix their Working Schedule," leaving the request stuck in the pending queue. The approval now goes through: the absence is recorded here (it shows on the scheduler, both calendars, coverage counts, and the employee's My Requests as Approved), while the Odoo copy is closed as refused with an explanatory note since Odoo can't represent time off on a non-working day. The kiosk will never show the employee a mistaken "denied" popup for these, and the Recent Decisions list spells out that the record lives in Plant Manager only. HR fixing the Working Schedule (the weekly conflict task) remains the long-term cleanup.

@@ -133,12 +133,31 @@ Both approve surfaces label the resolved row using `resp.recorded_locally`:
 (`static/exceptions.js`, `static/time_off_approvals.js`; the approvals page still
 prepends the decision row, whose reason spells out the local-only recording).
 
+### Backfill into Odoo (added 2026-07-04, same day)
+
+Dale wants these absences visible in Odoo. Root-cause diagnosis showed the real
+trigger for the first live case was not a Working Schedule gap but Odoo's global
+"4th of July" holiday record covering 2026-07-03 while the plant actually ran
+(17 people punched in). New module `time_off_local_backfill` (hourly warmer):
+for each `local_record` row it predicts whether Odoo would accept the leave now
+(≥1 day in the span is a covered weekday with no public holiday — Odoo only
+needs `number_of_days > 0`), and only then replays it: `action_draft` on the
+refused copy (or `create_leave` if HR deleted it, linking the new id to the row
+*before* the workflow so a concurrent poll maps it onto the flagged row), then
+confirm + approve. On success the row hands ownership back to the poller
+(`local_record = FALSE`) and the suppression row is retired
+(`unsuppress_resolution`). On any failure the Odoo copy is re-refused so it
+never lingers pending. Zero RPCs on ticks with no local records. Making Odoo
+*able* to accept a given day (scoping/removing a holiday record, fixing a
+calendar) stays a human data decision — the backfill reacts to it.
+
 ## Known limitations (accepted)
 
-- Odoo shows the leave as *Refused* (with an explanatory chatter note). Odoo-side
-  reports/allocations will not count this absence; the app is authoritative for it.
-  The weekly calendar-conflict monitor keeps nudging HR to fix Working Schedules, which
-  remains the long-term fix.
+- Odoo shows the leave as *Refused* (with an explanatory chatter note) **until
+  the underlying Odoo data allows the backfill to replay it**. While refused,
+  Odoo-side reports/allocations do not count the absence; the app is
+  authoritative for it. The weekly calendar-conflict monitor keeps nudging HR
+  to fix Working Schedules, which remains the long-term fix.
 - The Odoo error-string match is locale-dependent (existing `_friendly_odoo_error`
   fragility, unchanged).
 - If the process dies between the Odoo refuse and the local write, the poller mirrors
