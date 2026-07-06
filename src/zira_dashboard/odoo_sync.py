@@ -91,6 +91,53 @@ def _write_last_sync(now: datetime) -> None:
     app_settings.set_setting("odoo_last_sync", now.isoformat())
 
 
+def _merge_legacy_skill_into_stable(cur, *, stable_skill_id: int, legacy_skill_id: int) -> None:
+    cur.execute(
+        "WITH moved AS ("
+        "DELETE FROM person_skills WHERE skill_id = %s "
+        "RETURNING person_id, level, last_pulled_at, last_pushed_at, local_dirty"
+        ") "
+        "INSERT INTO person_skills "
+        "(person_id, skill_id, level, last_pulled_at, last_pushed_at, local_dirty) "
+        "SELECT person_id, %s, level, last_pulled_at, last_pushed_at, local_dirty FROM moved "
+        "ON CONFLICT (person_id, skill_id) DO UPDATE SET "
+        "level = GREATEST(person_skills.level, EXCLUDED.level), "
+        "last_pulled_at = COALESCE(EXCLUDED.last_pulled_at, person_skills.last_pulled_at), "
+        "last_pushed_at = COALESCE(EXCLUDED.last_pushed_at, person_skills.last_pushed_at), "
+        "local_dirty = person_skills.local_dirty OR EXCLUDED.local_dirty",
+        (legacy_skill_id, stable_skill_id),
+    )
+    cur.execute(
+        "INSERT INTO work_center_required_skills (wc_id, skill_id) "
+        "SELECT wc_id, %s FROM work_center_required_skills WHERE skill_id = %s "
+        "ON CONFLICT (wc_id, skill_id) DO NOTHING",
+        (stable_skill_id, legacy_skill_id),
+    )
+    cur.execute(
+        "DELETE FROM work_center_required_skills WHERE skill_id = %s",
+        (legacy_skill_id,),
+    )
+    cur.execute("DELETE FROM skills WHERE id = %s", (legacy_skill_id,))
+
+
+def _merge_legacy_skill_name_collision(cur, *, skill_odoo_id: int, skill_name: str) -> None:
+    cur.execute("SELECT id FROM skills WHERE odoo_id = %s", (skill_odoo_id,))
+    stable = cur.fetchone()
+    if not stable:
+        return
+    cur.execute(
+        "SELECT id FROM skills WHERE name = %s AND odoo_id IS NULL",
+        (skill_name,),
+    )
+    legacy = cur.fetchone()
+    if legacy:
+        _merge_legacy_skill_into_stable(
+            cur,
+            stable_skill_id=int(stable["id"]),
+            legacy_skill_id=int(legacy["id"]),
+        )
+
+
 def sync(force: bool = False) -> SyncResult:
     last = _read_last_sync()
     now = datetime.now(timezone.utc)
@@ -144,13 +191,44 @@ def sync(force: bool = False) -> SyncResult:
     with db.cursor() as cur:
         # Skills first (employees + person_skills FK them).
         for i, m in enumerate(columns_meta):
-            cur.execute(
-                "INSERT INTO skills (name, skill_type, sort_order, last_pulled_at) "
-                "VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT (name) DO UPDATE SET skill_type = EXCLUDED.skill_type, "
-                "sort_order = EXCLUDED.sort_order, last_pulled_at = EXCLUDED.last_pulled_at",
-                (m["name"], m.get("type", ""), i, pulled_at),
-            )
+            skill_odoo_id = m.get("id")
+            if skill_odoo_id is not None:
+                _merge_legacy_skill_name_collision(
+                    cur,
+                    skill_odoo_id=int(skill_odoo_id),
+                    skill_name=m["name"],
+                )
+                # Older rows were keyed only by name. Attach those rows to the
+                # Odoo id first so future Odoo renames update by stable id.
+                cur.execute(
+                    "UPDATE skills SET odoo_id = %s, skill_type = %s, "
+                    "sort_order = %s, last_pulled_at = %s "
+                    "WHERE name = %s AND odoo_id IS NULL",
+                    (skill_odoo_id, m.get("type", ""), i, pulled_at, m["name"]),
+                )
+                cur.execute(
+                    "INSERT INTO skills (odoo_id, name, skill_type, sort_order, last_pulled_at) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON CONFLICT (odoo_id) DO UPDATE SET name = EXCLUDED.name, "
+                    "skill_type = EXCLUDED.skill_type, "
+                    "sort_order = EXCLUDED.sort_order, last_pulled_at = EXCLUDED.last_pulled_at",
+                    (skill_odoo_id, m["name"], m.get("type", ""), i, pulled_at),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO skills (name, skill_type, sort_order, last_pulled_at) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (name) DO UPDATE SET skill_type = EXCLUDED.skill_type, "
+                    "sort_order = EXCLUDED.sort_order, last_pulled_at = EXCLUDED.last_pulled_at",
+                    (m["name"], m.get("type", ""), i, pulled_at),
+                )
+        cur.execute(
+            "UPDATE skills SET skill_type = 'Legacy Skills', last_pulled_at = %s "
+            "WHERE odoo_id IS NULL "
+            "AND skill_type IN ('Production Skills', 'Supervisor Skills') "
+            "AND NOT (name = ANY(%s))",
+            (pulled_at, columns),
+        )
         # Employees: upsert by odoo_id (stable across renames).
         seen_employee_ids = set()
         for emp in employees:

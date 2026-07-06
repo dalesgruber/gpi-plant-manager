@@ -155,7 +155,7 @@ _feedback_project_id: int | None = None
 
 
 def fetch_skill_columns_with_types() -> list[dict]:
-    """Return ordered list of {name, type} dicts: all skills from the
+    """Return ordered list of {id, name, type} dicts: all skills from the
     Production type (alphabetical), then all from Supervisor (alphabetical)."""
     types = execute(
         "hr.skill.type", "search_read",
@@ -173,20 +173,30 @@ def fetch_skill_columns_with_types() -> list[dict]:
         [("skill_type_id", "in", type_ids)],
         fields=["id", "name", "skill_type_id"],
     )
-    by_type: dict[int, list[str]] = {tid: [] for tid in type_ids}
+    by_type: dict[int, list[dict]] = {tid: [] for tid in type_ids}
     for s in skills:
         tid = unwrap_m2o(s["skill_type_id"])
-        by_type.setdefault(tid, []).append(s["name"])
+        by_type.setdefault(tid, []).append(s)
     out: list[dict] = []
     for tid in type_ids:
-        for name in sorted(by_type.get(tid, []), key=str.lower):
-            out.append({"name": name, "type": type_name_by_id[tid]})
+        for skill in sorted(by_type.get(tid, []), key=lambda row: str(row["name"]).lower()):
+            out.append({
+                "id": skill["id"],
+                "name": skill["name"],
+                "type": type_name_by_id[tid],
+            })
     return out
 
 
 def fetch_skill_columns() -> list[str]:
     """Backwards-compatible name-only view."""
     return [c["name"] for c in fetch_skill_columns_with_types()]
+
+
+def _bucket_for_level_count(rank: int, count: int) -> int:
+    if count <= 1:
+        return 0
+    return max(0, min(3, round(rank * 3 / (count - 1))))
 
 
 def fetch_skill_level_buckets() -> dict[int, int]:
@@ -209,12 +219,111 @@ def fetch_skill_level_buckets() -> dict[int, int]:
         lvls.sort(key=lambda l: l.get("level_progress", 0))
         n = len(lvls)
         for rank, lvl in enumerate(lvls):
-            if n <= 1:
-                bucket = 0
-            else:
-                bucket = round(rank * 3 / (n - 1))
-            out[lvl["id"]] = max(0, min(3, bucket))
+            out[lvl["id"]] = _bucket_for_level_count(rank, n)
     return out
+
+
+def _skill_type_id_for_skill(skill_odoo_id: int) -> int:
+    rows = execute(
+        "hr.skill",
+        "read",
+        [skill_odoo_id],
+        fields=["skill_type_id"],
+    )
+    if not rows:
+        raise ValueError(f"Skill {skill_odoo_id} not found in Odoo")
+    type_id = unwrap_m2o(rows[0].get("skill_type_id"))
+    if not type_id:
+        raise ValueError(f"Skill {skill_odoo_id} has no skill type in Odoo")
+    return int(type_id)
+
+
+def _skill_level_id_for_bucket(skill_type_odoo_id: int, bucket: int) -> int:
+    levels = execute(
+        "hr.skill.level",
+        "search_read",
+        [("skill_type_id", "=", skill_type_odoo_id)],
+        fields=["id", "level_progress", "skill_type_id"],
+    )
+    if not levels:
+        raise ValueError(f"Skill type {skill_type_odoo_id} has no levels in Odoo")
+    levels.sort(key=lambda lvl: lvl.get("level_progress", 0))
+    by_bucket: dict[int, list[dict]] = {}
+    count = len(levels)
+    for rank, level_row in enumerate(levels):
+        by_bucket.setdefault(_bucket_for_level_count(rank, count), []).append(level_row)
+    candidates = by_bucket.get(bucket)
+    if not candidates:
+        raise ValueError(
+            f"Skill type {skill_type_odoo_id} has no level mapped to bucket {bucket}"
+        )
+    return int(candidates[-1]["id"])
+
+
+def _employee_skill_ids(employee_odoo_id: int, skill_odoo_id: int) -> list[int]:
+    return [
+        int(i)
+        for i in execute(
+            "hr.employee.skill",
+            "search",
+            [
+                ("employee_id", "=", int(employee_odoo_id)),
+                ("skill_id", "=", int(skill_odoo_id)),
+            ],
+        )
+    ]
+
+
+def _keep_one_employee_skill_row(
+    existing_ids: list[int],
+    values: dict,
+) -> None:
+    if not existing_ids:
+        return
+    keep_id = min(existing_ids)
+    execute("hr.employee.skill", "write", [keep_id], values)
+    duplicate_ids = [i for i in existing_ids if i != keep_id]
+    if duplicate_ids:
+        execute("hr.employee.skill", "unlink", duplicate_ids)
+
+
+def set_employee_skill_level(employee_odoo_id: int, skill_odoo_id: int, bucket: int) -> None:
+    """Create, update, or remove an Odoo hr.employee.skill row.
+
+    `bucket` is the dashboard's 0-3 scale. Bucket 0 removes the employee/skill
+    relation. Buckets 1-3 map back to the matching hr.skill.level for the
+    skill's type.
+    """
+    if bucket not in (0, 1, 2, 3):
+        raise ValueError("bucket must be 0, 1, 2, or 3")
+
+    existing_ids = _employee_skill_ids(employee_odoo_id, skill_odoo_id)
+
+    if bucket == 0:
+        if existing_ids:
+            execute("hr.employee.skill", "unlink", existing_ids)
+        return
+
+    skill_type_id = _skill_type_id_for_skill(int(skill_odoo_id))
+    skill_level_id = _skill_level_id_for_bucket(skill_type_id, bucket)
+    values = {"skill_level_id": skill_level_id}
+
+    if existing_ids:
+        _keep_one_employee_skill_row(existing_ids, values)
+        return
+
+    created_id = execute(
+        "hr.employee.skill",
+        "create",
+        {
+            "employee_id": int(employee_odoo_id),
+            "skill_id": int(skill_odoo_id),
+            "skill_type_id": skill_type_id,
+            "skill_level_id": skill_level_id,
+        },
+    )
+    post_create_ids = _employee_skill_ids(employee_odoo_id, skill_odoo_id)
+    _keep_one_employee_skill_row(post_create_ids, values)
 
 
 def fetch_departments() -> list[str]:

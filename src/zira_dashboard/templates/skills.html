@@ -58,7 +58,10 @@
           <th class="name" style="text-align:left" role="button" tabindex="0" aria-sort="none">Name</th>
           <th role="button" tabindex="0" aria-sort="none">Active</th>
           <th role="button" tabindex="0" aria-sort="none">Reserve</th>
-          {% for s in skills %}<th data-skill="{{ s }}" data-type="{{ type_by_skill.get(s, '') }}" class="skill-col{% if s in hidden_skills %} col-hidden{% endif %}" role="button" tabindex="0" aria-sort="none">{{ s }}</th>{% endfor %}
+          {% for skill in skills %}
+            {% set s = skill.name %}
+            <th data-skill="{{ s }}" data-type="{{ type_by_skill.get(s, '') }}" class="skill-col{% if s in hidden_skills %} col-hidden{% endif %}" role="button" tabindex="0" aria-sort="none">{{ s }}</th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
@@ -81,10 +84,25 @@
             <input type="hidden" name="reserve_present__{{ p.name }}" value="1">
             <input class="reserve-check" type="checkbox" name="reserve__{{ p.name }}" aria-label="Reserve {{ p.name }}" {% if p.reserve %}checked{% endif %}>
           </td>
-          {% for s in skills %}
+          {% for skill in skills %}
+            {% set s = skill.name %}
             {% set lvl = p.skills.get(s, 0) %}
+            {% set level_label = {0: 'not trained', 1: 'practicing', 2: 'competent', 3: 'proficient'}[lvl] %}
             <td data-skill="{{ s }}" class="skill-col{% if s in hidden_skills %} col-hidden{% endif %}">
-              <span class="skill-display lvl-{{ lvl }}">{{ lvl if lvl > 0 else '—' }}</span>
+              {% if p.employee_id and skill.odoo_id %}
+                <button
+                  type="button"
+                  class="skill-cell-btn skill-display lvl-{{ lvl }}"
+                  data-person-odoo-id="{{ p.employee_id }}"
+                  data-skill-odoo-id="{{ skill.odoo_id }}"
+                  data-person-name="{{ p.name }}"
+                  data-skill-name="{{ s }}"
+                  data-level="{{ lvl }}"
+                  aria-label="Edit {{ p.name }} {{ s }} skill, current level {{ lvl }} {{ level_label }}"
+                >{{ lvl if lvl > 0 else '—' }}</button>
+              {% else %}
+                <span class="skill-display lvl-{{ lvl }}">{{ lvl if lvl > 0 else '—' }}</span>
+              {% endif %}
             </td>
           {% endfor %}
         </tr>
@@ -104,7 +122,7 @@
     {% for p in people %}{name: {{ p.name | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}
   ];
   window.SKILLS_SKILL_TYPES = {{ type_by_skill | tojson if type_by_skill is defined else '{}' }};
-  window.SKILLS_ALL_SKILLS = {{ skills | tojson if skills is defined else '[]' }};
+  window.SKILLS_ALL_SKILLS = {{ skill_names | tojson if skill_names is defined else '[]' }};
 </script>
 <script src="/static/skills-page.js?v={{ static_v('skills-page.js') }}"></script>
 {% endblock %}

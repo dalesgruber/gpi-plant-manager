@@ -103,6 +103,27 @@ def test_fetch_skill_columns_returns_production_then_supervisor(monkeypatch):
     assert cols == ["Dismantler", "Repair", "Floor Lead"]
 
 
+def test_fetch_skill_columns_with_types_includes_odoo_id(monkeypatch):
+    responses = {
+        ("hr.skill.type", "search_read"): [
+            {"id": 1, "name": "Production Skills"},
+            {"id": 2, "name": "Supervisor Skills"},
+        ],
+        ("hr.skill", "search_read"): [
+            {"id": 10, "name": "Repair", "skill_type_id": [1, "Production Skills"]},
+            {"id": 11, "name": "Dismantle", "skill_type_id": [1, "Production Skills"]},
+            {"id": 20, "name": "Lead", "skill_type_id": [2, "Supervisor Skills"]},
+        ],
+    }
+    _stub_execute(monkeypatch, responses)
+
+    assert odoo_client.fetch_skill_columns_with_types() == [
+        {"id": 11, "name": "Dismantle", "type": "Production Skills"},
+        {"id": 10, "name": "Repair", "type": "Production Skills"},
+        {"id": 20, "name": "Lead", "type": "Supervisor Skills"},
+    ]
+
+
 def test_fetch_skill_level_buckets_rank_maps_4_levels(monkeypatch):
     responses = {
         ("hr.skill.level", "search_read"): [
@@ -129,6 +150,160 @@ def test_fetch_skill_level_buckets_rank_maps_3_levels(monkeypatch):
     buckets = odoo_client.fetch_skill_level_buckets()
     # 3 levels -> rank 0,1,2 -> 0, round(1*3/2)=2, round(2*3/2)=3
     assert buckets == {200: 0, 201: 2, 202: 3}
+
+
+def test_set_employee_skill_level_creates_missing_skill_row(monkeypatch):
+    calls = []
+
+    def fake_execute(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        if (model, method) == ("hr.skill", "read"):
+            return [{"id": 10, "skill_type_id": [1, "Production Skills"]}]
+        if (model, method) == ("hr.skill.level", "search_read"):
+            return [
+                {"id": 100, "level_progress": 0, "skill_type_id": [1, "Production Skills"]},
+                {"id": 101, "level_progress": 33, "skill_type_id": [1, "Production Skills"]},
+                {"id": 102, "level_progress": 67, "skill_type_id": [1, "Production Skills"]},
+                {"id": 103, "level_progress": 100, "skill_type_id": [1, "Production Skills"]},
+            ]
+        if (model, method) == ("hr.employee.skill", "search"):
+            return []
+        if (model, method) == ("hr.employee.skill", "create"):
+            return 555
+        raise AssertionError(f"unexpected call: {(model, method)}")
+
+    monkeypatch.setattr(odoo_client, "execute", fake_execute)
+
+    odoo_client.set_employee_skill_level(7, 10, 3)
+
+    create_calls = [c for c in calls if c[0:2] == ("hr.employee.skill", "create")]
+    assert create_calls == [
+        (
+            "hr.employee.skill",
+            "create",
+            ({
+                "employee_id": 7,
+                "skill_id": 10,
+                "skill_type_id": 1,
+                "skill_level_id": 103,
+            },),
+            {},
+        )
+    ]
+
+
+def test_set_employee_skill_level_deduplicates_rows_after_create_race(monkeypatch):
+    calls = []
+    searches = iter([[], [54, 555]])
+
+    def fake_execute(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        if (model, method) == ("hr.skill", "read"):
+            return [{"id": 10, "skill_type_id": [1, "Production Skills"]}]
+        if (model, method) == ("hr.skill.level", "search_read"):
+            return [
+                {"id": 100, "level_progress": 0, "skill_type_id": [1, "Production Skills"]},
+                {"id": 101, "level_progress": 33, "skill_type_id": [1, "Production Skills"]},
+                {"id": 102, "level_progress": 67, "skill_type_id": [1, "Production Skills"]},
+                {"id": 103, "level_progress": 100, "skill_type_id": [1, "Production Skills"]},
+            ]
+        if (model, method) == ("hr.employee.skill", "search"):
+            return next(searches)
+        if (model, method) == ("hr.employee.skill", "create"):
+            return 555
+        if (model, method) == ("hr.employee.skill", "write"):
+            return True
+        if (model, method) == ("hr.employee.skill", "unlink"):
+            return True
+        raise AssertionError(f"unexpected call: {(model, method)}")
+
+    monkeypatch.setattr(odoo_client, "execute", fake_execute)
+
+    odoo_client.set_employee_skill_level(7, 10, 3)
+
+    assert (
+        "hr.employee.skill",
+        "write",
+        ([54], {"skill_level_id": 103}),
+        {},
+    ) in calls
+    assert (
+        "hr.employee.skill",
+        "unlink",
+        ([555],),
+        {},
+    ) in calls
+
+
+def test_set_employee_skill_level_updates_first_duplicate_and_unlinks_rest(monkeypatch):
+    calls = []
+
+    def fake_execute(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        if (model, method) == ("hr.skill", "read"):
+            return [{"id": 10, "skill_type_id": [1, "Production Skills"]}]
+        if (model, method) == ("hr.skill.level", "search_read"):
+            return [
+                {"id": 100, "level_progress": 0, "skill_type_id": [1, "Production Skills"]},
+                {"id": 101, "level_progress": 33, "skill_type_id": [1, "Production Skills"]},
+                {"id": 102, "level_progress": 67, "skill_type_id": [1, "Production Skills"]},
+                {"id": 103, "level_progress": 100, "skill_type_id": [1, "Production Skills"]},
+            ]
+        if (model, method) == ("hr.employee.skill", "search"):
+            return [55, 56]
+        if (model, method) == ("hr.employee.skill", "write"):
+            return True
+        if (model, method) == ("hr.employee.skill", "unlink"):
+            return True
+        raise AssertionError(f"unexpected call: {(model, method)}")
+
+    monkeypatch.setattr(odoo_client, "execute", fake_execute)
+
+    odoo_client.set_employee_skill_level(7, 10, 2)
+
+    assert (
+        "hr.employee.skill",
+        "write",
+        ([55], {"skill_level_id": 102}),
+        {},
+    ) in calls
+    assert (
+        "hr.employee.skill",
+        "unlink",
+        ([56],),
+        {},
+    ) in calls
+
+
+def test_set_employee_skill_level_zero_unlinks_all_existing_rows(monkeypatch):
+    calls = []
+
+    def fake_execute(model, method, *args, **kwargs):
+        calls.append((model, method, args, kwargs))
+        if (model, method) == ("hr.employee.skill", "search"):
+            return [55, 56]
+        if (model, method) == ("hr.employee.skill", "unlink"):
+            return True
+        raise AssertionError(f"unexpected call: {(model, method)}")
+
+    monkeypatch.setattr(odoo_client, "execute", fake_execute)
+
+    odoo_client.set_employee_skill_level(7, 10, 0)
+
+    assert calls == [
+        (
+            "hr.employee.skill",
+            "search",
+            ([("employee_id", "=", 7), ("skill_id", "=", 10)],),
+            {},
+        ),
+        ("hr.employee.skill", "unlink", ([55, 56],), {}),
+    ]
+
+
+def test_set_employee_skill_level_rejects_invalid_bucket():
+    with pytest.raises(ValueError, match="bucket must be 0, 1, 2, or 3"):
+        odoo_client.set_employee_skill_level(7, 10, 4)
 
 
 def test_fetch_employees_returns_active_only_with_required_fields(monkeypatch):

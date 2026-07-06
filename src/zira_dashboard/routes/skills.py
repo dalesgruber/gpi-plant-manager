@@ -10,15 +10,18 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import staffing
+from .. import _http_cache, db, odoo_client
 from ..deps import templates
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.get("/staffing/skills", response_class=HTMLResponse)
@@ -47,11 +50,15 @@ def staffing_skills(request: Request):
     active_count = sum(1 for p in roster if p.active)
 
     skill_rows = db.query(
-        "SELECT name, skill_type FROM skills "
+        "SELECT name, odoo_id, skill_type FROM skills "
         "WHERE skill_type IN ('Production Skills', 'Supervisor Skills') "
         "ORDER BY skill_type, lower(name)"
     )
-    columns = [r["name"] for r in skill_rows]
+    columns = [
+        {"name": r["name"], "odoo_id": r["odoo_id"], "skill_type": r["skill_type"]}
+        for r in skill_rows
+    ]
+    skill_names = [r["name"] for r in skill_rows]
     type_by_skill = {r["name"]: r["skill_type"] for r in skill_rows}
 
     all_views = views_store.list_views()
@@ -65,6 +72,7 @@ def staffing_skills(request: Request):
             "people": roster,
             "person_certs": person_certs,
             "skills": columns,
+            "skill_names": skill_names,
             "type_by_skill": type_by_skill,
             "views": all_views,
             "default_view_name": default_view["name"] if default_view else None,
@@ -104,6 +112,113 @@ async def staffing_skills_save(request: Request):
         if (request.headers.get("accept") or "").startswith("application/json"):
             return JSONResponse({"ok": True})
         return RedirectResponse(url="/staffing/skills", status_code=303)
+
+    return await asyncio.to_thread(_work)
+
+
+def _skill_cell_error(message: str, status_code: int) -> JSONResponse:
+    return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+
+
+def _strict_json_int(body: dict, field: str) -> int:
+    value = body.get(field)
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError(field)
+    return value
+
+
+def _level_label(level: int) -> str:
+    return {0: "not trained", 1: "practicing", 2: "competent", 3: "proficient"}[level]
+
+
+def _mirror_skill_level(person_id: int, skill_id: int, level: int) -> None:
+    if level == 0:
+        with db.cursor() as cur:
+            cur.execute(
+                "DELETE FROM person_skills WHERE person_id = %s AND skill_id = %s",
+                (person_id, skill_id),
+            )
+        return
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO person_skills "
+            "(person_id, skill_id, level, last_pushed_at, local_dirty) "
+            "VALUES (%s, %s, %s, now(), FALSE) "
+            "ON CONFLICT (person_id, skill_id) DO UPDATE SET "
+            "level = EXCLUDED.level, last_pushed_at = EXCLUDED.last_pushed_at, "
+            "local_dirty = FALSE",
+            (person_id, skill_id, level),
+        )
+
+
+@router.post("/staffing/skills/cell")
+async def staffing_skill_cell_update(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return _skill_cell_error("Invalid JSON body.", 400)
+
+    try:
+        if not isinstance(body, dict):
+            raise ValueError("body")
+        person_odoo_id = _strict_json_int(body, "person_odoo_id")
+        skill_odoo_id = _strict_json_int(body, "skill_odoo_id")
+        level = _strict_json_int(body, "level")
+    except ValueError:
+        return _skill_cell_error("person_odoo_id, skill_odoo_id, and level are required.", 400)
+
+    if person_odoo_id <= 0 or skill_odoo_id <= 0:
+        return _skill_cell_error("person_odoo_id and skill_odoo_id must be positive integers.", 400)
+    if level not in (0, 1, 2, 3):
+        return _skill_cell_error("level must be 0, 1, 2, or 3.", 400)
+
+    def _work():
+        person_rows = db.query(
+            "SELECT id, odoo_id, name FROM people "
+            "WHERE odoo_id = %s AND NOT excluded",
+            (person_odoo_id,),
+        )
+        if not person_rows:
+            return _skill_cell_error("Person not found. Refresh from Odoo and try again.", 404)
+
+        skill_rows = db.query(
+            "SELECT id, odoo_id, name, skill_type FROM skills WHERE odoo_id = %s",
+            (skill_odoo_id,),
+        )
+        if not skill_rows:
+            return _skill_cell_error("Skill not found. Refresh from Odoo and try again.", 404)
+
+        skill = skill_rows[0]
+        if skill["skill_type"] not in ("Production Skills", "Supervisor Skills"):
+            return _skill_cell_error("Skill is not editable in the People Matrix.", 400)
+
+        try:
+            odoo_client.set_employee_skill_level(person_odoo_id, skill_odoo_id, level)
+        except Exception as exc:
+            return _skill_cell_error(f"Odoo save failed: {exc}", 502)
+
+        try:
+            _mirror_skill_level(int(person_rows[0]["id"]), int(skill["id"]), level)
+            staffing._invalidate_roster_cache()
+            _http_cache.invalidate_today_cache()
+            _http_cache.invalidate_stable_cache()
+        except Exception:
+            log.exception("Odoo skill save succeeded but local mirror/cache refresh failed")
+            return JSONResponse({
+                "ok": True,
+                "level": level,
+                "label": _level_label(level),
+                "warning": (
+                    "Saved in Odoo, but the local matrix did not refresh. "
+                    "Use Refresh from Odoo if it looks stale."
+                ),
+            }, status_code=202)
+        return JSONResponse({
+            "ok": True,
+            "level": level,
+            "label": _level_label(level),
+        })
 
     return await asyncio.to_thread(_work)
 

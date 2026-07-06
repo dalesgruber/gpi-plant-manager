@@ -19,7 +19,7 @@ def _env():
     return env
 
 
-def _render_skills_html(*, employee_id=None, odoo_url=""):
+def _render_skills_html(*, employee_id=None, odoo_url="", skill_odoo_id=88):
     person = SimpleNamespace(
         name="Maria Garcia",
         active=True,
@@ -32,7 +32,7 @@ def _render_skills_html(*, employee_id=None, odoo_url=""):
         active="skills",
         active_count=1,
         inactive_count=0,
-        skills=["Repair"],
+        skills=[{"name": "Repair", "odoo_id": skill_odoo_id, "skill_type": "Production Skills"}],
         type_by_skill={"Repair": "Production Skills"},
         hidden_skills=[],
         person_certs={},
@@ -80,6 +80,25 @@ def test_people_matrix_sort_headers_are_keyboard_focusable():
     assert '<th class="name" style="text-align:left" role="button" tabindex="0" aria-sort="none">Name</th>' in html
     assert '<th role="button" tabindex="0" aria-sort="none">Reserve</th>' in html
     assert 'data-skill="Repair" data-type="Production Skills" class="skill-col" role="button" tabindex="0" aria-sort="none">Repair</th>' in html
+
+
+def test_people_matrix_skill_cell_is_button_when_odoo_ids_exist():
+    html = _render_skills_html(employee_id=42, skill_odoo_id=88)
+
+    assert 'class="skill-cell-btn skill-display lvl-2"' in html
+    assert 'data-person-odoo-id="42"' in html
+    assert 'data-skill-odoo-id="88"' in html
+    assert 'data-skill-name="Repair"' in html
+    assert 'data-level="2"' in html
+    assert 'aria-label="Edit Maria Garcia Repair skill, current level 2 competent"' in html
+
+
+def test_people_matrix_skill_cell_stays_readonly_without_skill_odoo_id():
+    html = _render_skills_html(employee_id=42, skill_odoo_id=None)
+
+    assert 'data-skill-odoo-id=' not in html
+    assert 'class="skill-display lvl-2"' in html
+    assert 'skill-cell-btn' not in html
 
 
 def test_people_matrix_view_popover_has_accessible_relationship():

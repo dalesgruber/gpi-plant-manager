@@ -25,20 +25,42 @@ def _clean_sync_state():
     from zira_dashboard import db
     # Wipe sync state + the test odoo_id rows so each test starts fresh.
     db.execute("DELETE FROM app_settings WHERE key = 'odoo_last_sync'")
+    db.execute(
+        "DELETE FROM work_center_required_skills WHERE wc_id IN "
+        "(SELECT id FROM work_centers WHERE name = 'TestCollisionWC')"
+    )
+    db.execute("DELETE FROM work_centers WHERE name = 'TestCollisionWC'")
     db.execute("DELETE FROM person_skills WHERE person_id IN (SELECT id FROM people WHERE odoo_id BETWEEN 99000 AND 99999)")
     db.execute("DELETE FROM people WHERE odoo_id BETWEEN 99000 AND 99999")
-    db.execute("DELETE FROM skills WHERE name IN ('TestRepair', 'TestDismantler')")
+    db.execute(
+        "DELETE FROM skills WHERE name IN ("
+        "'TestRepair', 'TestDismantler', 'TestLegacyOld', 'TestLegacyNew', "
+        "'TestCollisionOld', 'TestCollisionNew'"
+        ")"
+    )
     yield
+    db.execute(
+        "DELETE FROM work_center_required_skills WHERE wc_id IN "
+        "(SELECT id FROM work_centers WHERE name = 'TestCollisionWC')"
+    )
+    db.execute("DELETE FROM work_centers WHERE name = 'TestCollisionWC'")
     db.execute("DELETE FROM person_skills WHERE person_id IN (SELECT id FROM people WHERE odoo_id BETWEEN 99000 AND 99999)")
     db.execute("DELETE FROM people WHERE odoo_id BETWEEN 99000 AND 99999")
-    db.execute("DELETE FROM skills WHERE name IN ('TestRepair', 'TestDismantler')")
+    db.execute(
+        "DELETE FROM skills WHERE name IN ("
+        "'TestRepair', 'TestDismantler', 'TestLegacyOld', 'TestLegacyNew', "
+        "'TestCollisionOld', 'TestCollisionNew'"
+        ")"
+    )
 
 
 def _stub_client(monkeypatch, employees, skills_for, columns_meta, buckets):
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_employees", lambda: employees)
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skills_for", lambda ids: skills_for)
+    monkeypatch.setattr(odoo_sync.odoo_client, "fetch_spanish_speaker_ids", lambda: set())
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skill_columns_with_types", lambda: columns_meta)
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skill_level_buckets", lambda: buckets)
+    monkeypatch.setattr(odoo_sync.odoo_client, "fetch_departments", lambda: [])
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_work_schedules", lambda: [])
 
 
@@ -78,6 +100,193 @@ def test_sync_force_refreshes_even_within_ttl(monkeypatch):
         "JOIN skills sk ON sk.id = ps.skill_id WHERE pe.odoo_id = 99001"
     )
     assert rows == [{"name": "TestAlice", "level": 3, "skill_name": "TestRepair"}]
+
+
+def test_sync_stores_skill_odoo_ids(monkeypatch):
+    from zira_dashboard import db
+
+    _stub_client(
+        monkeypatch,
+        employees=[{"id": 99003, "name": "TestCara", "active": True, "work_email": False}],
+        skills_for={99003: [{"skill_id": 7001, "skill_name": "TestRepair", "level_id": 103}]},
+        columns_meta=[
+            {"id": 7001, "name": "TestRepair", "type": "Production Skills"},
+            {"id": 7002, "name": "TestDismantler", "type": "Production Skills"},
+        ],
+        buckets={103: 3},
+    )
+
+    result = odoo_sync.sync(force=True)
+
+    assert result.ok is True
+    rows = db.query(
+        "SELECT name, odoo_id FROM skills WHERE name IN ('TestRepair', 'TestDismantler') ORDER BY name"
+    )
+    assert rows == [
+        {"name": "TestDismantler", "odoo_id": 7002},
+        {"name": "TestRepair", "odoo_id": 7001},
+    ]
+
+
+def test_sync_updates_skill_name_by_stable_odoo_id(monkeypatch):
+    from zira_dashboard import db
+
+    db.execute("DELETE FROM skills WHERE odoo_id = 7010 OR name IN ('TestRenameOld', 'TestRenameNew')")
+    _stub_client(
+        monkeypatch,
+        employees=[],
+        skills_for={},
+        columns_meta=[
+            {"id": 7010, "name": "TestRenameOld", "type": "Production Skills"},
+        ],
+        buckets={},
+    )
+    assert odoo_sync.sync(force=True).ok is True
+
+    _stub_client(
+        monkeypatch,
+        employees=[],
+        skills_for={},
+        columns_meta=[
+            {"id": 7010, "name": "TestRenameNew", "type": "Production Skills"},
+        ],
+        buckets={},
+    )
+    result = odoo_sync.sync(force=True)
+
+    assert result.ok is True
+    rows = db.query("SELECT name, odoo_id FROM skills WHERE odoo_id = 7010")
+    assert rows == [{"name": "TestRenameNew", "odoo_id": 7010}]
+    db.execute("DELETE FROM skills WHERE odoo_id = 7010 OR name IN ('TestRenameOld', 'TestRenameNew')")
+
+
+def test_sync_hides_stale_legacy_null_id_skill_after_odoo_rename(monkeypatch):
+    from zira_dashboard import db
+
+    db.execute("DELETE FROM skills WHERE odoo_id = 7011 OR name IN ('TestLegacyOld', 'TestLegacyNew')")
+    db.execute(
+        "INSERT INTO skills (name, skill_type, sort_order) "
+        "VALUES ('TestLegacyOld', 'Production Skills', 0)"
+    )
+    _stub_client(
+        monkeypatch,
+        employees=[],
+        skills_for={},
+        columns_meta=[
+            {"id": 7011, "name": "TestLegacyNew", "type": "Production Skills"},
+        ],
+        buckets={},
+    )
+
+    result = odoo_sync.sync(force=True)
+
+    assert result.ok is True
+    matrix_rows = db.query(
+        "SELECT name FROM skills "
+        "WHERE skill_type IN ('Production Skills', 'Supervisor Skills') "
+        "AND name IN ('TestLegacyOld', 'TestLegacyNew') "
+        "ORDER BY name"
+    )
+    assert matrix_rows == [{"name": "TestLegacyNew"}]
+    db.execute("DELETE FROM skills WHERE odoo_id = 7011 OR name IN ('TestLegacyOld', 'TestLegacyNew')")
+
+
+def test_sync_merges_legacy_name_collision_before_stable_odoo_rename(monkeypatch):
+    from zira_dashboard import db
+
+    stable_pulled_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    legacy_pulled_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    stable_pushed_at = datetime(2026, 1, 3, tzinfo=timezone.utc)
+    legacy_pushed_at = datetime(2026, 1, 4, tzinfo=timezone.utc)
+
+    db.execute("DELETE FROM skills WHERE odoo_id = 7012 OR name IN ('TestCollisionOld', 'TestCollisionNew')")
+    db.execute(
+        "INSERT INTO skills (odoo_id, name, skill_type, sort_order) "
+        "VALUES (7012, 'TestCollisionOld', 'Production Skills', 0)"
+    )
+    db.execute(
+        "INSERT INTO skills (name, skill_type, sort_order) "
+        "VALUES ('TestCollisionNew', 'Production Skills', 1)"
+    )
+    db.execute(
+        "INSERT INTO people (odoo_id, name, active) "
+        "VALUES (99012, 'Test Collision Person', TRUE)"
+    )
+    db.execute(
+        "INSERT INTO person_skills "
+        "(person_id, skill_id, level, last_pulled_at, last_pushed_at, local_dirty) "
+        "SELECT pe.id, sk.id, 1, %s, %s, FALSE FROM people pe, skills sk "
+        "WHERE pe.odoo_id = 99012 AND sk.name = 'TestCollisionOld'",
+        (stable_pulled_at, stable_pushed_at),
+    )
+    db.execute(
+        "INSERT INTO person_skills "
+        "(person_id, skill_id, level, last_pulled_at, last_pushed_at, local_dirty) "
+        "SELECT pe.id, sk.id, 2, %s, %s, TRUE FROM people pe, skills sk "
+        "WHERE pe.odoo_id = 99012 AND sk.name = 'TestCollisionNew'",
+        (legacy_pulled_at, legacy_pushed_at),
+    )
+    db.execute(
+        "INSERT INTO work_centers (name, category) "
+        "VALUES ('TestCollisionWC', 'Production')"
+    )
+    db.execute(
+        "INSERT INTO work_center_required_skills (wc_id, skill_id) "
+        "SELECT wc.id, sk.id FROM work_centers wc, skills sk "
+        "WHERE wc.name = 'TestCollisionWC' AND sk.name = 'TestCollisionOld'"
+    )
+    db.execute(
+        "INSERT INTO work_center_required_skills (wc_id, skill_id) "
+        "SELECT wc.id, sk.id FROM work_centers wc, skills sk "
+        "WHERE wc.name = 'TestCollisionWC' AND sk.name = 'TestCollisionNew'"
+    )
+    _stub_client(
+        monkeypatch,
+        employees=[],
+        skills_for={},
+        columns_meta=[
+            {"id": 7012, "name": "TestCollisionNew", "type": "Production Skills"},
+        ],
+        buckets={},
+    )
+
+    result = odoo_sync.sync(force=True)
+
+    assert result.ok is True
+    skill_rows = db.query(
+        "SELECT name, odoo_id, skill_type FROM skills "
+        "WHERE name IN ('TestCollisionOld', 'TestCollisionNew') OR odoo_id = 7012"
+    )
+    assert skill_rows == [
+        {"name": "TestCollisionNew", "odoo_id": 7012, "skill_type": "Production Skills"}
+    ]
+    person_rows = db.query(
+        "SELECT pe.odoo_id, ps.level, ps.last_pulled_at, ps.last_pushed_at, "
+        "ps.local_dirty, sk.name AS skill_name "
+        "FROM person_skills ps "
+        "JOIN people pe ON pe.id = ps.person_id "
+        "JOIN skills sk ON sk.id = ps.skill_id "
+        "WHERE pe.odoo_id = 99012"
+    )
+    assert person_rows == [{
+        "odoo_id": 99012,
+        "level": 2,
+        "last_pulled_at": legacy_pulled_at,
+        "last_pushed_at": legacy_pushed_at,
+        "local_dirty": True,
+        "skill_name": "TestCollisionNew",
+    }]
+    required_rows = db.query(
+        "SELECT wc.name AS wc_name, sk.name AS skill_name "
+        "FROM work_center_required_skills wrs "
+        "JOIN work_centers wc ON wc.id = wrs.wc_id "
+        "JOIN skills sk ON sk.id = wrs.skill_id "
+        "WHERE wc.name = 'TestCollisionWC'"
+    )
+    assert required_rows == [{"wc_name": "TestCollisionWC", "skill_name": "TestCollisionNew"}]
+    db.execute("DELETE FROM people WHERE odoo_id = 99012")
+    db.execute("DELETE FROM work_centers WHERE name = 'TestCollisionWC'")
+    db.execute("DELETE FROM skills WHERE odoo_id = 7012 OR name IN ('TestCollisionOld', 'TestCollisionNew')")
 
 
 def test_sync_preserves_local_reserve_flag(monkeypatch):

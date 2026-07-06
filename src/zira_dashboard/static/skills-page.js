@@ -23,10 +23,10 @@
     function cellValue(tr, i) {
       const td = tr.children[i];
       if (!td) return '';
-      const skillSpan = td.querySelector('span.skill-display');
-      if (skillSpan) {
+      const skillDisplay = td.querySelector('.skill-display');
+      if (skillDisplay) {
         // Pull the level from the lvl-N class so '—' sorts as 0.
-        const m = (skillSpan.className.match(/lvl-(\d)/) || [, '0'])[1];
+        const m = (skillDisplay.className.match(/lvl-(\d)/) || [, '0'])[1];
         return parseInt(m, 10);
       }
       const badge = td.querySelector('span.active-badge');
@@ -202,6 +202,151 @@
     bd.appendChild(el);
     setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 300); }, 5000);
   }
+
+  // ---------- Live skill cell picker ----------
+  (function initSkillCellPicker() {
+    const table = document.getElementById('skills-table');
+    if (!table) return;
+
+    const LEVELS = [
+      { level: 0, label: 'not trained', text: '—' },
+      { level: 1, label: 'practicing', text: '1' },
+      { level: 2, label: 'competent', text: '2' },
+      { level: 3, label: 'proficient', text: '3' },
+    ];
+
+    let picker = null;
+    let activeSkillButton = null;
+
+    function levelLabel(level) {
+      const found = LEVELS.find(item => item.level === Number(level));
+      return found ? found.label : 'not trained';
+    }
+
+    function closePicker() {
+      if (picker) {
+        picker.remove();
+        picker = null;
+      }
+      if (activeSkillButton) {
+        activeSkillButton.setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    function updateSkillButton(btn, level) {
+      const numeric = Number(level);
+      btn.dataset.level = String(numeric);
+      btn.textContent = numeric > 0 ? String(numeric) : '—';
+      btn.classList.remove('lvl-0', 'lvl-1', 'lvl-2', 'lvl-3');
+      btn.classList.add('lvl-' + numeric);
+      const person = btn.dataset.personName || 'person';
+      const skill = btn.dataset.skillName || 'skill';
+      btn.setAttribute(
+        'aria-label',
+        'Edit ' + person + ' ' + skill + ' skill, current level ' + numeric + ' ' + levelLabel(numeric)
+      );
+    }
+
+    async function saveSkillLevel(btn, level) {
+      const previousLevel = Number(btn.dataset.level || '0');
+      if (Number(level) === previousLevel) {
+        closePicker();
+        return;
+      }
+
+      btn.disabled = true;
+      btn.classList.add('saving');
+      closePicker();
+
+      try {
+        const resp = await fetch('/staffing/skills/cell', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            person_odoo_id: Number(btn.dataset.personOdooId),
+            skill_odoo_id: Number(btn.dataset.skillOdooId),
+            level: Number(level),
+          }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.error || 'Odoo save failed');
+        }
+        updateSkillButton(btn, data.level);
+        showSavedToast(null, data.warning || undefined);
+      } catch (e) {
+        updateSkillButton(btn, previousLevel);
+        showSavedToast(null, e && e.message ? e.message : 'Odoo save failed');
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('saving');
+        btn.focus();
+      }
+    }
+
+    function openPicker(btn) {
+      closePicker();
+      activeSkillButton = btn;
+      btn.setAttribute('aria-expanded', 'true');
+
+      picker = document.createElement('div');
+      picker.className = 'skill-picker';
+      picker.id = 'skill-picker';
+      picker.setAttribute('role', 'dialog');
+      picker.setAttribute('aria-label', 'Choose skill level');
+
+      LEVELS.forEach(item => {
+        const choice = document.createElement('button');
+        choice.type = 'button';
+        choice.className = 'skill-picker-choice lvl-' + item.level;
+        choice.dataset.level = String(item.level);
+        choice.textContent = item.level + ' ' + item.label;
+        if (item.level === 0) choice.textContent = '0 ' + item.label;
+        choice.addEventListener('click', () => saveSkillLevel(btn, item.level));
+        picker.appendChild(choice);
+      });
+
+      document.body.appendChild(picker);
+      const rect = btn.getBoundingClientRect();
+      picker.style.top = String(window.scrollY + rect.bottom + 4) + 'px';
+      picker.style.left = String(window.scrollX + rect.left) + 'px';
+
+      const first = picker.querySelector('button');
+      if (first) first.focus();
+    }
+
+    table.addEventListener('click', e => {
+      const btn = e.target.closest('.skill-cell-btn');
+      if (!btn || btn.disabled) return;
+      openPicker(btn);
+    });
+
+    table.addEventListener('keydown', e => {
+      const btn = e.target.closest('.skill-cell-btn');
+      if (!btn || btn.disabled) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPicker(btn);
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && picker) {
+        closePicker();
+        if (activeSkillButton) activeSkillButton.focus();
+      }
+    });
+
+    document.addEventListener('click', e => {
+      if (!picker) return;
+      if (picker.contains(e.target)) return;
+      if (e.target.closest('.skill-cell-btn') === activeSkillButton) return;
+      closePicker();
+    });
+  })();
 
   // ---------- View ▾ popover (replaces Columns ▾) ----------
   // Saved server-side views; client-session state in localStorage with a

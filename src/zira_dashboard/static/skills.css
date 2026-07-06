@@ -79,10 +79,60 @@
                    padding: 0.15rem 0.35rem; border-radius: 4px;
                    background: transparent; border: 1px solid var(--border);
                    font-variant-numeric: tabular-nums; font-weight: 700; font-size: 0.82rem; }
+  .skill-cell-btn {
+    font: inherit;
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .skill-cell-btn:hover,
+  .skill-cell-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .skill-cell-btn.saving {
+    opacity: 0.65;
+    cursor: wait;
+  }
   .skill-display.lvl-3 { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
   .skill-display.lvl-2 { background: var(--panel-2); border-color: var(--border); color: var(--fg); }
   .skill-display.lvl-1 { background: transparent; border-color: var(--warn-dim); color: var(--warn); }
   .skill-display.lvl-0 { background: transparent; border-color: var(--border); color: var(--muted); }
+  .skill-picker {
+    position: absolute;
+    z-index: 200;
+    display: grid;
+    gap: 0.25rem;
+    min-width: 9.5rem;
+    padding: 0.35rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .skill-picker-choice {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel-2);
+    color: var(--fg);
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .skill-picker-choice:hover,
+  .skill-picker-choice:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .skill-picker-choice.lvl-0 { color: var(--muted); }
+  .skill-picker-choice.lvl-1 { color: var(--warn); border-color: var(--warn-dim); }
+  .skill-picker-choice.lvl-2 { color: var(--fg); }
+  .skill-picker-choice.lvl-3 { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
 
   /* Read-only Active badge (replaces editable checkbox). */
   .active-badge { font-size: 0.95rem; font-weight: 700; }
