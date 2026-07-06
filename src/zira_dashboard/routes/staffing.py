@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, attendance, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, attendance, rotation_suggestions, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -83,6 +83,13 @@ def _forklift_scheduled_counts(assignments, overload_responders, wc_names):
     return {"tablets": len(drivers), "backups": len(backups)}
 
 
+def _smart_defaults_for_day(d: date, roster, defaults: dict[str, list[str]], time_off_entries):
+    try:
+        return rotation_suggestions.smart_defaults_for_day(d, roster, defaults, time_off_entries)
+    except Exception:
+        return {k: list(v) for k, v in (defaults or {}).items()}
+
+
 @router.get("/staffing", response_class=HTMLResponse)
 def staffing_page(
     request: Request,
@@ -147,6 +154,7 @@ def staffing_page(
         person_certs = f_certs.result()
         roster = f_roster.result()
         sched = f_sched.result()
+        time_off_entries = f_time_off_entries.result()
     # If this day has both a current draft and a posted snapshot, the user may want
     # to view the posted version. Swap the visible fields in from the snapshot.
     has_snapshot = bool(sched.published_snapshot) and not sched.published
@@ -159,6 +167,7 @@ def staffing_page(
         sched.wc_notes = dict(snap.get("wc_notes") or {})
         sched.testing_day = bool(snap.get("testing_day", False))
     # If the day has no saved assignments, pre-fill from per-work-center defaults.
+    seeded_from_defaults = False
     if not sched.assignments:
         seeded: dict[str, list[str]] = {}
         for loc in staffing.LOCATIONS:
@@ -167,7 +176,8 @@ def staffing_page(
                 seeded[loc.name] = list(dp)
         if not seeded:  # fallback for first-run: legacy CSV defaults
             seeded = staffing.default_assignments()
-        sched.assignments = seeded
+        sched.assignments = _smart_defaults_for_day(d, roster, seeded, time_off_entries)
+        seeded_from_defaults = True
 
     # Now that the schedule is in hand, kick off attendance in parallel
     # with our render-prep work below.
@@ -175,7 +185,6 @@ def staffing_page(
 
     # Collect Odoo time-off (already fetched in parallel above).
     with _Phase(phases, "attendance"):
-        time_off_entries = f_time_off_entries.result()
         attendance_pkg = f_attendance.result()
         attendance_by_name = attendance_pkg.get("by_name") or {}
 
@@ -259,6 +268,18 @@ def staffing_page(
         time_off_entries=time_off_entries,
         publish_blocked=publish_blocked,
     )
+    raw_defaults_by_loc = bay_model.get("defaults_by_loc") or {}
+    if seeded_from_defaults:
+        smart_defaults_by_loc = {k: list(v) for k, v in sched.assignments.items()}
+        for loc_name, names in raw_defaults_by_loc.items():
+            smart_defaults_by_loc.setdefault(loc_name, list(names))
+    else:
+        smart_defaults_by_loc = _smart_defaults_for_day(
+            d,
+            roster,
+            {k: list(v) for k, v in raw_defaults_by_loc.items()},
+            time_off_entries,
+        )
 
     eff_start = shift_config.configured_shift_start_for(d)
     eff_end   = shift_config.configured_shift_end_for(d)
@@ -312,6 +333,7 @@ def staffing_page(
                 # time_off_names/entries, partial_*_by_name, people_meta,
                 # all_active_people). See staffing_view.build_staffing_bays.
                 **bay_model,
+                "smart_defaults_by_loc": smart_defaults_by_loc,
                 "cleared_partials_today": cleared_partials_today,
                 "attendance_by_name": attendance_by_name,
                 "late_names_set": late_names_set,
@@ -505,7 +527,22 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
                 if dp:
                     defaults[loc.name] = list(dp)
             if defaults:
-                staffing.save_schedule(staffing.Schedule(day=next_day, published=False, assignments=defaults))
+                try:
+                    next_roster = staffing.load_roster()
+                    next_time_off = _safe_time_off_entries(next_day)
+                    smart_defaults = _smart_defaults_for_day(
+                        next_day,
+                        next_roster,
+                        defaults,
+                        next_time_off,
+                    )
+                except Exception:
+                    smart_defaults = {k: list(v) for k, v in defaults.items()}
+                staffing.save_schedule(staffing.Schedule(
+                    day=next_day,
+                    published=False,
+                    assignments=smart_defaults,
+                ))
         return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
     return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
