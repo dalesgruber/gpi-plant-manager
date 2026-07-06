@@ -224,13 +224,13 @@ def test_set_employee_skill_level_deduplicates_rows_after_create_race(monkeypatc
     assert (
         "hr.employee.skill",
         "write",
-        ([54], {"skill_level_id": 103}),
+        ([555], {"skill_level_id": 103}),
         {},
     ) in calls
     assert (
         "hr.employee.skill",
         "unlink",
-        ([555],),
+        ([54],),
         {},
     ) in calls
 
