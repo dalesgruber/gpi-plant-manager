@@ -277,12 +277,10 @@ def _employee_skill_ids(employee_odoo_id: int, skill_odoo_id: int) -> list[int]:
 def _keep_one_employee_skill_row(
     existing_ids: list[int],
     values: dict,
-    *,
-    preferred_id: int | None = None,
 ) -> None:
     if not existing_ids:
         return
-    keep_id = preferred_id if preferred_id in existing_ids else existing_ids[0]
+    keep_id = min(existing_ids)
     execute("hr.employee.skill", "write", [keep_id], values)
     duplicate_ids = [i for i in existing_ids if i != keep_id]
     if duplicate_ids:
@@ -325,7 +323,7 @@ def set_employee_skill_level(employee_odoo_id: int, skill_odoo_id: int, bucket: 
         },
     )
     post_create_ids = _employee_skill_ids(employee_odoo_id, skill_odoo_id)
-    _keep_one_employee_skill_row(post_create_ids, values, preferred_id=int(created_id))
+    _keep_one_employee_skill_row(post_create_ids, values)
 
 
 def fetch_departments() -> list[str]:
