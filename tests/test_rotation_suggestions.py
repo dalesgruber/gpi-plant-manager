@@ -143,3 +143,52 @@ def test_no_safe_pair_returns_partial_assignment():
     )
 
     assert pair == ["Jesus Martinez"]
+
+
+def test_history_uses_published_snapshot_when_present():
+    from zira_dashboard.rotation_suggestions import _history_from_schedule_rows
+
+    rows = [
+        {
+            "day": date(2026, 7, 3),
+            "assignments": {"Trim Saw 1": ["Draft Person"]},
+            "published_snapshot": {"assignments": {"Trim Saw 1": ["Posted Person"]}},
+        },
+        {
+            "day": date(2026, 7, 2),
+            "assignments": {"Trim Saw 1": ["Posted Person", "Other"]},
+            "published_snapshot": None,
+        },
+    ]
+
+    history = _history_from_schedule_rows(rows)
+
+    assert history.appearance_counts == {"Posted Person": 2, "Other": 1}
+    assert history.most_recent_names == {"Posted Person"}
+
+
+def test_load_trim_saw_history_queries_only_recent_non_testing_rows(monkeypatch):
+    from zira_dashboard import db
+    from zira_dashboard.rotation_suggestions import _load_trim_saw_history
+
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [
+            {
+                "day": date(2026, 7, 3),
+                "assignments": {"Trim Saw 1": ["Alicia"]},
+                "published_snapshot": None,
+            }
+        ]
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    history = _load_trim_saw_history(date(2026, 7, 6))
+
+    assert history.appearance_counts == {"Alicia": 1}
+    assert history.most_recent_names == {"Alicia"}
+    assert "LIMIT %s" in captured["sql"]
+    assert captured["params"] == (date(2026, 7, 6), 20)

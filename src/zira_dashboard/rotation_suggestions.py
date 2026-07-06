@@ -35,6 +35,32 @@ class TrimSawHistory:
     most_recent_names: set[str] = field(default_factory=set)
 
 
+def _names_from_assignments(assignments) -> list[str]:
+    if not isinstance(assignments, dict):
+        return []
+    return [
+        str(name)
+        for name in (assignments.get(TRIM_SAW_WC) or [])
+        if str(name or "").strip()
+    ]
+
+
+def _history_from_schedule_rows(rows: Sequence[dict]) -> TrimSawHistory:
+    counts: dict[str, int] = {}
+    most_recent_names: set[str] = set()
+    for idx, row in enumerate(rows):
+        snapshot = row.get("published_snapshot")
+        if isinstance(snapshot, dict) and isinstance(snapshot.get("assignments"), dict):
+            names = _names_from_assignments(snapshot.get("assignments"))
+        else:
+            names = _names_from_assignments(row.get("assignments"))
+        if idx == 0:
+            most_recent_names = set(names)
+        for name in names:
+            counts[name] = counts.get(name, 0) + 1
+    return TrimSawHistory(appearance_counts=counts, most_recent_names=most_recent_names)
+
+
 def _trim_saw_level(person: staffing.Person | None) -> int:
     if person is None:
         return 0
@@ -146,7 +172,13 @@ def suggest_trim_saw_pair(
     unavailable_names: Iterable[str],
     history: TrimSawHistory | None = None,
 ) -> list[str]:
-    resolved_history = history if history is not None else _load_trim_saw_history(day)
+    if history is not None:
+        resolved_history = history
+    else:
+        try:
+            resolved_history = _load_trim_saw_history(day)
+        except Exception:
+            resolved_history = TrimSawHistory()
     unavailable = set(unavailable_names or [])
     by_name = {p.name: p for p in roster if p.active and not p.reserve and p.name not in unavailable}
     pinned_set = set(pinned_names or [])
@@ -182,4 +214,29 @@ def suggest_trim_saw_pair(
 
 
 def _load_trim_saw_history(day: date) -> TrimSawHistory:
-    return TrimSawHistory()
+    from . import db
+
+    rows = db.query(
+        "SELECT s.day, s.published_snapshot, "
+        "       COALESCE(jsonb_object_agg(wc.name, names.people) "
+        "                FILTER (WHERE wc.name IS NOT NULL), '{}'::jsonb) AS assignments "
+        "FROM ("
+        "  SELECT day, published_snapshot "
+        "  FROM schedules "
+        "  WHERE day < %s AND testing_day = FALSE "
+        "  ORDER BY day DESC "
+        "  LIMIT %s"
+        ") s "
+        "LEFT JOIN LATERAL ("
+        "  SELECT sa.day, sa.wc_id, jsonb_agg(pe.name ORDER BY sa.sort_order) AS people "
+        "  FROM schedule_assignments sa "
+        "  JOIN people pe ON pe.id = sa.person_id "
+        "  WHERE sa.day = s.day "
+        "  GROUP BY sa.day, sa.wc_id"
+        ") names ON TRUE "
+        "LEFT JOIN work_centers wc ON wc.id = names.wc_id "
+        "GROUP BY s.day, s.published_snapshot "
+        "ORDER BY s.day DESC",
+        (day, LOOKBACK_SCHEDULE_COUNT),
+    )
+    return _history_from_schedule_rows(rows)
