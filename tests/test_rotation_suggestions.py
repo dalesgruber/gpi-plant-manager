@@ -145,6 +145,24 @@ def test_no_safe_pair_returns_partial_assignment():
     assert pair == ["Jesus Martinez"]
 
 
+def test_invalid_two_pinned_defaults_retain_strongest_anchor_with_safe_partner():
+    roster = [
+        person("Pinned Level One", 1),
+        person("Pinned Level Two", 2),
+        person("Safe Level Three", 3),
+    ]
+
+    pair = suggest_trim_saw_pair(
+        TARGET_DAY,
+        roster,
+        pinned_names=["Pinned Level One", "Pinned Level Two"],
+        unavailable_names=[],
+        history=empty_history(),
+    )
+
+    assert pair == ["Pinned Level Two", "Safe Level Three"]
+
+
 def test_history_uses_published_snapshot_when_present():
     from zira_dashboard.rotation_suggestions import _history_from_schedule_rows
 
@@ -191,6 +209,32 @@ def test_load_trim_saw_history_queries_only_recent_non_testing_rows(monkeypatch)
     assert history.appearance_counts == {"Alicia": 1}
     assert history.most_recent_names == {"Alicia"}
     assert "LIMIT %s" in captured["sql"]
+    assert captured["params"] == (date(2026, 7, 6), 20)
+
+
+def test_load_trim_saw_history_filters_by_effective_schedule_testing_day(monkeypatch):
+    from zira_dashboard import db
+    from zira_dashboard.rotation_suggestions import _load_trim_saw_history
+
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(db, "query", fake_query)
+
+    history = _load_trim_saw_history(date(2026, 7, 6))
+
+    assert history.appearance_counts == {}
+    assert history.most_recent_names == set()
+    predicate = (
+        "COALESCE((published_snapshot->>'testing_day')::boolean, "
+        "testing_day, FALSE) = FALSE"
+    )
+    assert predicate in captured["sql"]
+    assert captured["sql"].index(predicate) < captured["sql"].index("ORDER BY day DESC")
     assert captured["params"] == (date(2026, 7, 6), 20)
 
 
