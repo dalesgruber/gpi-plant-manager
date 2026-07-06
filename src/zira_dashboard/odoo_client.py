@@ -312,7 +312,7 @@ def set_employee_skill_level(employee_odoo_id: int, skill_odoo_id: int, bucket: 
         _keep_one_employee_skill_row(existing_ids, values)
         return
 
-    created_id = execute(
+    execute(
         "hr.employee.skill",
         "create",
         {
@@ -408,6 +408,35 @@ def _calendar_hours_from_lines(rows) -> dict:
     return out
 
 
+def _calendar_lunch_windows_from_lines(rows) -> dict:
+    """Per-weekday lunch windows from resource.calendar.attendance rows:
+    {cal_id: {"0": ["11:00","11:30"], ...}}.
+
+    Auto-lunch writes Odoo attendance splits, so fixed-schedule lunch must use
+    Odoo's own lunch window when it differs from the app's custom day schedule.
+    """
+    out: dict = {}
+    for r in rows:
+        if r.get("day_period") != "lunch":
+            continue
+        cal = r.get("calendar_id")
+        cal_id = unwrap_m2o(cal)
+        if not isinstance(cal_id, int) or isinstance(cal_id, bool):
+            continue
+        try:
+            wd = int(r.get("dayofweek"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= wd <= 6):
+            continue
+        hf = float(r.get("hour_from") or 0.0)
+        ht = float(r.get("hour_to") or 0.0)
+        if ht <= hf:
+            continue
+        out.setdefault(cal_id, {})[str(wd)] = [_float_to_hhmm(hf), _float_to_hhmm(ht)]
+    return out
+
+
 # Odoo "Schedule Type" on resource.calendar. Confirmed against live Odoo
 # (Task 6 Step 1). Odoo 18 exposes flexible scheduling as the boolean
 # `flexible_hours`; if your instance uses a selection, change this name —
@@ -451,6 +480,34 @@ def fetch_calendar_hours(calendar_ids) -> dict:
         fields=["calendar_id", "dayofweek", "hour_from", "hour_to", "day_period"],
     )
     return _calendar_hours_from_lines(rows)
+
+
+_calendar_lunch_windows_cache: dict[tuple[int, ...], tuple[dict, float]] = {}
+_CALENDAR_LUNCH_TTL_SECONDS = 10 * 60
+
+
+def fetch_calendar_lunch_windows(calendar_ids) -> dict:
+    """Per-weekday lunch windows for Odoo resource.calendar ids.
+
+    Cached briefly because auto-lunch may check this every worker tick while
+    waiting for lunch, and Odoo working schedules do not change minute to
+    minute.
+    """
+    ids = tuple(sorted({int(i) for i in (calendar_ids or []) if i is not None}))
+    if not ids:
+        return {}
+    now = time.monotonic()
+    cached = _calendar_lunch_windows_cache.get(ids)
+    if cached is not None and cached[1] > now:
+        return cached[0]
+    rows = execute(
+        "resource.calendar.attendance", "search_read",
+        [("calendar_id", "in", list(ids))],
+        fields=["calendar_id", "dayofweek", "hour_from", "hour_to", "day_period"],
+    )
+    out = _calendar_lunch_windows_from_lines(rows)
+    _calendar_lunch_windows_cache[ids] = (out, now + _CALENDAR_LUNCH_TTL_SECONDS)
+    return out
 
 
 def fetch_employees() -> list[dict]:

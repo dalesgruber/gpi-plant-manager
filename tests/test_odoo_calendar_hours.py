@@ -1,6 +1,10 @@
 """Pure tests for the per-weekday hours derivation. No Odoo/DB needed."""
 
-from zira_dashboard.odoo_client import _float_to_hhmm, _calendar_hours_from_lines
+from zira_dashboard.odoo_client import (
+    _float_to_hhmm,
+    _calendar_hours_from_lines,
+    _calendar_lunch_windows_from_lines,
+)
 
 
 def test_float_to_hhmm_basic():
@@ -61,3 +65,17 @@ def test_bool_calendar_id_is_skipped():
         {"calendar_id": [7, "D"], "dayofweek": "0", "hour_from": 7.0, "hour_to": 15.0},
     ]
     assert _calendar_hours_from_lines(rows) == {7: {"0": ["07:00", "15:00"]}}
+
+
+def test_calendar_lunch_windows_extracts_lunch_periods_only():
+    rows = [
+        {"calendar_id": [7, "Plant"], "dayofweek": "4", "day_period": "morning", "hour_from": 6.0, "hour_to": 10.0},
+        {"calendar_id": [7, "Plant"], "dayofweek": "4", "day_period": "lunch", "hour_from": 11.0, "hour_to": 11.5},
+        {"calendar_id": [8, "Drivers"], "dayofweek": "4", "day_period": "lunch", "hour_from": 10.25, "hour_to": 10.75},
+        {"calendar_id": [9, "Bad"], "dayofweek": "bad", "day_period": "lunch", "hour_from": 11.0, "hour_to": 11.5},
+    ]
+
+    assert _calendar_lunch_windows_from_lines(rows) == {
+        7: {"4": ["11:00", "11:30"]},
+        8: {"4": ["10:15", "10:45"]},
+    }

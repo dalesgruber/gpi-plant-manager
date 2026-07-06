@@ -55,6 +55,58 @@ def flex_window(first_clock_in: datetime, after_hours: float, minutes: int) -> W
     return Window(out_at, in_at)
 
 
+def _parse_hhmm(value) -> time | None:
+    if isinstance(value, time):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        hh, mm = value.split(":")[:2]
+        return time(int(hh), int(mm))
+    except (TypeError, ValueError):
+        return None
+
+
+def fixed_windows_for_people(
+    day: date,
+    person_ids,
+    app_window: Window | None,
+    people_calendars: dict[int, int | None],
+    odoo_lunches: dict,
+) -> dict[int, Window | None]:
+    """Resolve fixed-schedule lunch windows per person.
+
+    If Odoo has a lunch row for the employee's resource calendar on this
+    weekday, use it. Odoo computes attendance worked/overtime hours, so an
+    app-only custom lunch can make Odoo subtract lunch from the wrong row.
+    """
+    out: dict[int, Window | None] = {}
+    weekday = str(day.weekday())
+    for raw_pid in person_ids:
+        pid = int(raw_pid)
+        window = app_window
+        cal_id = people_calendars.get(pid)
+        if cal_id is not None:
+            lunch = (odoo_lunches.get(int(cal_id)) or {}).get(weekday)
+            if lunch and len(lunch) == 2:
+                lunch_start = _parse_hhmm(lunch[0])
+                lunch_end = _parse_hhmm(lunch[1])
+                if lunch_start is not None and lunch_end is not None and lunch_end > lunch_start:
+                    window = Window(
+                        datetime.combine(day, lunch_start, tzinfo=shift_config.SITE_TZ),
+                        datetime.combine(day, lunch_end, tzinfo=shift_config.SITE_TZ),
+                    )
+                    if app_window is not None and window != app_window:
+                        _log.warning(
+                            "auto-lunch: using Odoo calendar lunch %s-%s for person %s "
+                            "instead of app lunch %s-%s",
+                            lunch_start, lunch_end, pid,
+                            app_window.out_at.timetz(), app_window.in_at.timetz(),
+                        )
+        out[pid] = window
+    return out
+
+
 def decide(run_state: str, is_clocked_in: bool, window: Window, now: datetime) -> Transition:
     """One state-machine step. See the spec's Part-5 table."""
     if run_state == "pending":
@@ -80,6 +132,18 @@ def _flex_person_ids() -> set[int]:
         "WHERE is_flexible = TRUE AND active = TRUE AND odoo_id IS NOT NULL"
     )
     return {int(r["odoo_id"]) for r in rows}
+
+
+def _calendar_ids_for_people(person_ids) -> dict[int, int | None]:
+    ids = [int(i) for i in person_ids]
+    if not ids:
+        return {}
+    rows = db.query(
+        "SELECT odoo_id, resource_calendar_id FROM people "
+        "WHERE odoo_id = ANY(%s)",
+        (ids,),
+    )
+    return {int(r["odoo_id"]): r.get("resource_calendar_id") for r in rows}
 
 
 def _day_bounds(day: date) -> tuple[datetime, datetime]:
@@ -190,13 +254,52 @@ def _write_auto_punch(person_odoo_id, action, wc_name, occurred_at, *, cur) -> i
     return cur.fetchone()["id"]
 
 
-def _window_for(person_odoo_id, kind, today, fixed_window, settings) -> Window | None:
+def _stored_window(run) -> Window | None:
+    if not run:
+        return None
+    out_at = run.get("target_out_at")
+    in_at = run.get("target_in_at")
+    if out_at is None or in_at is None or in_at <= out_at:
+        return None
+    return Window(out_at, in_at)
+
+
+def _window_for(person_odoo_id, kind, today, fixed_window, settings, *, run=None) -> Window | None:
+    stored = _stored_window(run)
+    if stored is not None:
+        return stored
     if kind == "scheduled":
         return fixed_window
     first_in = _first_clock_in(person_odoo_id, today)
     if first_in is None:
         return None
     return flex_window(first_in, settings.flex_after_hours, settings.flex_minutes)
+
+
+def _kind_for(person_odoo_id, run, flex_ids) -> str:
+    return run["kind"] if run else ("flex" if person_odoo_id in flex_ids else "scheduled")
+
+
+def _fixed_windows_for_candidates(today, person_ids, app_fixed_window):
+    ids = {int(i) for i in person_ids}
+    if not ids:
+        return {}
+    people_calendars = _calendar_ids_for_people(ids)
+    cal_ids = {int(c) for c in people_calendars.values() if c is not None}
+    no_calendar_ids = {pid for pid in ids if people_calendars.get(pid) is None}
+    windows = {pid: app_fixed_window for pid in no_calendar_ids}
+    if not cal_ids:
+        return windows
+    try:
+        from . import odoo_client
+        odoo_lunches = odoo_client.fetch_calendar_lunch_windows(cal_ids)
+    except Exception as e:  # noqa: BLE001 - safer to skip than split against unknown Odoo lunch
+        _log.warning("auto-lunch: could not verify Odoo lunch windows; skipping fixed-calendar people: %s", e)
+        windows.update({pid: None for pid in ids - no_calendar_ids})
+        return windows
+    windows.update(fixed_windows_for_people(
+        today, ids - no_calendar_ids, app_fixed_window, people_calendars, odoo_lunches))
+    return windows
 
 
 def _apply(person_odoo_id, today, kind, run, t, state, window, settings) -> None:
@@ -252,7 +355,7 @@ def _advance_person(person_odoo_id, today, now, fixed_window, flex_ids, settings
     # Classify once: a run's kind is fixed when the row is first created, so a
     # mid-day is_flexible change in Odoo can't reclassify an in-progress run.
     kind = run["kind"] if run else ("flex" if person_odoo_id in flex_ids else "scheduled")
-    window = _window_for(person_odoo_id, kind, today, fixed_window, settings)
+    window = _window_for(person_odoo_id, kind, today, fixed_window, settings, run=run)
     if window is None:
         return
     run_state = run["state"] if run else "pending"
@@ -301,9 +404,14 @@ def run_tick(now: datetime | None = None) -> None:
     # three sources per person.
     runs = _get_runs_bulk(today, candidates)
     latest_by_pid = attendance_state.latest_punches_bulk(candidates)
+    scheduled_candidates = {
+        pid for pid in candidates
+        if _kind_for(pid, runs.get(pid), flex_ids) == "scheduled"
+    }
+    fixed_windows = _fixed_windows_for_candidates(today, scheduled_candidates, fixed_window)
     for pid in candidates:
         try:
-            _advance_person(pid, today, now, fixed_window, flex_ids, settings,
+            _advance_person(pid, today, now, fixed_windows.get(pid, fixed_window), flex_ids, settings,
                             run=runs.get(pid), snapshot=snapshot,
                             refreshed_at=refreshed_at,
                             latest=latest_by_pid.get(pid))

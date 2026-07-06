@@ -35,6 +35,33 @@ def test_flex_window_from_first_clock_in():
     assert w.out_at == _dt(11, 0) and w.in_at == _dt(11, 30)
 
 
+def test_fixed_window_prefers_odoo_lunch_when_calendar_differs():
+    app_window = al.Window(_dt(10, 0), _dt(10, 30))
+    odoo_lunches = {1: {"1": ["11:00", "11:30"]}}
+    people_calendars = {22: 1}
+
+    out = al.fixed_windows_for_people(
+        date(2026, 6, 2),
+        [22],
+        app_window,
+        people_calendars,
+        odoo_lunches,
+    )
+
+    assert out[22] == al.Window(_dt(11, 0), _dt(11, 30))
+
+
+def test_existing_run_uses_stored_lunch_window_when_fixed_window_unavailable():
+    run = {"target_out_at": _dt(11, 0), "target_in_at": _dt(11, 30)}
+
+    assert al._window_for(
+        22, "scheduled", date(2026, 6, 2), None, object(), run=run
+    ) == al.Window(
+        _dt(11, 0),
+        _dt(11, 30),
+    )
+
+
 def test_pending_clocked_in_at_lunch_triggers_auto_out():
     w = al.Window(_dt(11, 0), _dt(11, 30))
     t = al.decide("pending", True, w, _dt(11, 0))
