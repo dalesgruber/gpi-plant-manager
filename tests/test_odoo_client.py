@@ -211,10 +211,12 @@ def test_object_proxy_is_thread_local(monkeypatch):
     assert seen["A"] is not seen["B"]
 
 
-def test_draft_leave_calls_action_draft(monkeypatch):
-    calls = _stub_execute(monkeypatch, {("hr.leave", "action_draft"): True})
-    odoo_client.draft_leave(112)
-    assert ("hr.leave", "action_draft") in [(m, meth) for (m, meth, _a, _k) in calls]
+def test_reset_leave_to_confirm_writes_state(monkeypatch):
+    # This Odoo has no usable reset action (action_draft removed,
+    # action_reset_confirm broken upstream) — the reset is a state write.
+    calls = _stub_execute(monkeypatch, {("hr.leave", "write"): True})
+    odoo_client.reset_leave_to_confirm(112)
+    assert calls == [("hr.leave", "write", ([112], {"state": "confirm"}), {})]
 
 
 def test_fetch_leave_state_returns_state_or_none(monkeypatch):

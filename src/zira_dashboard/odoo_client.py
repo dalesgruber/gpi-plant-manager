@@ -1231,11 +1231,16 @@ def refuse_leave(leave_id: int) -> None:
     execute("hr.leave", "action_refuse", [leave_id])
 
 
-def draft_leave(leave_id: int) -> None:
-    """Call hr.leave.action_draft — resets a refused/cancelled leave back to
-    'draft' so it can re-enter the approval workflow (used by the local-
-    record backfill to replay a leave Odoo previously rejected)."""
-    execute("hr.leave", "action_draft", [leave_id])
+def reset_leave_to_confirm(leave_id: int) -> None:
+    """Reset a refused/cancelled hr.leave back to 'confirm' (To Approve) so
+    it can re-enter the approval workflow — used by the local-record
+    backfill to replay a leave Odoo previously rejected.
+
+    LIVE-VERIFIED direct state write: this Odoo version has no usable reset
+    action ('hr.leave.action_draft' does not exist, and action_reset_confirm
+    crashes upstream with a super() AttributeError). The state field is
+    change-tracked, so the write still leaves a chatter breadcrumb."""
+    execute("hr.leave", "write", [leave_id], {"state": "confirm"})
 
 
 def fetch_leave_state(leave_id: int) -> str | None:

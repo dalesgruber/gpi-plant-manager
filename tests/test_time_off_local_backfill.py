@@ -65,10 +65,10 @@ def _wire_odoo(monkeypatch, *, employees=None, cal_hours=None, holidays=None,
     monkeypatch.setattr(oc, "fetch_public_holidays", lambda s, e: holidays if holidays is not None else [])
     monkeypatch.setattr(oc, "fetch_leave_state", lambda lid: leave_state)
     mocks = {
-        "draft": MagicMock(), "approve": MagicMock(return_value="validate"),
+        "reset": MagicMock(), "approve": MagicMock(return_value="validate"),
         "refuse": MagicMock(),
     }
-    monkeypatch.setattr(oc, "draft_leave", mocks["draft"])
+    monkeypatch.setattr(oc, "reset_leave_to_confirm", mocks["reset"])
     monkeypatch.setattr(oc, "approve_leave", mocks["approve"])
     monkeypatch.setattr(oc, "refuse_leave", mocks["refuse"])
     return mocks
@@ -105,7 +105,7 @@ def test_company_wide_holiday_blocks_and_schedules_recheck(monkeypatch, fake_db)
     ])
 
     assert bf.run_once() == 0
-    mocks["draft"].assert_not_called()
+    mocks["reset"].assert_not_called()
     mocks["approve"].assert_not_called()
     mocks["refuse"].assert_not_called()
     # Prediction-skips rotate out of the LIMIT window so permanently-local
@@ -175,7 +175,7 @@ def test_uncovered_weekday_blocks_the_attempt(monkeypatch, fake_db):
     mocks = _wire_odoo(monkeypatch)
 
     assert bf.run_once() == 0
-    mocks["draft"].assert_not_called()
+    mocks["reset"].assert_not_called()
     mocks["approve"].assert_not_called()
 
 
@@ -209,8 +209,8 @@ def test_replays_refused_leave_and_hands_ownership_back(monkeypatch, fake_db):
 
     assert bf.run_once() == 1
 
-    # refuse -> draft -> (confirm+approve via approve_leave)
-    mocks["draft"].assert_called_once_with(112)
+    # refuse -> confirm (state-write reset) -> approve
+    mocks["reset"].assert_called_once_with(112)
     mocks["approve"].assert_called_once_with(112)
     # Adoption is a guarded UPDATE: only an untouched approved local record
     # hands ownership back (WHERE local_record AND state='validate').
@@ -285,13 +285,13 @@ def test_deleted_odoo_copy_stays_local_with_long_backoff(monkeypatch, fake_db):
     mocks = _wire_odoo(monkeypatch, leave_state=None)
 
     assert bf.run_once() == 0
-    mocks["draft"].assert_not_called()
+    mocks["reset"].assert_not_called()
     mocks["approve"].assert_not_called()
     mocks["refuse"].assert_not_called()
     assert [e for e in fake_db["executes"] if "backfill_next_at" in e[0]]
 
 
-def test_cancelled_odoo_copy_is_reset_via_draft(monkeypatch, fake_db):
+def test_cancelled_odoo_copy_is_reset_too(monkeypatch, fake_db):
     fake_db["query_result"] = [_row()]
     mocks = _wire_odoo(monkeypatch, leave_state="cancel")
     monkeypatch.setattr(bf.employee_notifications, "unsuppress_resolution",
@@ -300,7 +300,7 @@ def test_cancelled_odoo_copy_is_reset_via_draft(monkeypatch, fake_db):
                         MagicMock())
 
     assert bf.run_once() == 1
-    mocks["draft"].assert_called_once_with(112)
+    mocks["reset"].assert_called_once_with(112)
 
 
 def test_adopts_leave_hr_already_validated(monkeypatch, fake_db):
@@ -314,7 +314,7 @@ def test_adopts_leave_hr_already_validated(monkeypatch, fake_db):
                         MagicMock())
 
     assert bf.run_once() == 1
-    mocks["draft"].assert_not_called()
+    mocks["reset"].assert_not_called()
     mocks["approve"].assert_not_called()
 
 

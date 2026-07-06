@@ -12,7 +12,8 @@ record, predicts whether Odoo would accept the leave *now*: at least one day
 of the span is a covered weekday not blocked by a holiday record that
 applies to this employee (company-wide, or scoped to their calendar). Only
 when the prediction passes does it touch Odoo: reset the refused copy to
-draft, then confirm + approve. On success a *guarded* adoption hands the row
+'confirm' (a live-verified state write; this Odoo has no reset action),
+then approve. On success a *guarded* adoption hands the row
 back to the poller (``local_record = FALSE``) — and if a kiosk cancel or
 manager deny settled the row mid-replay, the guard misses, the human action
 wins, and the Odoo copy is re-refused.
@@ -170,7 +171,7 @@ def _attempt(row: dict[str, Any]) -> bool:
         return False
     try:
         if state in ("refuse", "cancel"):
-            odoo_client.draft_leave(int(leave_id))
+            odoo_client.reset_leave_to_confirm(int(leave_id))
         final = odoo_client.approve_leave(int(leave_id))
         if final != "validate":
             raise RuntimeError(f"leave {leave_id} ended in state {final}")
