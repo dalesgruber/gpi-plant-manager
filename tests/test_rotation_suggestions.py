@@ -192,3 +192,59 @@ def test_load_trim_saw_history_queries_only_recent_non_testing_rows(monkeypatch)
     assert history.most_recent_names == {"Alicia"}
     assert "LIMIT %s" in captured["sql"]
     assert captured["params"] == (date(2026, 7, 6), 20)
+
+
+def test_smart_defaults_replaces_only_trim_saw_and_excludes_full_day_time_off(monkeypatch):
+    from zira_dashboard import rotation_suggestions
+
+    roster = [
+        person("Jesus Martinez", 3),
+        person("Off Person", 3),
+        person("Rotation Two", 2),
+        person("Repair Default", 2),
+    ]
+    base = {
+        "Trim Saw 1": ["Jesus Martinez", "Off Person"],
+        "Repair 1": ["Repair Default"],
+    }
+
+    monkeypatch.setattr(
+        rotation_suggestions,
+        "_load_trim_saw_history",
+        lambda day: empty_history(),
+    )
+
+    smart = rotation_suggestions.smart_defaults_for_day(
+        TARGET_DAY,
+        roster,
+        base,
+        time_off_entries=[{"name": "Off Person", "hours": None}],
+    )
+
+    assert smart["Trim Saw 1"] == ["Jesus Martinez", "Rotation Two"]
+    assert smart["Repair 1"] == ["Repair Default"]
+    assert base["Trim Saw 1"] == ["Jesus Martinez", "Off Person"]
+
+
+def test_smart_defaults_excludes_people_already_defaulted_elsewhere(monkeypatch):
+    from zira_dashboard import rotation_suggestions
+
+    roster = [
+        person("Jesus Martinez", 3),
+        person("Repair Default", 3),
+        person("Rotation Two", 2),
+    ]
+    base = {
+        "Trim Saw 1": ["Jesus Martinez"],
+        "Repair 1": ["Repair Default"],
+    }
+
+    monkeypatch.setattr(
+        rotation_suggestions,
+        "_load_trim_saw_history",
+        lambda day: empty_history(),
+    )
+
+    smart = rotation_suggestions.smart_defaults_for_day(TARGET_DAY, roster, base, [])
+
+    assert smart["Trim Saw 1"] == ["Jesus Martinez", "Rotation Two"]

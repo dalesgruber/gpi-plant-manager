@@ -165,6 +165,35 @@ def _best_pair(
     return [strongest] if strongest is not None else []
 
 
+def _full_day_time_off_names(time_off_entries: Sequence[dict]) -> set[str]:
+    return {
+        str(entry.get("name") or "")
+        for entry in (time_off_entries or [])
+        if entry.get("hours") is None and str(entry.get("name") or "").strip()
+    }
+
+
+def smart_defaults_for_day(
+    day: date,
+    roster: Sequence[staffing.Person],
+    base_assignments: dict[str, list[str]],
+    time_off_entries: Sequence[dict],
+) -> dict[str, list[str]]:
+    smart = {wc: list(names or []) for wc, names in (base_assignments or {}).items()}
+    pinned = list(smart.get(TRIM_SAW_WC, []))
+    unavailable = _full_day_time_off_names(time_off_entries)
+    for wc_name, names in smart.items():
+        if wc_name == TRIM_SAW_WC:
+            continue
+        unavailable.update(names or [])
+    pair = suggest_trim_saw_pair(day, roster, pinned, unavailable)
+    if pair:
+        smart[TRIM_SAW_WC] = pair[:TRIM_SAW_MAX_OPERATORS]
+    else:
+        smart.pop(TRIM_SAW_WC, None)
+    return smart
+
+
 def suggest_trim_saw_pair(
     day: date,
     roster: Sequence[staffing.Person],
