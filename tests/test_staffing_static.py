@@ -112,3 +112,15 @@ def test_forklift_live_recalc_hooks_assignment_changes():
     assert "recalcForkliftBaySummary();" in js
     assert "Predicted Time-to-Claim " in js
     assert "TTC overloaded" in js
+
+
+def test_reset_to_defaults_reconciles_left_rail():
+    js = _script()
+
+    assert "function syncLeftRailWithSchedule()" in js
+    assert "syncLeftRailWithSchedule();" in js
+    assert "const scheduledNames = new Set();" in js
+    assert 'details.sched-dd input[name^="loc__"]:checked' in js
+    assert "Object.keys(__peopleMeta || {}).forEach(name => {" in js
+    assert "scheduledNames.has(name)" in js
+    assert "addBackToCorrectList(name);" in js

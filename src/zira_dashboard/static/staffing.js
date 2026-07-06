@@ -67,6 +67,7 @@
         updateDdSummary(dd);
         __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
       });
+      syncLeftRailWithSchedule();
       refreshPickerVisibility();
       kickAutosave();
     });
@@ -639,6 +640,21 @@
     } else {
       addToUnscheduled(name);
     }
+  }
+
+  function syncLeftRailWithSchedule() {
+    const scheduledNames = new Set();
+    document.querySelectorAll('details.sched-dd input[name^="loc__"]:checked').forEach(cb => {
+      scheduledNames.add(cb.value);
+    });
+    Object.keys(__peopleMeta || {}).forEach(name => {
+      if (__timeOffNames.has(name) || scheduledNames.has(name)) {
+        removeFromUnscheduled(name);
+        removeFromReserves(name);
+      } else {
+        addBackToCorrectList(name);
+      }
+    });
   }
 
   // Remove `name` from the Time Off pill list (silent — caller just acted).
