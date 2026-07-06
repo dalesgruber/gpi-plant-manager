@@ -54,7 +54,7 @@
         alert("This schedule is Posted. Click Edit first if you need to reset it.");
         return;
       }
-      if (!confirm("Reset every Scheduled cell to that work center's defaults?\n\n(Time off and notes stay. Anyone manually scheduled is replaced with the WC's defaults.)")) return;
+      if (!confirm("Reset every Scheduled cell to the page defaults?\n\n(Time off and notes stay. Anyone manually scheduled is replaced with the defaults shown on this page.)")) return;
       document.querySelectorAll('details.sched-dd').forEach(dd => {
         const wanted = new Set(__defaultsByLoc[dd.dataset.loc] || []);
         dd.querySelectorAll('.dd-item').forEach(item => {
