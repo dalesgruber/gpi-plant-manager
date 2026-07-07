@@ -58,6 +58,11 @@
     // measures pre-font-load.
     fitGridToViewport();
     requestAnimationFrame(fitGridToViewport);
+    // Fonts change the measured TV-header height; re-fit once they settle so
+    // cellHeight isn't computed against a stale (pre-font) header measurement.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fitGridToViewport);
+    }
     window.addEventListener('resize', fitGridToViewport);
     return; // TVs are read-only — none of the editor wiring below applies.
   }
