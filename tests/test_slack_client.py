@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+import requests
 
 from zira_dashboard import slack_client
 
@@ -84,6 +85,38 @@ def test_upload_pdf_complete_failure_raises(monkeypatch):
     ])
     monkeypatch.setattr(slack_client.requests, "post", lambda *a, **kw: next(responses))
     with pytest.raises(slack_client.SlackError, match="not_in_channel"):
+        slack_client.upload_pdf(
+            b"%PDF-1.4",
+            filename="t.pdf",
+            channel_id="C123",
+            initial_comment="hi",
+        )
+
+
+def test_upload_pdf_network_error_during_upload_raises_slack_error(monkeypatch):
+    """A dropped connection while uploading bytes to Slack's upload_url
+    (seen in prod as ConnectionResetError) must surface as SlackError,
+    not the raw requests exception -- otherwise the route's
+    `except slack_client.SlackError` doesn't catch it and the endpoint
+    crashes with a non-JSON 500.
+    """
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
+
+    responses = iter([
+        _ok_response({"ok": True, "upload_url": "https://files.slack.com/x", "file_id": "F1"}),
+    ])
+
+    def fake_post(url, **kwargs):
+        try:
+            return next(responses)
+        except StopIteration:
+            raise requests.exceptions.ConnectionError(
+                "('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))"
+            )
+
+    monkeypatch.setattr(slack_client.requests, "post", fake_post)
+
+    with pytest.raises(slack_client.SlackError):
         slack_client.upload_pdf(
             b"%PDF-1.4",
             filename="t.pdf",

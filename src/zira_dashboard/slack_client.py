@@ -44,46 +44,53 @@ def upload_pdf(
     if not token:
         raise SlackError("Slack not configured (SLACK_BOT_TOKEN missing)")
 
-    # 1) Get an upload URL.
-    r = requests.post(
-        "https://slack.com/api/files.getUploadURLExternal",
-        headers={"Authorization": f"Bearer {token}"},
-        data={"filename": filename, "length": len(pdf_bytes)},
-        timeout=15,
-    )
-    r.raise_for_status()
-    j = r.json()
-    if not j.get("ok"):
-        raise SlackError(f"getUploadURLExternal failed: {j.get('error')}")
-    upload_url = j["upload_url"]
-    file_id = j["file_id"]
+    try:
+        # 1) Get an upload URL.
+        r = requests.post(
+            "https://slack.com/api/files.getUploadURLExternal",
+            headers={"Authorization": f"Bearer {token}"},
+            data={"filename": filename, "length": len(pdf_bytes)},
+            timeout=15,
+        )
+        r.raise_for_status()
+        j = r.json()
+        if not j.get("ok"):
+            raise SlackError(f"getUploadURLExternal failed: {j.get('error')}")
+        upload_url = j["upload_url"]
+        file_id = j["file_id"]
 
-    # 2) Upload the bytes to the returned URL.
-    r = requests.post(
-        upload_url,
-        files={"file": (filename, pdf_bytes)},
-        timeout=30,
-    )
-    r.raise_for_status()
+        # 2) Upload the bytes to the returned URL.
+        r = requests.post(
+            upload_url,
+            files={"file": (filename, pdf_bytes)},
+            timeout=30,
+        )
+        r.raise_for_status()
 
-    # 3) Complete the upload (this is the step that posts to channel).
-    r = requests.post(
-        "https://slack.com/api/files.completeUploadExternal",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
-        },
-        json={
-            "files": [{"id": file_id, "title": filename}],
-            "channel_id": channel_id,
-            "initial_comment": initial_comment,
-        },
-        timeout=15,
-    )
-    r.raise_for_status()
-    j = r.json()
-    if not j.get("ok"):
-        raise SlackError(f"completeUploadExternal failed: {j.get('error')}")
+        # 3) Complete the upload (this is the step that posts to channel).
+        r = requests.post(
+            "https://slack.com/api/files.completeUploadExternal",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json={
+                "files": [{"id": file_id, "title": filename}],
+                "channel_id": channel_id,
+                "initial_comment": initial_comment,
+            },
+            timeout=15,
+        )
+        r.raise_for_status()
+        j = r.json()
+        if not j.get("ok"):
+            raise SlackError(f"completeUploadExternal failed: {j.get('error')}")
+    except requests.exceptions.RequestException as e:
+        # Network failures (dropped connections, timeouts, DNS, non-2xx
+        # from raise_for_status) aren't wrapped by the ok/error checks
+        # above -- without this they'd escape as raw requests exceptions
+        # that callers' `except SlackError` clauses don't catch.
+        raise SlackError(f"Slack request failed: {e}") from e
 
     file_info = j["files"][0]
     return {

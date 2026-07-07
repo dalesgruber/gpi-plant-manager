@@ -145,6 +145,38 @@ def test_share_returns_502_on_slack_error(monkeypatch):
     assert "not_in_channel" in body["error"]
 
 
+def test_share_returns_json_502_when_slack_upload_hits_network_error(monkeypatch):
+    """Reproduces the prod incident: Slack's file-upload connection got
+    reset mid-request. upload_pdf now wraps that as SlackError, so the
+    route's existing `except slack_client.SlackError` must turn it into
+    a JSON 502 instead of an unhandled 500 the client can't parse.
+    """
+    monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
+
+    fake_html_response = MagicMock()
+    fake_html_response.body = b"<html>fake</html>"
+
+    with patch(
+        "zira_dashboard.routes.share.staffing_page",
+        return_value=fake_html_response,
+    ), patch(
+        "zira_dashboard.routes.share._render_pdf",
+        return_value=b"%PDF-1.4 fake",
+    ), patch(
+        "zira_dashboard.routes.share.slack_client.upload_pdf",
+        side_effect=slack_client.SlackError(
+            "Slack request failed: Connection aborted."
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.post("/staffing/share-to-slack?day=2026-04-30")
+
+    assert resp.status_code == 502
+    body = resp.json()
+    assert body["ok"] is False
+    assert "Connection aborted" in body["error"]
+
+
 def test_share_initial_comment_uses_short_date_format(monkeypatch):
     monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
 
