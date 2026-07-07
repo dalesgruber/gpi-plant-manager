@@ -5,8 +5,11 @@ media query. See docs/superpowers/specs/2026-07-07-recycling-dashboard-scaling-d
 """
 from pathlib import Path
 
-CSS = (Path(__file__).resolve().parent.parent
-       / "src/zira_dashboard/static/recycling.css").read_text()
+_STATIC = Path(__file__).resolve().parent.parent / "src/zira_dashboard/static"
+_TEMPLATES = Path(__file__).resolve().parent.parent / "src/zira_dashboard/templates"
+CSS = (_STATIC / "recycling.css").read_text()
+WC_CSS = (_STATIC / "wc_dashboard.css").read_text()
+RECYCLING_HTML = (_TEMPLATES / "recycling.html").read_text()
 
 
 def test_progress_plot_has_no_pixel_min_height_floor():
@@ -25,3 +28,22 @@ def test_no_fixed_progress_bars_height_in_media_query():
     # The harmful `@media (max-width:600px){ .progress .bars{height:110px} }`
     # pinned the flex chart to a fixed height on narrow windows.
     assert "height: 110px" not in CSS
+
+
+def test_widget_content_padding_ceiling_is_modest():
+    # cqh on the container resolves against the viewport, so the padding clamp
+    # sits at its ceiling. A 1rem ceiling (~21px on a TV) ate short KPI cards.
+    assert "clamp(0.4rem, 3cqh, 1rem)" not in CSS
+
+
+def test_wc_kpi_value_has_low_font_floor():
+    # Operator-dashboard KPI number must shrink to fit a short h2 card on a TV
+    # instead of clipping — no big 2rem floor.
+    assert "clamp(2rem, min(75cqh, 28cqw), 8rem)" not in WC_CSS
+
+
+def test_recycling_bar_widgets_default_taller():
+    # The two "Pallets by Work Center" bar widgets need >4 rows so 6 operators
+    # fit legibly on a TV; default height was bumped to 6.
+    assert "widget_attrs('dismantler-bars', 0, 2, 6, 6)" in RECYCLING_HTML
+    assert "widget_attrs('repair-bars', 6, 2, 6, 6)" in RECYCLING_HTML

@@ -84,11 +84,17 @@
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: clamp(0.4rem, 3cqh, 1rem) clamp(0.5rem, 2.5cqw, 1.1rem);
+    /* NOTE: `cqh`/`cqw` on this element resolve against the VIEWPORT, not the
+       card itself (an element can't query its own container), so the middle
+       terms are effectively always huge and the clamp sits at its ceiling.
+       Keep the ceilings modest so a short widget (e.g. an h2 KPI card) isn't
+       eaten by padding/gap — this was clipping the KPI number in the editor
+       and operator dashboards. TV mode overrides these in tv-mode.css. */
+    padding: clamp(0.4rem, 3cqh, 0.7rem) clamp(0.5rem, 2.5cqw, 1.1rem);
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: clamp(0.2rem, 2cqh, 0.6rem);
+    gap: clamp(0.2rem, 2cqh, 0.45rem);
     container-type: size;
     container-name: widget;
   }
