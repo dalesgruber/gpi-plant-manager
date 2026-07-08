@@ -83,7 +83,7 @@ def test_breakdown_snoozes_round_trips():
     )
     incident_id = rows[0]["id"]
     db.execute(
-        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, snooze_until) "
+        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, until_utc) "
         "VALUES (%s, %s, %s)",
         (incident_id, "Test Person", now),
     )
@@ -109,6 +109,7 @@ def test_production_daily_has_excluded_minutes_column():
 
 
 def test_wc_time_attributions_has_breakdown_id_column():
+    db.execute("DELETE FROM wc_time_attributions WHERE wc_name = 'Test WC'")
     db.execute(
         "INSERT INTO wc_time_attributions (day, wc_name, person_name, start_utc, "
         "source, breakdown_id) VALUES (%s, %s, %s, %s, %s, %s)",
@@ -145,14 +146,17 @@ CREATE TABLE IF NOT EXISTS machine_breakdowns (
   id                BIGSERIAL PRIMARY KEY,
   wc_name           TEXT NOT NULL,
   day               DATE NOT NULL,
-  detected_stop_utc TIMESTAMPTZ NOT NULL,
-  source            TEXT NOT NULL DEFAULT 'auto',  -- 'auto' | 'manual'
+  detected_stop_utc TIMESTAMPTZ NOT NULL,  -- when output was last seen before the breakdown
+  source            TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual')),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at       TIMESTAMPTZ,
-  resolution        TEXT,  -- 'recovered' | 'handled' | 'dismissed'; NULL while open
-  resume_utc        TIMESTAMPTZ
+  resolution        TEXT CHECK (resolution IN ('recovered', 'handled', 'dismissed')),  -- NULL while open
+  resume_utc        TIMESTAMPTZ  -- when the machine started producing again; may precede resolved_at if a manager still has to act
 );
-CREATE INDEX IF NOT EXISTS machine_breakdowns_open_idx
+-- UNIQUE (not just an index): hard dedupe backstop against auto-detect and a
+-- manual report racing each other for the same machine/day, mirroring the
+-- existing employee_notifications_dedupe pattern in this file.
+CREATE UNIQUE INDEX IF NOT EXISTS machine_breakdowns_open_idx
   ON machine_breakdowns (wc_name, day) WHERE resolved_at IS NULL;
 
 -- 2026-07-08: per-operator 15-minute deferral on a breakdown card row.
@@ -160,7 +164,7 @@ CREATE INDEX IF NOT EXISTS machine_breakdowns_open_idx
 CREATE TABLE IF NOT EXISTS breakdown_snoozes (
   breakdown_id  BIGINT NOT NULL,
   person_name   TEXT NOT NULL,
-  snooze_until  TIMESTAMPTZ NOT NULL,
+  until_utc     TIMESTAMPTZ NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (breakdown_id, person_name)
 );
@@ -1574,7 +1578,7 @@ def test_active_snooze_until_none_after_expiry(monkeypatch):
     now = datetime.now(timezone.utc)
     incident_id = machine_breakdown.open_incident(WC, now.date(), now, source="auto")
     db.execute(
-        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, snooze_until) VALUES (%s, %s, %s)",
+        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, until_utc) VALUES (%s, %s, %s)",
         (incident_id, "Juan", now - timedelta(minutes=1)),
     )
     assert machine_breakdown.active_snooze_until(incident_id, "Juan") is None
@@ -1665,24 +1669,24 @@ def snooze_operator(incident_id: int, person_name: str, minutes: int = BREAKDOWN
     from . import db
     until = datetime.now(UTC) + timedelta(minutes=minutes)
     db.execute(
-        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, snooze_until) "
+        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, until_utc) "
         "VALUES (%s, %s, %s) "
         "ON CONFLICT (breakdown_id, person_name) DO UPDATE SET "
-        "snooze_until = EXCLUDED.snooze_until, created_at = now()",
+        "until_utc = EXCLUDED.until_utc, created_at = now()",
         (incident_id, person_name, until),
     )
 
 
 def active_snooze_until(incident_id: int, person_name: str) -> datetime | None:
-    """The snooze_until timestamp if this operator's snooze on this incident
+    """The until_utc timestamp if this operator's snooze on this incident
     hasn't expired yet, else None."""
     from . import db
     rows = db.query(
-        "SELECT snooze_until FROM breakdown_snoozes "
-        "WHERE breakdown_id = %s AND person_name = %s AND snooze_until > now()",
+        "SELECT until_utc FROM breakdown_snoozes "
+        "WHERE breakdown_id = %s AND person_name = %s AND until_utc > now()",
         (incident_id, person_name),
     )
-    return rows[0]["snooze_until"] if rows else None
+    return rows[0]["until_utc"] if rows else None
 ```
 
 Add the missing `UTC` import at the top of the file (it currently only imports `date, datetime`):
