@@ -595,3 +595,23 @@ header.app {
 .cov-name.cov-same { color: #fff; font-weight: 600; }
 .cov-hol-line { display: block; padding-left: 10px; color: #f0b86c; }
 .cov-more { display: block; margin-top: 4px; color: #9fb0c3; font-style: italic; }
+
+/* Machine breakdown --------------------------------------------------------
+   The header-row control bar and the breakdown card's rows. A breakdown "card"
+   is really a header row (the machine) followed by one row per idle operator;
+   a shared red left-accent border visually groups them as one unit against the
+   queue's rounded-card layout (matches the approved mockup). Uses the file's
+   existing --bad / --bad-dim tokens. */
+.inbox-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.exception-row[data-action-type="breakdown_header"] {
+  border-left: 4px solid var(--bad);
+  background: var(--bad-dim);
+  font-weight: 600;
+}
+.exception-row[data-action-type="breakdown"] {
+  border-left: 4px solid var(--bad);
+}
