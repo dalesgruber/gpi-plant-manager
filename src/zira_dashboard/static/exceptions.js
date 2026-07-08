@@ -100,6 +100,7 @@
     else if (actionType === 'late_absence' || actionType === 'late_reason') badgeKey = 'late';
     else if (actionType === 'missing_wc') badgeKey = 'missing_wc';
     else if (actionType === 'missed_punch_out') badgeKey = 'missed_punch_out';
+    else if (actionType === 'breakdown' || actionType === 'breakdown_header') badgeKey = 'breakdown';
     if (!badgeKey) return;
     var api = window.gpiAlertBadges && window.gpiAlertBadges[badgeKey];
     if (api && typeof api.refreshCount === 'function') api.refreshCount();
@@ -531,6 +532,8 @@
     var personName = row.dataset.personName || (row.querySelector('.exception-name') ? row.querySelector('.exception-name').textContent.trim() : '');
     var attendanceId = asInt(row.dataset.attendanceId);
     var empId = row.dataset.empId || '';
+    var incidentId = row.dataset.incidentId;
+    var breakdownWc = row.dataset.wcName;
 
     if (rowBtn.classList.contains('js-assign')) {
       var person = row.querySelector('.js-person').value;
@@ -641,6 +644,58 @@
         name: personName,
       }).then(function (resp) {
         if (resp && resp.ok) resolveRow(row, 'Dismissed', resp.event_id);
+        else failRow(row, (resp && resp.error) || 'Dismiss failed.');
+      }).catch(function () { failRow(row, 'Network error.'); });
+      return;
+    }
+
+    if (rowBtn.classList.contains('js-breakdown-transfer')) {
+      var toWc = row.querySelector('.js-wc').value;
+      if (!incidentId || !toWc) {
+        failRow(row, toWc ? 'Missing incident id.' : 'Pick a work center.');
+        return;
+      }
+      setBusy(row, true);
+      rowStatus(row, 'Transferring...', false);
+      postJson('/api/exceptions/breakdown/transfer', {
+        incident_id: incidentId,
+        person_name: personName,
+        to_wc: toWc,
+      }).then(function (resp) {
+        if (resp && resp.ok) resolveRow(row, 'Transferred', resp.event_id);
+        else failRow(row, (resp && resp.error) || 'Transfer failed.');
+      }).catch(function () { failRow(row, 'Network error.'); });
+      return;
+    }
+
+    if (rowBtn.classList.contains('js-breakdown-snooze')) {
+      if (!incidentId || !personName) {
+        failRow(row, 'Missing incident id.');
+        return;
+      }
+      setBusy(row, true);
+      rowStatus(row, 'Snoozing...', false);
+      postJson('/api/exceptions/breakdown/snooze', {
+        incident_id: incidentId,
+        person_name: personName,
+      }).then(function (resp) {
+        if (resp && resp.ok) resolveRow(row, 'Snoozed');
+        else failRow(row, (resp && resp.error) || 'Snooze failed.');
+      }).catch(function () { failRow(row, 'Network error.'); });
+      return;
+    }
+
+    if (rowBtn.classList.contains('js-breakdown-dismiss')) {
+      if (!incidentId) {
+        failRow(row, 'Missing incident id.');
+        return;
+      }
+      setBusy(row, true);
+      rowStatus(row, 'Dismissing...', false);
+      postJson('/api/exceptions/breakdown/dismiss', {
+        incident_id: incidentId,
+      }).then(function (resp) {
+        if (resp && resp.ok) resolveRow(row, 'Not a breakdown', resp.event_id);
         else failRow(row, (resp && resp.error) || 'Dismiss failed.');
       }).catch(function () { failRow(row, 'Network error.'); });
       return;
