@@ -276,6 +276,15 @@ async def _tick_inbox_reconcile():
     await asyncio.to_thread(inbox_reconcile.run_once)
 
 
+async def _tick_machine_breakdown():
+    """Detect newly-broken recycling machines, cap operators who've left a
+    broken machine, and auto-resolve incidents whose machine resumed. Runs
+    off the same cadence as the production-data warmer since it reads the
+    same Zira station data."""
+    from . import machine_breakdown
+    await asyncio.to_thread(machine_breakdown.run_detect_tick)
+
+
 async def _tick_page_usage():
     """Drain the in-memory page-view counter to Postgres in one batched upsert.
     Keeps per-request cost at a dict increment; this is the only DB work the
@@ -305,6 +314,7 @@ async def _tick_time_off_backfill():
 _WARMERS = [
     ("Zira cache", _tick_zira_cache, 30),
     ("live_cache", _tick_live_cache, 45),
+    ("machine breakdown", _tick_machine_breakdown, 45),
     ("kiosk sync", _tick_timeclock_sync, 60),
     ("Odoo open-attendance", _tick_odoo_attendance, 30),
     ("auto-lunch", _tick_auto_lunch, 60),
