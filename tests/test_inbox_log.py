@@ -1,5 +1,6 @@
 """inbox_log: write/read the Exception Inbox activity log + best-effort wrapper."""
 import os
+from datetime import date, datetime, UTC
 
 import pytest
 
@@ -61,6 +62,52 @@ def test_record_event_allows_null_actor_for_auto_resolved():
     )
     rows = [r for r in inbox_log.recent_events(days=1) if r["item_key"] == KEY]
     assert rows[0]["actor_upn"] is None
+
+
+@_db
+def test_record_event_detail_with_real_datetime_and_date_round_trips():
+    """Regression: detail payloads built from real DB rows (e.g. breakdown
+    dismiss's wc_attributions.for_day() snapshot) carry actual datetime/date
+    objects, not ISO strings. json.dumps can't serialize those natively --
+    record_event must not raise (it would be swallowed by log_event_safe's
+    blanket except, silently dropping the event and making it non-undoable)."""
+    detail = {
+        "incident_id": 1,
+        "rows": [{
+            "day": date(2026, 7, 8),
+            "wc_name": "Dismantler 2",
+            "person_name": "Juan",
+            "start_utc": datetime(2026, 7, 8, 18, 2, tzinfo=UTC),
+            "end_utc": None,
+        }],
+    }
+    eid = inbox_log.record_event(
+        item_kind="breakdown",
+        item_key=KEY,
+        person_name=None,
+        category_label="Machine Breakdown",
+        action="dismiss",
+        outcome="Not a breakdown",
+        source="inbox",
+        reversible=True,
+        detail=detail,
+    )
+    assert isinstance(eid, int)
+
+    ev = inbox_log.get_event(eid)
+    assert ev is not None
+    got = ev["detail"]
+    if isinstance(got, str):
+        import json
+        got = json.loads(got)
+    assert got["incident_id"] == 1
+    row = got["rows"][0]
+    assert row["wc_name"] == "Dismantler 2"
+    assert row["person_name"] == "Juan"
+    # datetime/date fall back to str() -- not natively JSON serializable.
+    assert row["day"] == str(date(2026, 7, 8))
+    assert row["start_utc"] == str(datetime(2026, 7, 8, 18, 2, tzinfo=UTC))
+    assert row["end_utc"] is None
 
 
 def test_log_event_safe_swallows_errors(monkeypatch):

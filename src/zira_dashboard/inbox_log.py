@@ -57,7 +57,7 @@ def record_event(
         "RETURNING id",
         (item_kind, item_key, person_name, category_label, action, outcome,
          before_value, after_value, reason, actor_upn, actor_name, source,
-         reversible, json.dumps(detail) if detail is not None else None),
+         reversible, json.dumps(detail, default=str) if detail is not None else None),
     )
     return int(rows[0]["id"])
 
