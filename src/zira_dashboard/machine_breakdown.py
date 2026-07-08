@@ -12,7 +12,7 @@ breakdown are kept).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 BREAKDOWN_NO_OUTPUT_MINUTES = 15
 """Default minutes of no output (while an operator is clocked in) before a
@@ -123,3 +123,98 @@ def excluded_minutes_overlapping(
         if hi > lo:
             clipped.append((lo, hi))
     return excluded_minutes_for_windows(clipped, day, productive_minutes_in_window)
+
+
+BREAKDOWN_SNOOZE_MINUTES = 15
+
+
+def open_incident(wc_name: str, day, stop_utc: datetime, source: str = "auto") -> int:
+    """Open a new breakdown incident. Caller must ensure no incident is
+    already open for (wc_name, day) -- see get_open_incident."""
+    from . import db
+    rows = db.query(
+        "INSERT INTO machine_breakdowns (wc_name, day, detected_stop_utc, source) "
+        "VALUES (%s, %s, %s, %s) RETURNING id",
+        (wc_name, day, stop_utc, source),
+    )
+    return rows[0]["id"]
+
+
+def get_open_incident(wc_name: str, day) -> dict | None:
+    """The currently-open incident for (wc_name, day), or None."""
+    from . import db
+    rows = db.query(
+        "SELECT id, wc_name, day, detected_stop_utc, source, created_at, "
+        "resolved_at, resolution, resume_utc FROM machine_breakdowns "
+        "WHERE wc_name = %s AND day = %s AND resolved_at IS NULL",
+        (wc_name, day),
+    )
+    return rows[0] if rows else None
+
+
+def get_incident(incident_id: int) -> dict | None:
+    """One incident by id, open or resolved."""
+    from . import db
+    rows = db.query(
+        "SELECT id, wc_name, day, detected_stop_utc, source, created_at, "
+        "resolved_at, resolution, resume_utc FROM machine_breakdowns WHERE id = %s",
+        (incident_id,),
+    )
+    return rows[0] if rows else None
+
+
+def all_open_incidents(day) -> list[dict]:
+    """Every currently-open incident for `day`, oldest first."""
+    from . import db
+    return db.query(
+        "SELECT id, wc_name, day, detected_stop_utc, source, created_at, "
+        "resolved_at, resolution, resume_utc FROM machine_breakdowns "
+        "WHERE day = %s AND resolved_at IS NULL ORDER BY detected_stop_utc",
+        (day,),
+    )
+
+
+def resolve_incident(incident_id: int, resolution: str, resume_utc: datetime | None = None) -> None:
+    """Mark an incident resolved (resolution in 'recovered'|'handled'|'dismissed')."""
+    from . import db
+    db.execute(
+        "UPDATE machine_breakdowns SET resolved_at = now(), resolution = %s, resume_utc = %s "
+        "WHERE id = %s",
+        (resolution, resume_utc, incident_id),
+    )
+
+
+def reopen_incident(incident_id: int) -> None:
+    """Undo a resolution -- clears resolved_at/resolution/resume_utc so the
+    incident is open again (dismiss-undo)."""
+    from . import db
+    db.execute(
+        "UPDATE machine_breakdowns SET resolved_at = NULL, resolution = NULL, resume_utc = NULL "
+        "WHERE id = %s",
+        (incident_id,),
+    )
+
+
+def snooze_operator(incident_id: int, person_name: str, minutes: int = BREAKDOWN_SNOOZE_MINUTES) -> None:
+    """Silence one operator's row on this incident's card for `minutes`."""
+    from . import db
+    until = datetime.now(UTC) + timedelta(minutes=minutes)
+    db.execute(
+        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, until_utc) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (breakdown_id, person_name) DO UPDATE SET "
+        "until_utc = EXCLUDED.until_utc, created_at = now()",
+        (incident_id, person_name, until),
+    )
+
+
+def active_snooze_until(incident_id: int, person_name: str) -> datetime | None:
+    """The until_utc timestamp if this operator's snooze on this incident
+    hasn't expired yet, else None."""
+    from . import db
+    rows = db.query(
+        "SELECT until_utc FROM breakdown_snoozes "
+        "WHERE breakdown_id = %s AND person_name = %s AND until_utc > now()",
+        (incident_id, person_name),
+    )
+    return rows[0]["until_utc"] if rows else None
