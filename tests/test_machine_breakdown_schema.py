@@ -50,7 +50,7 @@ def test_breakdown_snoozes_round_trips():
     )
     incident_id = rows[0]["id"]
     db.execute(
-        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, snooze_until) "
+        "INSERT INTO breakdown_snoozes (breakdown_id, person_name, until_utc) "
         "VALUES (%s, %s, %s)",
         (incident_id, "Test Person", now),
     )
@@ -76,6 +76,7 @@ def test_production_daily_has_excluded_minutes_column():
 
 
 def test_wc_time_attributions_has_breakdown_id_column():
+    db.execute("DELETE FROM wc_time_attributions WHERE wc_name = 'Test WC'")
     db.execute(
         "INSERT INTO wc_time_attributions (day, wc_name, person_name, start_utc, "
         "source, breakdown_id) VALUES (%s, %s, %s, %s, %s, %s)",

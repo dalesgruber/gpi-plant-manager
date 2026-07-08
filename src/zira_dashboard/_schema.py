@@ -1144,14 +1144,17 @@ CREATE TABLE IF NOT EXISTS machine_breakdowns (
   id                BIGSERIAL PRIMARY KEY,
   wc_name           TEXT NOT NULL,
   day               DATE NOT NULL,
-  detected_stop_utc TIMESTAMPTZ NOT NULL,
-  source            TEXT NOT NULL DEFAULT 'auto',  -- 'auto' | 'manual'
+  detected_stop_utc TIMESTAMPTZ NOT NULL,  -- when output was last seen before the breakdown
+  source            TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual')),
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at       TIMESTAMPTZ,
-  resolution        TEXT,  -- 'recovered' | 'handled' | 'dismissed'; NULL while open
-  resume_utc        TIMESTAMPTZ
+  resolution        TEXT CHECK (resolution IN ('recovered', 'handled', 'dismissed')),  -- NULL while open
+  resume_utc        TIMESTAMPTZ  -- when the machine started producing again; may precede resolved_at if a manager still has to act
 );
-CREATE INDEX IF NOT EXISTS machine_breakdowns_open_idx
+-- Hard dedupe backstop (mirrors employee_notifications_dedupe): enforces the
+-- "one open incident per (wc_name, day)" invariant at the DB level, not just
+-- via application logic.
+CREATE UNIQUE INDEX IF NOT EXISTS machine_breakdowns_open_idx
   ON machine_breakdowns (wc_name, day) WHERE resolved_at IS NULL;
 
 -- 2026-07-08: per-operator 15-minute deferral on a breakdown card row.
@@ -1159,7 +1162,7 @@ CREATE INDEX IF NOT EXISTS machine_breakdowns_open_idx
 CREATE TABLE IF NOT EXISTS breakdown_snoozes (
   breakdown_id  BIGINT NOT NULL,
   person_name   TEXT NOT NULL,
-  snooze_until  TIMESTAMPTZ NOT NULL,
+  until_utc     TIMESTAMPTZ NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (breakdown_id, person_name)
 );
