@@ -1,5 +1,12 @@
 """Pure-logic tests for the excluded_minutes extension to attribute_for_day,
-plus tests for attribution_for's breakdown-exclusion wiring."""
+plus tests for attribution_for's breakdown-exclusion wiring.
+
+Note: `test_excluded_minutes_by_person_wc_sums_closed_and_caps_open` is the
+one exception to "pure" in this file -- it calls `_excluded_minutes_by_person_wc`
+directly (bypassing `attribution_for`'s defensive try/except), which uses the
+REAL `shift_config.productive_minutes_in_window` (not dependency-injected),
+which in turn reads `breaks_for()` -> `staffing.load_schedule()` -> Postgres.
+It needs a live DATABASE_URL to pass; every other test here is DB-less."""
 from datetime import date, datetime, timezone
 
 from zira_dashboard.production_history import attribute_for_day
@@ -25,6 +32,10 @@ def test_attribute_for_day_no_excluded_minutes_argument_defaults_zero():
 
 
 def test_excluded_minutes_by_person_wc_sums_closed_and_caps_open(monkeypatch):
+    """Needs a live DATABASE_URL -- see the module docstring. Only
+    `breakdown_windows_for_day` is mocked; `productive_minutes_in_window`
+    is the real shift_config function, which loads the schedule from
+    Postgres via `breaks_for()`."""
     from zira_dashboard import wc_attributions
     day = date(2026, 7, 8)
     # Times are picked to fall strictly before the plant's default 9:00-9:15

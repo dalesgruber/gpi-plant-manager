@@ -13,7 +13,7 @@ data and is fully testable. The wrappers (`attribution_for`,
 
 from __future__ import annotations
 
-from datetime import date, UTC
+from datetime import date, datetime, UTC
 
 
 def attribute_for_day(
@@ -178,7 +178,6 @@ def _effective_now(day: date, now: datetime) -> datetime:
     """`now`, clamped to `day`'s shift end. Used to cap an OPEN breakdown
     exclusion window for a past day (or a today read taken after hours) so
     excluded-minutes math never runs past the shift that actually happened."""
-    from datetime import datetime, UTC
     from .shift_config import shift_end_for, SITE_TZ
     shift_end_utc = datetime.combine(day, shift_end_for(day), tzinfo=SITE_TZ).astimezone(UTC)
     return min(now, shift_end_utc)
@@ -230,7 +229,12 @@ def attribution_for(d: date, client) -> dict[str, dict[str, dict[str, float]]]:
     if testing:
         samples_by_wc = _fetch_wc_samples(client, d)
         wc_totals = _apply_testing_offsets(wc_totals, samples_by_wc, testing)
-    excluded = _excluded_minutes_by_person_wc(d, _effective_now(d, datetime.now(UTC)))
+    # Defensive like the two calls above: a breakdown-lookup DB hiccup should
+    # degrade to "no exclusions" rather than take the whole attribution down.
+    try:
+        excluded = _excluded_minutes_by_person_wc(d, _effective_now(d, datetime.now(UTC)))
+    except Exception:
+        excluded = {}
     return attribute_for_day(
         sched.assignments, wc_totals, elapsed,
         extra_assignments=extra, excluded_minutes=excluded,
