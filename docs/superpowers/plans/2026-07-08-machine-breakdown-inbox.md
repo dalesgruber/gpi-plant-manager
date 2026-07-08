@@ -781,14 +781,13 @@ Expected: FAIL — `AttributeError: module 'zira_dashboard.production_history' h
 
 - [ ] **Step 7: Add `_effective_now`, `_excluded_minutes_by_person_wc`, and wire into `attribution_for`**
 
-In `src/zira_dashboard/production_history.py`, add these two helpers near `_apply_testing_offsets`:
+In `src/zira_dashboard/production_history.py`, first check the module-level import line near the top of the file — it currently reads `from datetime import date, UTC` (no `datetime` class). Change it to `from datetime import date, datetime, UTC` so the two new functions' signature annotations below resolve under `ruff`'s static analysis (pyflakes F821 — `from __future__ import annotations` defers evaluation at runtime, but ruff still statically checks that annotated names are resolvable, and a name only imported inside a function body doesn't count for that function's own `def` line). With `datetime` now at module scope, add these two helpers near `_apply_testing_offsets` (no per-function local `datetime` import needed):
 
 ```python
 def _effective_now(day: date, now: datetime) -> datetime:
     """`now`, clamped to `day`'s shift end. Used to cap an OPEN breakdown
     exclusion window for a past day (or a today read taken after hours) so
     excluded-minutes math never runs past the shift that actually happened."""
-    from datetime import datetime, UTC
     from .shift_config import shift_end_for, SITE_TZ
     shift_end_utc = datetime.combine(day, shift_end_for(day), tzinfo=SITE_TZ).astimezone(UTC)
     return min(now, shift_end_utc)
@@ -834,14 +833,17 @@ def attribution_for(d: date, client) -> dict[str, dict[str, dict[str, float]]]:
     if testing:
         samples_by_wc = _fetch_wc_samples(client, d)
         wc_totals = _apply_testing_offsets(wc_totals, samples_by_wc, testing)
-    excluded = _excluded_minutes_by_person_wc(d, _effective_now(d, datetime.now(UTC)))
+    try:
+        excluded = _excluded_minutes_by_person_wc(d, _effective_now(d, datetime.now(UTC)))
+    except Exception:
+        excluded = {}
     return attribute_for_day(
         sched.assignments, wc_totals, elapsed,
         extra_assignments=extra, excluded_minutes=excluded,
     )
 ```
 
-(Leave the rest of the docstring as-is; just the body and signature call change shown above.)
+(Leave the rest of the docstring as-is; just the body and signature call change shown above.) The `try/except` matches how `wc_attributions.people_by_wc`/`testing_windows_for_day` (called just above) already swallow their own DB errors internally — without it, a transient DB hiccup on the breakdown lookup would take down the WHOLE attribution call (units/downtime/hours too), not just degrade the one auxiliary signal. It's also required for the "Step 4/8" full-suite runs to pass without a live Postgres: `_excluded_minutes_by_person_wc` reaches `shift_config.productive_minutes_in_window` → `breaks_for` → `staffing.load_schedule` → DB, an unguarded dependency this function's neighbors don't have.
 
 - [ ] **Step 8: Run test to verify it passes**
 
