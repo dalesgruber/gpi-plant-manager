@@ -133,7 +133,7 @@ def get_event(event_id: int) -> dict[str, Any] | None:
     rows = db.query(
         "SELECT id, item_kind, item_key, person_name, category_label, action, "
         "outcome, before_value, after_value, reason, actor_upn, actor_name, "
-        "source, reversible, undone_at, undo_event_id, resolved_at "
+        "source, reversible, undone_at, undo_event_id, resolved_at, detail "
         "FROM inbox_events WHERE id = %s",
         (event_id,),
     )

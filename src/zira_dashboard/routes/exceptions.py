@@ -62,6 +62,8 @@ _UNDOABLE = {
     ("missing_wc", "dismiss"),
     ("late", "absent"),
     ("late", "reason"),
+    ("breakdown", "transfer"),
+    ("breakdown", "dismiss"),
 }
 _UNDO_WINDOW = timedelta(minutes=10)
 
@@ -652,9 +654,24 @@ async def refuse_time_off_request(request_id: int, request: Request):
     )
 
 
+def _event_detail(ev: dict[str, Any]) -> dict:
+    """ev['detail'] is written as jsonb; normalize to a dict regardless of
+    whether the driver returned it already-parsed or as a raw JSON string."""
+    import json
+    detail = ev.get("detail")
+    if isinstance(detail, dict):
+        return detail
+    if isinstance(detail, str) and detail:
+        try:
+            return json.loads(detail)
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
 def _reverse_event(ev: dict[str, Any]) -> None:
     """Reverse a resolved inbox action. Assumes (item_kind, action) is undoable."""
-    from .. import absence_sync, late_report, missing_wc, odoo_client
+    from .. import absence_sync, late_report, machine_breakdown, missing_wc, odoo_client, wc_attributions
 
     kind, action, key = ev["item_kind"], ev["action"], ev["item_key"]
     if kind == "missing_wc":
@@ -671,6 +688,24 @@ def _reverse_event(ev: dict[str, Any]) -> None:
             late_report.undo_absent(day, emp_id)
         elif action == "reason":
             late_report.undo_late_arrival(day, emp_id)
+    elif kind == "breakdown":
+        detail = _event_detail(ev)
+        if action == "transfer":
+            closed_id, new_id = detail.get("closed_id"), detail.get("new_id")
+            if new_id is not None:
+                odoo_client.undo_transfer(closed_id, new_id)
+            attribution_id = detail.get("attribution_id")
+            if attribution_id is not None:
+                wc_attributions.reopen_breakdown(attribution_id)
+        elif action == "dismiss":
+            incident_id = detail.get("incident_id")
+            machine_breakdown.reopen_incident(incident_id)
+            for row in detail.get("rows") or []:
+                wc_attributions.add(
+                    day=row["day"], wc_name=row["wc_name"], person_name=row["person_name"],
+                    start_utc=row["start_utc"], end_utc=row.get("end_utc"),
+                    source=wc_attributions.BREAKDOWN_SOURCE, breakdown_id=incident_id,
+                )
 
 
 def _undo_sync(

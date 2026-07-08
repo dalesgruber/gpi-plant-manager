@@ -88,3 +88,63 @@ def test_clear_attendance_wc_writes_false(monkeypatch):
                         lambda *a, **k: calls.setdefault("args", a))
     odoo_client.clear_attendance_wc(48213)
     assert calls["args"] == ("hr.attendance", "write", [48213], {"x_wc": False})
+
+
+def test_get_event_includes_detail(monkeypatch):
+    """get_event's SELECT must include `detail` for breakdown undo to work."""
+    from zira_dashboard import db, inbox_log
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        return [_ev(id=7)]
+
+    monkeypatch.setattr(db, "query", fake_query)
+    inbox_log.get_event(7)
+    assert "detail" in captured["sql"]
+
+
+def test_undo_breakdown_transfer_reverses_and_reopens_exclusion(monkeypatch):
+    from zira_dashboard import odoo_client, wc_attributions
+    calls = {}
+    monkeypatch.setattr(inbox_log, "get_event", lambda eid: _ev(
+        id=eid, item_kind="breakdown", item_key="breakdown:Dismantler 2:x:Juan", action="transfer",
+        detail={"closed_id": 5, "new_id": 6, "attribution_id": 10}))
+    monkeypatch.setattr(odoo_client, "undo_transfer",
+                        lambda closed_id, new_id: calls.setdefault("undo_transfer", (closed_id, new_id)))
+    monkeypatch.setattr(wc_attributions, "reopen_breakdown",
+                        lambda rid: calls.setdefault("reopen", rid))
+    monkeypatch.setattr(inbox_log, "log_event_safe", lambda **kw: 99)
+    monkeypatch.setattr(inbox_log, "mark_undone", lambda e, u: None)
+    monkeypatch.setattr(exceptions_route, "_refresh_time_off_surfaces", lambda: None)
+
+    resp = exceptions_route._undo_sync(7, None, None)
+
+    assert resp.status_code == 200
+    assert calls["undo_transfer"] == (5, 6)
+    assert calls["reopen"] == 10
+
+
+def test_undo_breakdown_dismiss_reopens_incident_and_recreates_rows(monkeypatch):
+    from zira_dashboard import machine_breakdown, wc_attributions
+    snapshot_rows = [{"day": "2026-07-08", "wc_name": "Dismantler 2", "person_name": "Juan",
+                      "start_utc": "2026-07-08T18:02:00+00:00", "end_utc": None}]
+    monkeypatch.setattr(inbox_log, "get_event", lambda eid: _ev(
+        id=eid, item_kind="breakdown", item_key="breakdown:Dismantler 2:x", action="dismiss",
+        detail={"rows": snapshot_rows, "incident_id": 1}))
+    calls = {}
+    monkeypatch.setattr(machine_breakdown, "reopen_incident",
+                        lambda iid: calls.setdefault("reopen_incident", iid))
+    added = []
+    monkeypatch.setattr(wc_attributions, "add", lambda **kw: added.append(kw) or 1)
+    monkeypatch.setattr(inbox_log, "log_event_safe", lambda **kw: 99)
+    monkeypatch.setattr(inbox_log, "mark_undone", lambda e, u: None)
+    monkeypatch.setattr(exceptions_route, "_refresh_time_off_surfaces", lambda: None)
+
+    resp = exceptions_route._undo_sync(7, None, None)
+
+    assert resp.status_code == 200
+    assert calls["reopen_incident"] == 1
+    assert len(added) == 1
+    assert added[0]["person_name"] == "Juan"
+    assert added[0]["breakdown_id"] == 1
