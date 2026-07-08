@@ -219,3 +219,13 @@ def test_averages_for_group_shrinks_expected_by_excluded_minutes():
     records = [_rec_excl(date(2026, 4, 27), "Alice", "WC1", 180, excluded_minutes=60.0)]
     rows = averages_for_group(records, {"WC1": 30.0}, _const_productive, "pct")
     assert abs(rows[0]["avg_pct"] - 1.0) < 1e-9
+
+
+def test_averages_for_wc_excluded_minutes_exceeding_day_floors_at_zero():
+    """excluded_minutes >= the day's productive minutes must floor expected
+    at 0 (no negative expected, no ZeroDivisionError/negative pct), not go
+    negative -- the max(0.0, prod_min) guard."""
+    records = [_rec_excl(date(2026, 4, 27), "Alice", "WC1", 50, excluded_minutes=500.0)]
+    rows = averages_for_wc(records, 30.0, _const_productive, "pct")
+    # expected floors to 0 -> no pct sample contributed -> avg_pct is None
+    assert rows[0]["avg_pct"] is None
