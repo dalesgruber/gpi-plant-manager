@@ -176,7 +176,7 @@ def _queue_from_sections(sections: list[dict]) -> list[dict]:
 
 
 def build_summary() -> dict:
-    from . import missing_wc, missed_punch_out
+    from . import missing_wc, missed_punch_out, machine_breakdown
     from .routes import staffing as staffing_routes
 
     today = plant_day.today()
@@ -187,6 +187,7 @@ def build_summary() -> dict:
     late = _capture(source_errors, "Late / Absence", staffing_routes.late_report_payload, {})
     missing_rows = _capture(source_errors, "Missing Work Center", missing_wc.current_rows, [])
     missed_rows = _capture(source_errors, "Missed Punch Out", missed_punch_out.current_rows, [])
+    breakdown_rows = _capture(source_errors, "Machine Breakdown", machine_breakdown.current_rows, [])
     schedule_count = _capture(
         source_errors, "Plant Schedule", lambda: _plant_schedule_reminder()[0], 0
     )
@@ -198,12 +199,14 @@ def build_summary() -> dict:
     late_count = int(late.get("count") or 0)
     missing_count = len(missing_rows)
     missed_count = len(missed_rows)
+    breakdown_count = len(breakdown_rows)
     urgent_total = (
         len(late.get("scheduled_late") or [])
         + len(late.get("unscheduled_late") or [])
         + missing_count
         + missed_count
         + pending_urgent_count
+        + sum(1 for r in breakdown_rows if r.get("priority") == "urgent")
     )
     total = (
         assignment_count
@@ -212,6 +215,7 @@ def build_summary() -> dict:
         + missing_count
         + missed_count
         + pending_count
+        + breakdown_count
     )
     return {
         "today": today.isoformat(),
@@ -227,12 +231,13 @@ def build_summary() -> dict:
             "missing_wc": missing_count,
             "missed_punch_out": missed_count,
             "time_off": pending_count,
+            "breakdown": breakdown_count,
         },
     }
 
 
 def build_snapshot() -> dict:
-    from . import missing_wc, missed_punch_out
+    from . import missing_wc, missed_punch_out, machine_breakdown
     from .routes import staffing as staffing_routes
 
     today = plant_day.today()
@@ -243,6 +248,7 @@ def build_snapshot() -> dict:
     late = _capture(source_errors, "Late / Absence", staffing_routes.late_report_payload, {})
     missing_rows = _capture(source_errors, "Missing Work Center", missing_wc.current_rows, [])
     missed_rows = _capture(source_errors, "Missed Punch Out", missed_punch_out.current_rows, [])
+    breakdown_rows = _capture(source_errors, "Machine Breakdown", machine_breakdown.current_rows, [])
     schedule_count, schedule_rows = _capture(
         source_errors, "Plant Schedule", _plant_schedule_reminder, (0, [])
     )
@@ -423,6 +429,17 @@ def build_snapshot() -> dict:
                 }
                 for r in missed_rows
             ],
+        },
+        {
+            "id": "breakdown",
+            "title": "Machine Breakdown",
+            "count": len(breakdown_rows),
+            "tone": "bad",
+            "action_key": "breakdown",
+            "action_label": "Handle",
+            "empty": "All clear",
+            "context": {"work_centers": work_centers},
+            "rows": breakdown_rows,
         },
         {
             "id": "time_off",

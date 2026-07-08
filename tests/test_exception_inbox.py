@@ -106,6 +106,7 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
         "late": 2,
         "missing_wc": 1,
         "missed_punch_out": 1,
+        "breakdown": 0,
         "time_off": 1,
     }
     sections = {s["id"]: s for s in snap["sections"]}
@@ -158,6 +159,7 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
         "late": 3,
         "missing_wc": 1,
         "missed_punch_out": 1,
+        "breakdown": 0,
         "time_off": 4,
     }
 
@@ -300,6 +302,7 @@ def test_snapshot_marks_degraded_sources_without_hiding_page(monkeypatch):
         "late",
         "missing_wc",
         "missed_punch_out",
+        "breakdown",
         "time_off",
     ]
 
