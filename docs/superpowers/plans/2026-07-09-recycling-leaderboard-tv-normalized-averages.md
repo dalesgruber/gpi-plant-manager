@@ -79,7 +79,6 @@
 - Produces:
   - `normalized_daily_scores(records, *, wc_names, standard_full_day_hours, min_hours=4.0) -> list[dict]`
   - `normalized_average_by_person(records, *, wc_names, standard_full_day_hours, min_hours=4.0) -> list[dict]`
-  - `build_recycling_leaderboard(records, *, today, standard_full_day_hours, wc_role_by_name) -> dict`
 - Consumes:
   - Records shaped like `production_history.daily_records()`: `{day, person, wc, units, hours, downtime}`.
 
