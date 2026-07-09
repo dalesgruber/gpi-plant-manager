@@ -188,6 +188,14 @@
     return reason;
   }
 
+  function setForgotPunchMode(row, enabled) {
+    if (!row) return;
+    ['.js-forgot-punch-time', '.js-forgot-wc', '.js-forgot-punch-save'].forEach(function (selector) {
+      var el = row.querySelector(selector);
+      if (el) el.hidden = !enabled;
+    });
+  }
+
   function submitRowInput(input, selector) {
     if (!input || input.hidden) return false;
     var row = input.closest('.exception-row');
@@ -610,6 +618,31 @@
       return;
     }
 
+    if (rowBtn.classList.contains('js-forgot-punch-save')) {
+      if (!empId || !personName) {
+        failRow(row, 'Missing employee id.');
+        return;
+      }
+      var forgotTime = row.querySelector('.js-forgot-punch-time').value;
+      var forgotWc = row.querySelector('.js-forgot-wc').value;
+      if (!forgotTime || !forgotWc) {
+        failRow(row, forgotTime ? 'Pick a work center.' : 'Enter a clock-in time.');
+        return;
+      }
+      setBusy(row, true);
+      rowStatus(row, 'Clocking in...', false);
+      postJson('/api/late-report/forgot-punch-in', {
+        emp_id: empId,
+        name: personName,
+        time: forgotTime,
+        wc_name: forgotWc,
+      }).then(function (resp) {
+        if (resp && resp.ok) resolveRow(row, 'Clocked in');
+        else failRow(row, (resp && resp.error) || 'Clock in failed.');
+      }).catch(function () { failRow(row, 'Network error.'); });
+      return;
+    }
+
     if (rowBtn.classList.contains('js-missing-wc-save')) {
       var wc = row.querySelector('.js-wc').value;
       if (!attendanceId || !wc) {
@@ -725,6 +758,11 @@
       event.preventDefault();
       return;
     }
+    input = event.target.closest('.js-forgot-punch-time');
+    if (submitRowInput(input, '.js-forgot-punch-save')) {
+      event.preventDefault();
+      return;
+    }
     input = event.target.closest('.js-punch-time');
     if (submitRowInput(input, '.js-punch-save')) event.preventDefault();
   });
@@ -735,6 +773,15 @@
       var row = preset.closest('.exception-row');
       var input = row && row.querySelector('.js-reason-input');
       if (!input) return;
+      if (preset.value === '__forgot_punch_in__') {
+        input.value = 'Forgot punch in';
+        setForgotPunchMode(row, true);
+        rowStatus(row, 'Forgot punch in: enter time and work center.', false);
+        var timeInput = row.querySelector('.js-forgot-punch-time');
+        if (timeInput) timeInput.focus();
+        return;
+      }
+      setForgotPunchMode(row, false);
       if (preset.value) input.value = preset.value;
       input.focus();
       return;

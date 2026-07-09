@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import MagicMock
 
+from zira_dashboard import shift_config
 from zira_dashboard.routes import late_report as late_report_routes
 
 FIXED_DAY = date(2026, 6, 17)
@@ -181,3 +182,66 @@ def test_undo_absent_refuses_linked_odoo_absence_before_local_delete(monkeypatch
     )
     refuse_absence.assert_called_once_with(777)
     undo_absent.assert_called_once_with(FIXED_DAY, "5")
+
+
+def test_forgot_punch_in_sync_inserts_exact_clock_in_and_syncs_to_odoo(monkeypatch):
+    captured = {}
+    db_execute = MagicMock()
+    sync_one = MagicMock()
+    log_event = MagicMock(return_value=456)
+    monkeypatch.setattr(late_report_routes, "plant_today", lambda: FIXED_DAY)
+    monkeypatch.setattr(late_report_routes.db, "execute", db_execute)
+    monkeypatch.setattr(late_report_routes.timeclock_sync, "sync_one_by_id", sync_one)
+    monkeypatch.setattr(late_report_routes.inbox_log, "log_event_safe", log_event)
+    monkeypatch.setattr(late_report_routes, "_bust_caches", lambda: None)
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"id": 123}]
+
+    monkeypatch.setattr(late_report_routes.db, "query", fake_query)
+
+    response = late_report_routes._forgot_punch_in_sync({
+        "emp_id": "5",
+        "name": "Test Person",
+        "time": "06:12",
+        "wc_name": "Trim Saw",
+    }, actor_upn="manager@example.com", actor_name="Manager")
+
+    assert response.status_code == 200
+    punch_at = captured["params"][3]
+    assert "INSERT INTO timeclock_punches_log" in captured["sql"]
+    assert captured["params"][:3] == (5, "clock_in", "Trim Saw")
+    assert punch_at == datetime(
+        2026, 6, 17, 6, 12, tzinfo=shift_config.SITE_TZ
+    )
+    # Exact correction: rounded_at is the same timestamp, not recalculated.
+    assert captured["params"][4] == punch_at
+    sync_one.assert_called_once_with(123)
+    db_execute.assert_called_once_with(
+        "DELETE FROM late_snoozes WHERE day = %s AND emp_id = %s",
+        (FIXED_DAY, "5"),
+    )
+    log_event.assert_called_once()
+    assert log_event.call_args.kwargs["action"] == "clock_in"
+    assert log_event.call_args.kwargs["after_value"] == "06:12 at Trim Saw"
+    assert log_event.call_args.kwargs["reversible"] is False
+
+
+def test_forgot_punch_in_sync_rejects_bad_time_without_writing(monkeypatch):
+    db_query = MagicMock()
+    sync_one = MagicMock()
+    monkeypatch.setattr(late_report_routes.db, "query", db_query)
+    monkeypatch.setattr(late_report_routes.timeclock_sync, "sync_one_by_id", sync_one)
+
+    response = late_report_routes._forgot_punch_in_sync({
+        "emp_id": "5",
+        "name": "Test Person",
+        "time": "not-a-time",
+        "wc_name": "Trim Saw",
+    })
+
+    assert response.status_code == 400
+    db_query.assert_not_called()
+    sync_one.assert_not_called()

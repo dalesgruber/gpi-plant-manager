@@ -735,6 +735,45 @@ def test_exceptions_page_renders_inline_action_controls(monkeypatch):
     assert "js-time-off-approve" in resp.text
 
 
+def test_exceptions_page_renders_forgot_punch_in_controls(monkeypatch):
+    late_row = {
+        "name": "Lauro Benitez",
+        "label": "Scheduled late",
+        "detail": "133 mins late",
+        "priority": "urgent",
+        "badge": "Needs decision",
+        "row_key": "late:scheduled:5",
+        "item_key": "late:5:2026-06-19",
+        "action": {"type": "late_absence", "emp_id": 5, "name": "Lauro Benitez"},
+    }
+    snapshot = {
+        "today": "2026-06-19",
+        "generated_at": "8:13 AM",
+        "total": 1,
+        "urgent_total": 1,
+        "follow_up_total": 0,
+        "source_errors": [],
+        "work_centers": ["Trim Saw", "Repair 1"],
+        "people": [],
+        "sections": [],
+        "queue": [
+            {**late_row, "section_id": "late", "category_label": "Late / Absence", "tone": "bad"},
+        ],
+    }
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", lambda: snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/exceptions")
+
+    assert resp.status_code == 200
+    assert '<option value="__forgot_punch_in__">Forgot punch in</option>' in resp.text
+    assert 'class="inline-input time js-forgot-punch-time"' in resp.text
+    assert 'class="inline-select js-forgot-wc"' in resp.text
+    assert '<option value="Trim Saw">Trim Saw</option>' in resp.text
+    assert 'class="row-btn primary js-forgot-punch-save"' in resp.text
+    assert ">Clock in</button>" in resp.text
+
+
 def test_exceptions_js_refreshes_shared_badges_after_inline_resolution():
     js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
 
@@ -794,6 +833,8 @@ def test_inbox_template_has_inline_time_off_deny_reason():
     assert 'aria-label="Late or absence reason"' in html
     assert 'aria-label="Work center to assign"' in html
     assert 'aria-label="Reason to deny time off"' in html
+    assert 'aria-label="Forgotten punch-in time"' in html
+    assert 'aria-label="Forgotten punch-in work center"' in html
 
 
 def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
@@ -810,6 +851,10 @@ def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
     assert ".js-absent, .js-save-late" in js
     assert ".js-punch-time" in js
     assert ".js-punch-save" in js
+    assert "/api/late-report/forgot-punch-in" in js
+    assert ".js-forgot-punch-time" in js
+    assert ".js-forgot-punch-save" in js
+    assert "Forgot punch in" in js
     assert "btn.click()" in js
 
 
