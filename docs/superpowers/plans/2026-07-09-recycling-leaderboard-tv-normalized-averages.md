@@ -22,6 +22,7 @@
 - Do not change Trophy Case awards in this pass.
 - Do not change raw totals such as total units, total downtime, days absent, or days late.
 - The new TV route is TV-only in v1.
+- The TV/dashboard display name is `Recycling-leaderboard`.
 
 ---
 
@@ -60,7 +61,7 @@
 - Modify `src/zira_dashboard/tv_displays_store.py`
   - Add the new kind to validation and seed list.
 - Modify `src/zira_dashboard/routes/settings.py`
-  - Add `Recycling Leaderboard` to the Settings -> TVs dashboard picker.
+  - Add `Recycling-leaderboard` to the Settings -> TVs dashboard picker.
 - Modify `src/zira_dashboard/templates/_settings_tvs.html`
   - Include `vs_recycling_leaderboard` in the selected-option logic.
 - Modify `src/zira_dashboard/_schema.py`
@@ -1011,7 +1012,7 @@ def test_tv_recycling_leaderboard_renders(monkeypatch):
     r = TestClient(app).get("/tv/recycling-leaderboard")
     assert r.status_code == 200
     assert 'data-tv-theme="dark"' in r.text
-    assert "Leaderboard" in r.text
+    assert "Recycling-leaderboard" in r.text
     assert "Maria S." in r.text
     assert "not enough days" in r.text
     assert "q-days" not in r.text
@@ -1107,13 +1108,13 @@ Create `src/zira_dashboard/templates/recycling_leaderboard_tv.html`:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
-<title>TV · Recycling Leaderboard — GPI Plant Manager</title>
+<title>TV · Recycling-leaderboard — GPI Plant Manager</title>
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
 <link rel="stylesheet" href="/static/recycling_leaderboard.css?v={{ static_v('recycling_leaderboard.css') }}">
 <script defer src="/static/tv-refresh.js?v={{ static_v('tv-refresh.js') }}"></script>
 </head>
 <body class="recycling-leaderboard-tv">
-  {{ tv_header("Leaderboard", crumb="RECYCLING") }}
+  {{ tv_header("Recycling-leaderboard", crumb="RECYCLING") }}
   <main class="rlb-main">
     <div class="rlb-range">
       <span>YTD: {{ data.ytd_start.strftime('%b %-d') }}-{{ data.ytd_end.strftime('%b %-d') }}</span>
@@ -1401,7 +1402,7 @@ def test_save_recycling_leaderboard_kind():
 Update `test_seed_defaults_if_empty_seeds_when_empty`:
 
 ```python
-    assert "Recycling Leaderboard" in names
+    assert "Recycling-leaderboard" in names
     assert len(rows) == 11
 ```
 
@@ -1413,7 +1414,7 @@ def test_get_tv_recycling_leaderboard_dispatches(monkeypatch):
 
     def _fake_render(request, *, tv_theme="dark"):
         from fastapi.responses import HTMLResponse
-        return HTMLResponse(f'<html data-tv-theme="{tv_theme}">Leaderboard</html>')
+        return HTMLResponse(f'<html data-tv-theme="{tv_theme}">Recycling-leaderboard</html>')
 
     monkeypatch.setattr(recycling_leaderboard, "render_recycling_leaderboard_tv", _fake_render)
     c = TestClient(app)
@@ -1425,7 +1426,7 @@ def test_get_tv_recycling_leaderboard_dispatches(monkeypatch):
     r = c.get("/tv/rt-recycling-leaderboard")
     assert r.status_code == 200
     assert 'data-tv-theme="light"' in r.text
-    assert "Leaderboard" in r.text
+    assert "Recycling-leaderboard" in r.text
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1445,7 +1446,7 @@ _VALID_KINDS = ("vs_recycling", "vs_new", "vs_recycling_leaderboard", "wc")
 Update `_SEED_LIST` to include:
 
 ```python
-("Recycling Leaderboard", "vs_recycling_leaderboard", None),
+("Recycling-leaderboard", "vs_recycling_leaderboard", None),
 ```
 
 Update validation:
@@ -1480,7 +1481,7 @@ if kind not in ("vs_recycling", "vs_new", "vs_recycling_leaderboard", "wc"):
 In `routes/settings.py`, add to `all_dashboards_for_picker`:
 
 ```python
-{"kind": "vs_recycling_leaderboard", "ref": "", "name": "Recycling Leaderboard"},
+{"kind": "vs_recycling_leaderboard", "ref": "", "name": "Recycling-leaderboard"},
 ```
 
 In `_settings_tvs.html`, update selected logic:
