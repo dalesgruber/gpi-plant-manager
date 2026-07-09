@@ -12,7 +12,15 @@ from datetime import datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
-from .. import layout_store, settings_store, shift_config, staffing, widget_customizer, work_centers_store
+from .. import (
+    layout_store,
+    settings_store,
+    shift_config,
+    staffing,
+    wc_dashboard_data,
+    widget_customizer,
+    work_centers_store,
+)
 from ..deps import _parse_day, _state, client, templates
 from ..leaderboard import cached_leaderboard as leaderboard
 from ..plant_day import today as plant_today
@@ -605,6 +613,13 @@ def _render_recycling(
     if is_today:
         assignments_todo_by_wc, all_active_people = _assign_popover_context(today, client)
 
+    operator_links_by_wc: dict[str, str] = {}
+    if not is_range:
+        for name in agg_active_names:
+            href = wc_dashboard_data.dashboard_url_for_wc_day(name, start_d)
+            if href:
+                operator_links_by_wc[name] = href
+
     response = templates.TemplateResponse(
         request,
         "recycling.html",
@@ -621,6 +636,7 @@ def _render_recycling(
             "is_range": is_range,
             "range_includes_today": range_includes_today,
             "custom_range_active": custom_range_active,
+            "operator_links_by_wc": operator_links_by_wc,
             "total_units": total_units,
             "total_downtime_minutes": total_downtime,
             "total_downtime_display": f"{total_downtime / 60:.1f} h",

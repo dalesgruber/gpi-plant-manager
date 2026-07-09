@@ -88,7 +88,7 @@
 {% if no_activity %}
 <div class="wc-idle-notice">
   <span class="wc-idle-icon" aria-hidden="true">🌙</span>
-  No one is scheduled on <b>{{ wc_name }}</b> today — the numbers below stay at
+  No one is scheduled on <b>{{ wc_name }}</b>{% if is_today %} today{% else %} on {{ operator_day }}{% endif %} — the numbers below stay at
   zero until someone clocks in here.
 </div>
 {% endif %}
@@ -112,8 +112,9 @@
   {# Pallets banner with start/now axis ticks. #}
   <div class="grid-stack-item" {{ widget_attrs('pallets-banner', 0, 2, 12, 2) }}>
     <div class="grid-stack-item-content">
-      {% if not tv_mode %}{{ edit_controls('pallets-banner', 'Today · Pallets', 'kpi') }}{% endif %}
-      <h3>{{ widget_title('pallets-banner', 'Today · Pallets') }}</h3>
+      {% set pallets_title = operator_day_label ~ ' · Pallets' %}
+      {% if not tv_mode %}{{ edit_controls('pallets-banner', pallets_title, 'kpi') }}{% endif %}
+      <h3>{{ widget_title('pallets-banner', pallets_title) }}</h3>
       {# An empty, unstaffed station isn't "behind" — don't paint it red. #}
       {% set behind = (not no_activity) and pallets.target_today and pallets.units_today < pallets.target_today %}
       <div class="pallets-banner">

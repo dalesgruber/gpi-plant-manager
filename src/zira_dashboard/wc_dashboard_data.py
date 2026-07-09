@@ -34,6 +34,14 @@ def slug_for_wc(name: str) -> str:
     return s.strip("-")
 
 
+def dashboard_url_for_wc_day(wc_name: str, day) -> str:
+    """Operator-dashboard URL for a work center on one plant day."""
+    slug = slug_for_wc(wc_name)
+    if not slug:
+        return ""
+    return f"/wc/{slug}?day={day.isoformat()}"
+
+
 from datetime import date, datetime, timedelta, UTC
 
 

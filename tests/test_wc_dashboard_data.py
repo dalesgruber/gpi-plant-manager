@@ -43,6 +43,20 @@ def test_slug_empty_input():
     assert slug_for_wc("   ") == ""
 
 
+def test_dashboard_url_for_wc_day_uses_slug_and_day():
+    from zira_dashboard.wc_dashboard_data import dashboard_url_for_wc_day
+
+    assert dashboard_url_for_wc_day("Repair 1", _date(2026, 5, 14)) == (
+        "/wc/repair-1?day=2026-05-14"
+    )
+
+
+def test_dashboard_url_for_wc_day_returns_empty_for_blank_wc():
+    from zira_dashboard.wc_dashboard_data import dashboard_url_for_wc_day
+
+    assert dashboard_url_for_wc_day("   ", _date(2026, 5, 14)) == ""
+
+
 from datetime import date as _date
 
 import pytest

@@ -88,7 +88,8 @@
             {% if is_range %}
               <span class="name-primary">{{ b.name }}{{ goat_badges(b.name, goat_holders()) }}</span>
             {% elif b.who and b.who != b.name %}
-              <span class="name-primary">{{ b.who }}{{ goat_badges(b.who, goat_holders()) }}</span>
+              {% set operator_href = operator_links_by_wc.get(b.name) if operator_links_by_wc else none %}
+              {{ operator_name(b.who, operator_href, true) }}
               <span class="name-secondary">{{ b.name }}</span>
             {% else %}
               <span class="name-primary">{{ b.name }}</span>
@@ -111,7 +112,8 @@
           {% if is_range %}
             <span class="name-primary">{{ b.name }}{{ goat_badges(b.name, goat_holders()) }}</span>
           {% elif b.who and b.who != b.name %}
-            <span class="name-primary">{{ b.who }}{{ goat_badges(b.who, goat_holders()) }}</span>
+            {% set operator_href = operator_links_by_wc.get(b.name) if operator_links_by_wc else none %}
+            {{ operator_name(b.who, operator_href, true) }}
             <span class="name-secondary">{{ b.name }}</span>
           {% else %}
             <span class="name-primary">{{ b.name }}</span>
@@ -155,6 +157,14 @@
 {%- macro widget_color_style(id, role) -%}
   {%- set c = customs.get(id, {}).get('color') -%}
   {%- if c -%}style="--wc: {{ c }}; {{ role }}: {{ c }} !important"{%- endif -%}
+{%- endmacro %}
+
+{%- macro operator_name(name, href, show_badges=false) -%}
+  {%- if href and not tv_mode -%}
+    <a href="{{ href }}" class="name-primary operator-dashboard-link">{{ name }}{%- if show_badges -%}{{ goat_badges(name, goat_holders()) }}{%- endif -%}</a>
+  {%- else -%}
+    <span class="name-primary">{{ name }}{%- if show_badges -%}{{ goat_badges(name, goat_holders()) }}{%- endif -%}</span>
+  {%- endif -%}
 {%- endmacro %}
 
 
@@ -337,7 +347,8 @@
                     {% if is_range %}
                       <span class="name-primary">{{ d.name }}</span>
                     {% elif d.who and d.who != d.name %}
-                      <span class="name-primary">{{ d.who }}</span>
+                      {% set operator_href = operator_links_by_wc.get(d.name) if operator_links_by_wc else none %}
+                      {{ operator_name(d.who, operator_href) }}
                       <span class="name-secondary">{{ d.name }}</span>
                     {% else %}
                       <span class="name-primary">{{ d.name }}</span>

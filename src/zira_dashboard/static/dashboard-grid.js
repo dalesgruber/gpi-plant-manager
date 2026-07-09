@@ -108,7 +108,11 @@
   const picker = document.getElementById('wc-picker');
   if (picker) {
     picker.addEventListener('change', (e) => {
-      window.location.href = '/wc/' + e.target.value;
+      const params = new URLSearchParams(window.location.search);
+      const day = params.get('day');
+      const next = new URL('/wc/' + e.target.value, window.location.origin);
+      if (day) next.searchParams.set('day', day);
+      window.location.href = next.pathname + next.search;
     });
   }
 

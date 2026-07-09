@@ -11,6 +11,8 @@ are shared across every WC under page='operator'.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
@@ -25,6 +27,12 @@ from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
 
 router = APIRouter()
+
+
+def _dashboard_day(day: str | None) -> date:
+    if not day:
+        return plant_today()
+    return date.fromisoformat(day)
 
 
 def _shift_start_label(day) -> str:
@@ -49,6 +57,7 @@ def _render_wc_dashboard(
     request: Request,
     *,
     slug: str,
+    day,
     tv_mode: bool,
     tv_theme: str,
 ):
@@ -59,31 +68,32 @@ def _render_wc_dashboard(
         return JSONResponse({"error": f"no work center matches slug {slug!r}"}, status_code=404)
 
     today = plant_today()
+    is_today = day == today
 
     # Server-side HTML response cache — 15s on today's data, same pattern
     # /recycling uses. TVs auto-refresh every 30-60s so this is the
     # difference between rebuilding the full page on every refresh vs.
-    # serving cached bytes from RAM. `today` in the key keeps the cache
+    # serving cached bytes from RAM. `day` in the key keeps the cache
     # day-boundary-safe.
     from .._http_cache import get_cached_response, set_cache_headers, store_cached_response
-    cache_key = ("wc_dashboard", slug, today.isoformat(), tv_mode, tv_theme)
-    cached = get_cached_response(cache_key, includes_today=True)
+    cache_key = ("wc_dashboard", slug, day.isoformat(), tv_mode, tv_theme)
+    cached = get_cached_response(cache_key, includes_today=is_today)
     if cached is not None:
         return cached
 
     wc_name = loc.name
-    operators = wc_dashboard_data.assigned_operators_for_wc(wc_name, today)
+    operators = wc_dashboard_data.assigned_operators_for_wc(wc_name, day)
     operators_display = " · ".join(operators)
     groups = work_centers_store.groups(loc) or []
     wc_group = groups[0] if groups else None
 
-    pallets = wc_dashboard_data.pallets_banner(wc_name, today)
+    pallets = wc_dashboard_data.pallets_banner(wc_name, day)
     # Nobody scheduled AND nothing produced yet → a calm "not staffed" view,
     # not red zeros and a "-246 BEHIND" GOAT delta against an empty station.
     no_activity = not operators and int(pallets.get("units_today") or 0) == 0
-    progress = wc_dashboard_data.fifteen_min_progress_buckets(wc_name, today)
-    kpi = wc_dashboard_data.kpi_tiles(wc_name, today)
-    report = wc_dashboard_data.downtime_report(wc_name, today) or {}
+    progress = wc_dashboard_data.fifteen_min_progress_buckets(wc_name, day)
+    kpi = wc_dashboard_data.kpi_tiles(wc_name, day)
+    report = wc_dashboard_data.downtime_report(wc_name, day) or {}
     down_min = int(report.get("total_minutes", 0))
     elapsed_min = int(kpi["hours_elapsed"] * 60)
     working_min = max(0, elapsed_min - down_min)
@@ -96,8 +106,8 @@ def _render_wc_dashboard(
         "working_pct": working_min / denom * 100.0,
         "down_pct": down_min / denom * 100.0,
     }
-    goat = wc_dashboard_data.goat_race(wc_name, today) if wc_group else None
-    ribbons = wc_dashboard_data.monthly_ribbons(wc_name, today.year, today.month) if wc_group else None
+    goat = wc_dashboard_data.goat_race(wc_name, day) if wc_group else None
+    ribbons = wc_dashboard_data.monthly_ribbons(wc_name, day.year, day.month) if wc_group else None
 
     layout_key = "operator"
 
@@ -117,8 +127,11 @@ def _render_wc_dashboard(
             "operators_display": operators_display,
             "no_activity": no_activity,
             "today": today.isoformat(),
-            "year": today.year,
-            "month": today.month,
+            "operator_day": day.isoformat(),
+            "operator_day_label": "Today" if is_today else f"{day.strftime('%b')} {day.day}",
+            "is_today": is_today,
+            "year": day.year,
+            "month": day.month,
             "wc_options": [
                 {"name": l.name, "slug": wc_dashboard_data.slug_for_wc(l.name)}
                 for l in staffing.LOCATIONS
@@ -135,8 +148,8 @@ def _render_wc_dashboard(
             "layout": layout_store.layout_map(layout_key),
             "layout_key": layout_key,
             "customs": widget_customizer.load_all(layout_key),
-            "shift_start_label": _shift_start_label(today),
-            "now_label": _now_label(today),
+            "shift_start_label": _shift_start_label(day),
+            "now_label": _now_label(day),
             "banner_now_pct": banner_now_pct,
             "tv_mode": tv_mode,
             "tv_theme": tv_theme,
@@ -147,8 +160,8 @@ def _render_wc_dashboard(
             "goat_contenders": [],
         },
     )
-    set_cache_headers(response, includes_today=True)
-    store_cached_response(cache_key, includes_today=True, response=response)
+    set_cache_headers(response, includes_today=is_today)
+    store_cached_response(cache_key, includes_today=is_today, response=response)
     return response
 
 
@@ -161,22 +174,39 @@ def _goat_watch_active_alerts(today):
 
 
 @router.get("/wc/{slug}", response_class=HTMLResponse)
-def wc_dashboard(request: Request, slug: str):
-    return _render_wc_dashboard(request, slug=slug, tv_mode=False, tv_theme="dark")
+def wc_dashboard(
+    request: Request,
+    slug: str,
+    day: str | None = Query(default=None),
+):
+    return _render_wc_dashboard(
+        request,
+        slug=slug,
+        day=_dashboard_day(day),
+        tv_mode=False,
+        tv_theme="dark",
+    )
 
 
 @router.get("/tv/wc/{slug}", response_class=HTMLResponse)
 def tv_wc_dashboard(
     request: Request,
     slug: str,
+    day: str | None = Query(default=None),
     theme: str | None = Query(default=None),
 ):
     tv_theme = "light" if theme == "light" else "dark"
-    return _render_wc_dashboard(request, slug=slug, tv_mode=True, tv_theme=tv_theme)
+    return _render_wc_dashboard(
+        request,
+        slug=slug,
+        day=_dashboard_day(day),
+        tv_mode=True,
+        tv_theme=tv_theme,
+    )
 
 
 @router.get("/operator")
-def operator_default():
+def operator_default(day: str | None = Query(default=None)):
     """Entry point for the Operator dashboard sub-tab.
 
     Redirects to the first work center's /wc/{slug} URL. Order is
@@ -188,13 +218,17 @@ def operator_default():
             {"error": "no work centers configured — set them up in Settings"},
             status_code=404,
         )
-    # Prefer the first WC that actually has someone scheduled today, so the
-    # operator doesn't land on an empty "(unassigned)" station by default.
+    # Prefer the first WC that actually has someone scheduled on the target day,
+    # so the operator doesn't land on an empty "(unassigned)" station by default.
     # Fall back to the first WC when nobody is scheduled anywhere yet.
-    today = plant_today()
+    target_day = _dashboard_day(day)
     target = next(
         (l for l in staffing.LOCATIONS
-         if wc_dashboard_data.assigned_operators_for_wc(l.name, today)),
+         if wc_dashboard_data.assigned_operators_for_wc(l.name, target_day)),
         staffing.LOCATIONS[0],
     )
-    return RedirectResponse(url=f"/wc/{wc_dashboard_data.slug_for_wc(target.name)}", status_code=302)
+    if day:
+        url = wc_dashboard_data.dashboard_url_for_wc_day(target.name, target_day)
+    else:
+        url = f"/wc/{wc_dashboard_data.slug_for_wc(target.name)}"
+    return RedirectResponse(url=url, status_code=302)
