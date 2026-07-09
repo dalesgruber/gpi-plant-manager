@@ -70,7 +70,15 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
     })
     monkeypatch.setattr(staffing_routes, "late_report_payload", lambda: {
         "count": 2,
-        "scheduled_late": [{"emp_id": 1, "name": "Ana", "minutes_late": 12}],
+        "scheduled_late": [
+            {
+                "emp_id": 1,
+                "name": "Ana",
+                "minutes_late": 12,
+                "scheduled_wc": "Baler",
+                "scheduled_start_time": "06:00",
+            }
+        ],
         "unscheduled_late": [{"emp_id": 2, "name": "Ben"}],
         "needs_reason": [],
         "snoozed": [{"emp_id": 3, "name": "Cal", "mins_remaining": 18}],
@@ -117,6 +125,8 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
     assert sections["assignments"]["rows"][0]["row_key"].startswith("assignment:Repair 1:")
     assert sections["assignments"]["rows"][0]["action"]["start_utc"].startswith("2026")
     assert sections["late"]["rows"][0]["action"]["emp_id"] == 1
+    assert sections["late"]["rows"][0]["action"]["scheduled_wc"] == "Baler"
+    assert sections["late"]["rows"][0]["action"]["scheduled_start_time"] == "06:00"
     assert sections["late"]["rows"][0]["row_key"] == "late:scheduled:1"
     assert sections["late"]["rows"][-1]["label"] == "Snoozed"
     assert sections["late"]["rows"][-1]["priority"] == "muted"
@@ -741,6 +751,56 @@ def test_exceptions_page_renders_inline_action_controls(monkeypatch):
     assert "js-time-off-approve" in resp.text
 
 
+def test_exceptions_page_renders_forgot_punch_in_controls(monkeypatch):
+    late_row = {
+        "name": "Lauro Benitez",
+        "label": "Scheduled late",
+        "detail": "133 mins late",
+        "priority": "urgent",
+        "badge": "Needs decision",
+        "row_key": "late:scheduled:5",
+        "item_key": "late:5:2026-06-19",
+        "action": {
+            "type": "late_absence",
+            "emp_id": 5,
+            "name": "Lauro Benitez",
+            "scheduled_wc": "Tablets",
+            "scheduled_start_time": "06:00",
+        },
+    }
+    snapshot = {
+        "today": "2026-06-19",
+        "generated_at": "8:13 AM",
+        "total": 1,
+        "urgent_total": 1,
+        "follow_up_total": 0,
+        "source_errors": [],
+        "work_centers": ["Trim Saw", "Tablets", "Repair 1"],
+        "people": [],
+        "sections": [],
+        "queue": [
+            {**late_row, "section_id": "late", "category_label": "Late / Absence", "tone": "bad"},
+        ],
+    }
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", lambda: snapshot)
+    client = TestClient(app)
+
+    resp = client.get("/exceptions")
+
+    assert resp.status_code == 200
+    assert '<option value="__forgot_punch_in__">Forgot punch in</option>' not in resp.text
+    assert 'class="row-btn primary js-forgot-punch-open"' in resp.text
+    assert ">Missed Punch</button>" in resp.text
+    assert 'class="row-btn warn js-absent"' in resp.text
+    assert 'class="inline-input time js-forgot-punch-time"' in resp.text
+    assert 'value="06:00"' in resp.text
+    assert 'class="inline-select js-forgot-wc"' in resp.text
+    assert '<option value="Trim Saw">Trim Saw</option>' in resp.text
+    assert '<option value="Tablets" selected>Tablets</option>' in resp.text
+    assert 'class="row-btn primary js-forgot-punch-save"' in resp.text
+    assert ">Clock in</button>" in resp.text
+
+
 def test_exceptions_js_refreshes_shared_badges_after_inline_resolution():
     js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
 
@@ -800,6 +860,11 @@ def test_inbox_template_has_inline_time_off_deny_reason():
     assert 'aria-label="Late or absence reason"' in html
     assert 'aria-label="Work center to assign"' in html
     assert 'aria-label="Reason to deny time off"' in html
+    assert 'aria-label="Forgotten punch-in time"' in html
+    assert 'aria-label="Forgotten punch-in work center"' in html
+    assert "js-forgot-punch-open" in html
+    assert ">Missed Punch</button>" in html
+    assert "row-btn warn js-absent" in html
 
 
 def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
@@ -816,7 +881,19 @@ def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
     assert ".js-absent, .js-save-late" in js
     assert ".js-punch-time" in js
     assert ".js-punch-save" in js
+    assert "/api/late-report/forgot-punch-in" in js
+    assert ".js-forgot-punch-time" in js
+    assert ".js-forgot-punch-open" in js
+    assert ".js-forgot-punch-save" in js
+    assert "Missed punch: enter time and work center." in js
     assert "btn.click()" in js
+
+
+def test_inbox_css_styles_absent_button_orange():
+    css = (STATIC_DIR / "exceptions.css").read_text(encoding="utf-8")
+
+    assert ".row-btn.warn" in css
+    assert "background: #f97316" in css
 
 
 def test_footer_enhances_inbox_nav_with_summary_count():

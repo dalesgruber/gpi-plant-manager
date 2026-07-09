@@ -367,6 +367,12 @@ header.app {
   color: #fff;
 }
 .row-btn.primary:hover { background: #15803d; }
+.row-btn.warn {
+  border-color: #ea580c;
+  background: #f97316;
+  color: #fff;
+}
+.row-btn.warn:hover { background: #ea580c; }
 .row-btn.danger {
   border-color: #dc2626;
   color: #b91c1c;

@@ -16,11 +16,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, time as dt_time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .. import absence_sync, db, inbox_keys, inbox_log, late_report
+from .. import (
+    absence_sync,
+    db,
+    inbox_keys,
+    inbox_log,
+    late_report,
+    shift_config,
+    timeclock_sync,
+)
 from ..plant_day import today as plant_today
 
 _log = logging.getLogger(__name__)
@@ -146,6 +155,96 @@ async def late_report_declare_absent(request: Request):
     body = await request.json()
     actor_upn, actor_name = inbox_log.actor_from(request)
     return await asyncio.to_thread(_declare_absent_sync, body, actor_upn, actor_name)
+
+
+def _parse_clock_time(value) -> dt_time | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = dt_time.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed.replace(second=0, microsecond=0, tzinfo=None)
+
+
+def _forgot_punch_in_sync(
+    body: dict,
+    actor_upn=None,
+    actor_name=None,
+) -> JSONResponse:
+    """Record an exact manager-entered clock-in for a no-punch late row.
+
+    This deliberately bypasses normal punch rounding: the manager is
+    correcting a forgotten punch to a known time, matching the missed
+    punch-out correction posture.
+    """
+    emp_id = str(body.get("emp_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    wc_name = str(body.get("wc_name") or "").strip()
+    clock_time = _parse_clock_time(body.get("time"))
+    if not emp_id or not name:
+        return JSONResponse({"ok": False, "error": "emp_id and name required"}, status_code=400)
+    if not wc_name:
+        return JSONResponse({"ok": False, "error": "work center required"}, status_code=400)
+    if clock_time is None:
+        return JSONResponse({"ok": False, "error": "valid clock-in time required"}, status_code=400)
+    try:
+        employee_odoo_id = int(emp_id)
+    except ValueError:
+        return JSONResponse(
+            {"ok": False, "error": "emp_id must be an Odoo employee id"},
+            status_code=400,
+        )
+
+    today = plant_today()
+    punch_at = datetime.combine(today, clock_time, tzinfo=shift_config.SITE_TZ)
+    try:
+        rows = db.query(
+            "INSERT INTO timeclock_punches_log "
+            "(person_odoo_id, action, wc_name, occurred_at, rounded_at) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (employee_odoo_id, "clock_in", wc_name, punch_at, punch_at),
+        )
+        log_id = int(rows[0]["id"])
+        db.execute(
+            "DELETE FROM late_snoozes WHERE day = %s AND emp_id = %s",
+            (today, emp_id),
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    # Keep the same Odoo sync machinery as kiosk punches. sync_one_by_id
+    # records a sync_error and leaves the row retryable if Odoo is down.
+    timeclock_sync.sync_one_by_id(log_id)
+    eid = inbox_log.log_event_safe(
+        item_kind="late",
+        item_key=inbox_keys.late(emp_id, today.isoformat()),
+        person_name=name,
+        category_label="Late",
+        action="clock_in",
+        outcome="Clocked in",
+        after_value=f"{clock_time.strftime('%H:%M')} at {wc_name}",
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+        reversible=False,
+        detail={
+            "log_id": log_id,
+            "time": clock_time.strftime("%H:%M"),
+            "wc_name": wc_name,
+        },
+    )
+    _bust_caches()
+    return JSONResponse({"ok": True, "log_id": log_id, "event_id": eid})
+
+
+@router.post("/api/late-report/forgot-punch-in")
+async def late_report_forgot_punch_in(request: Request):
+    """Clock in a no-punch employee at a manager-entered exact time."""
+    body = await request.json()
+    actor_upn, actor_name = inbox_log.actor_from(request)
+    return await asyncio.to_thread(_forgot_punch_in_sync, body, actor_upn, actor_name)
 
 
 def _save_late_arrival_sync(body: dict, actor_upn=None, actor_name=None) -> JSONResponse:
