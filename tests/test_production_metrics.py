@@ -84,3 +84,61 @@ def test_normalized_average_by_person_sorts_by_avg_then_days_then_name():
         standard_full_day_hours=STD_HOURS,
     )
     assert [r["name"] for r in rows] == ["Cara", "Anne", "Bob"]
+
+
+def test_build_recycling_leaderboard_l30_only_person_gets_ytd_not_enough_days():
+    records = []
+    # YTD leader has 20 repair days, so YTD threshold is 2.
+    for i in range(20):
+        records.append(rec(date(2026, 1, 1 + i), "YTD Leader", "Repair 1", 70, 7.0))
+    # Recent person has only one YTD day, but it is inside L30. L30 leader has
+    # one day too, so L30 threshold is 1 and the L30 cell qualifies.
+    records.append(rec(date(2026, 7, 5), "Recent Star", "Repair 1", 140, 7.0))
+
+    data = pm.build_recycling_leaderboard(
+        records,
+        today=date(2026, 7, 9),
+        standard_full_day_hours=STD_HOURS,
+        wc_role_by_name={"Repair 1": "Repair"},
+    )
+
+    repairs = data["roles"]["Repair"]["rows"]
+    recent = next(r for r in repairs if r["name"] == "Recent Star")
+    assert recent["ytd"]["eligible"] is False
+    assert recent["ytd"]["label"] == "not enough days"
+    assert recent["l30"]["eligible"] is True
+    assert recent["l30"]["avg_units"] == 140.0
+    assert recent["l30"]["days"] == 1
+
+
+def test_build_recycling_leaderboard_thresholds_are_ceil_10_percent():
+    records = [
+        rec(date(2026, 1, day), "Leader", "Dismantler 1", 70, 7.0)
+        for day in range(1, 13)
+    ]
+    data = pm.build_recycling_leaderboard(
+        records,
+        today=date(2026, 7, 9),
+        standard_full_day_hours=STD_HOURS,
+        wc_role_by_name={"Dismantler 1": "Dismantler"},
+    )
+    assert data["roles"]["Dismantler"]["thresholds"]["ytd"] == 2
+
+
+def test_build_recycling_leaderboard_ribbons_use_normalized_amount():
+    records = [
+        rec(date(2026, 7, 2), "Short Day", "Repair 1", 80, 4.0),  # normalized 140
+        rec(date(2026, 7, 3), "Full Day", "Repair 1", 100, 7.0),  # normalized 100
+        rec(date(2026, 7, 4), "Tiny", "Repair 1", 200, 3.0),      # ignored
+    ]
+    data = pm.build_recycling_leaderboard(
+        records,
+        today=date(2026, 7, 9),
+        standard_full_day_hours=STD_HOURS,
+        wc_role_by_name={"Repair 1": "Repair"},
+    )
+    july = data["ribbons"][0]
+    assert july["month"] == 7
+    assert july["repair"]["name"] == "Short Day"
+    assert july["repair"]["day"] == date(2026, 7, 2)
+    assert july["repair"]["amount"] == 140.0
