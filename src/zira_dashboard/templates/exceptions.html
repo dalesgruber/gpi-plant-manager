@@ -105,7 +105,6 @@
               <option value="Sick">Sick</option>
               <option value="Car issues">Car issues</option>
               <option value="Overslept">Overslept</option>
-              <option value="__forgot_punch_in__">Forgot punch in</option>
               <option value="">Other</option>
             </select>
             <input type="text" class="inline-input js-reason-input" aria-label="Late or absence reason" placeholder="Reason required">
@@ -117,7 +116,8 @@
               {% endfor %}
             </select>
             <button type="button" class="row-btn primary js-forgot-punch-save" hidden>Clock in</button>
-            <button type="button" class="row-btn primary js-absent">Absent</button>
+            <button type="button" class="row-btn primary js-forgot-punch-open">Missed Punch</button>
+            <button type="button" class="row-btn warn js-absent">Absent</button>
             <button type="button" class="row-btn js-snooze">Snooze</button>
           {% elif action and action.type == 'late_reason' %}
             <select class="inline-select js-reason-preset" aria-label="Reason preset">

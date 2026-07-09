@@ -618,6 +618,14 @@
       return;
     }
 
+    if (rowBtn.matches('.js-forgot-punch-open')) {
+      setForgotPunchMode(row, true);
+      rowStatus(row, 'Missed punch: enter time and work center.', false);
+      var punchTimeInput = row.querySelector('.js-forgot-punch-time');
+      if (punchTimeInput) punchTimeInput.focus();
+      return;
+    }
+
     if (rowBtn.classList.contains('js-forgot-punch-save')) {
       if (!empId || !personName) {
         failRow(row, 'Missing employee id.');
@@ -773,14 +781,6 @@
       var row = preset.closest('.exception-row');
       var input = row && row.querySelector('.js-reason-input');
       if (!input) return;
-      if (preset.value === '__forgot_punch_in__') {
-        input.value = 'Forgot punch in';
-        setForgotPunchMode(row, true);
-        rowStatus(row, 'Forgot punch in: enter time and work center.', false);
-        var timeInput = row.querySelector('.js-forgot-punch-time');
-        if (timeInput) timeInput.focus();
-        return;
-      }
       setForgotPunchMode(row, false);
       if (preset.value) input.value = preset.value;
       input.focus();

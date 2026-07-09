@@ -766,7 +766,10 @@ def test_exceptions_page_renders_forgot_punch_in_controls(monkeypatch):
     resp = client.get("/exceptions")
 
     assert resp.status_code == 200
-    assert '<option value="__forgot_punch_in__">Forgot punch in</option>' in resp.text
+    assert '<option value="__forgot_punch_in__">Forgot punch in</option>' not in resp.text
+    assert 'class="row-btn primary js-forgot-punch-open"' in resp.text
+    assert ">Missed Punch</button>" in resp.text
+    assert 'class="row-btn warn js-absent"' in resp.text
     assert 'class="inline-input time js-forgot-punch-time"' in resp.text
     assert 'class="inline-select js-forgot-wc"' in resp.text
     assert '<option value="Trim Saw">Trim Saw</option>' in resp.text
@@ -835,6 +838,9 @@ def test_inbox_template_has_inline_time_off_deny_reason():
     assert 'aria-label="Reason to deny time off"' in html
     assert 'aria-label="Forgotten punch-in time"' in html
     assert 'aria-label="Forgotten punch-in work center"' in html
+    assert "js-forgot-punch-open" in html
+    assert ">Missed Punch</button>" in html
+    assert "row-btn warn js-absent" in html
 
 
 def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
@@ -853,9 +859,17 @@ def test_inbox_js_requires_time_off_deny_reason_and_sends_source():
     assert ".js-punch-save" in js
     assert "/api/late-report/forgot-punch-in" in js
     assert ".js-forgot-punch-time" in js
+    assert ".js-forgot-punch-open" in js
     assert ".js-forgot-punch-save" in js
-    assert "Forgot punch in" in js
+    assert "Missed punch: enter time and work center." in js
     assert "btn.click()" in js
+
+
+def test_inbox_css_styles_absent_button_orange():
+    css = (STATIC_DIR / "exceptions.css").read_text(encoding="utf-8")
+
+    assert ".row-btn.warn" in css
+    assert "background: #f97316" in css
 
 
 def test_footer_enhances_inbox_nav_with_summary_count():
