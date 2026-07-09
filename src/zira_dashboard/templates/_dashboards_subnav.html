@@ -1,7 +1,8 @@
 {# Dashboards sub-nav. Fixed 4-tab strip — no pinning, no workshop.
 
    Context required:
-     active_dashboard_key — one of 'vs_recycling', 'vs_new',
+     active_dashboard_key — one of 'vs_recycling',
+                            'vs_recycling_leaderboard', 'vs_new',
                             'vs_work_centers', or a string starting with
                             'wc:' (any WC = Operator tab active).
 #}
@@ -9,6 +10,10 @@
   <a href="/recycling"
      class="subnav-item {% if active_dashboard_key == 'vs_recycling' %}active{% endif %}">
     Recycling
+  </a>
+  <a href="/recycling-leaderboard"
+     class="subnav-item {% if active_dashboard_key == 'vs_recycling_leaderboard' %}active{% endif %}">
+    Recycling-leaderboard
   </a>
   <a href="/new"
      class="subnav-item {% if active_dashboard_key == 'vs_new' %}active{% endif %}">

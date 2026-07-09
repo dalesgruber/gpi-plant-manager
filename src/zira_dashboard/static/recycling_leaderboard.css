@@ -1,3 +1,33 @@
+:root {
+  --bg: #f1f4f7;
+  --panel: #ffffff;
+  --panel-2: #f1f4f7;
+  --border: #d8dee5;
+  --fg: #1f2937;
+  --muted: #6b7280;
+  --accent: #16a34a;
+  --accent-dim: #dcfce7;
+}
+* {
+  box-sizing: border-box;
+}
+body.recycling-leaderboard-tv,
+body.recycling-leaderboard-page {
+  margin: 0;
+  font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+body.recycling-leaderboard-page > header {
+  padding: 0.9rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
 .recycling-leaderboard-tv {
   background: var(--bg);
   color: var(--fg);
@@ -58,6 +88,15 @@
   border-collapse: collapse;
   table-layout: fixed;
 }
+.rlb-table .rlb-rank-col {
+  width: clamp(2.4rem, 4vw, 4.75rem);
+}
+.rlb-table .rlb-name-col {
+  width: 38%;
+}
+.rlb-table .rlb-score-col {
+  width: 25%;
+}
 .rlb-table th {
   color: var(--muted);
   text-transform: uppercase;
@@ -65,6 +104,10 @@
   font-size: clamp(0.65rem, 0.85vw, 1rem);
   padding: 0.35rem 0.4rem;
   border-bottom: 1px solid var(--border);
+}
+.rlb-table th:first-child,
+.rlb-table th:nth-child(2) {
+  text-align: left;
 }
 .rlb-table td {
   padding: clamp(0.35rem, 1vh, 0.85rem) 0.4rem;
@@ -174,4 +217,47 @@
 .rlb-empty {
   color: var(--muted);
   font-style: italic;
+}
+body.recycling-leaderboard-page .rlb-main {
+  padding: 1rem 1.25rem 1.5rem;
+}
+body.recycling-leaderboard-page .rlb-range {
+  margin-bottom: 0.9rem;
+  font-size: 0.85rem;
+}
+body.recycling-leaderboard-page .rlb-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 0.82fr);
+  height: auto;
+  align-items: start;
+}
+body.recycling-leaderboard-page .rlb-panel {
+  overflow: visible;
+}
+body.recycling-leaderboard-page .rlb-panel h2 {
+  font-size: 1.35rem;
+}
+body.recycling-leaderboard-page .rlb-panel p,
+body.recycling-leaderboard-page .rlb-thresholds,
+body.recycling-leaderboard-page .rlb-table th,
+body.recycling-leaderboard-page .rlb-table .days,
+body.recycling-leaderboard-page .rlb-table .not-enough,
+body.recycling-leaderboard-page .rlb-month-row .ribbon em {
+  font-size: 0.75rem;
+}
+body.recycling-leaderboard-page .rlb-table .rank {
+  font-size: 1.25rem;
+}
+body.recycling-leaderboard-page .rlb-table .name,
+body.recycling-leaderboard-page .rlb-table .score {
+  font-size: 1.05rem;
+}
+body.recycling-leaderboard-page .rlb-ribbon-board {
+  height: auto;
+}
+@media (max-width: 1100px) {
+  .rlb-grid,
+  body.recycling-leaderboard-page .rlb-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
 }

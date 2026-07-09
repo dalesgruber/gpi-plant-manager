@@ -21,6 +21,18 @@ def test_tv_leaderboard_names_have_dark_mode_foreground_color():
     assert "color: var(--fg)" in name_block
 
 
+def test_tv_leaderboard_table_pins_rank_and_name_columns():
+    assert 'class="rlb-rank-col"' in TEMPLATE
+    assert 'class="rlb-name-col"' in TEMPLATE
+    assert 'class="rlb-score-col"' in TEMPLATE
+    assert ".rlb-table .rlb-rank-col" in CSS
+    assert ".rlb-table .rlb-name-col" in CSS
+    rank_block = CSS[CSS.index(".rlb-table .rlb-rank-col") : CSS.index(".rlb-table .rlb-name-col")]
+    name_block = CSS[CSS.index(".rlb-table .rlb-name-col") : CSS.index(".rlb-table .rlb-score-col")]
+    assert "width: clamp(" in rank_block
+    assert "width: 38%" in name_block
+
+
 def test_player_card_no_longer_labels_production_average_as_pph():
     assert "Avg (pph)" not in PLAYER_CARD
     assert ">pph<" not in PLAYER_CARD

@@ -1,17 +1,32 @@
 {% from "_tv_header.html" import tv_header %}
+{% set is_tv = tv_mode | default(true) %}
 <!doctype html>
-<html lang="en" data-tv-theme="{{ tv_theme or 'dark' }}">
+<html lang="en"{% if is_tv %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
-<title>Recycling-leaderboard</title>
+{% if is_tv %}<title>Recycling-leaderboard</title>{% else %}<title>Recycling-leaderboard - GPI Plant Manager</title>{% endif %}
+{% if is_tv %}
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
+{% else %}
+<link rel="stylesheet" href="/static/topnav.css?v={{ static_v('topnav.css') }}">
+<link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
+{% endif %}
 <link rel="stylesheet" href="/static/recycling_leaderboard.css?v={{ static_v('recycling_leaderboard.css') }}">
+{% if is_tv %}
 <script defer src="/static/tv-refresh.js?v={{ static_v('tv-refresh.js') }}"></script>
+{% endif %}
 </head>
-<body class="recycling-leaderboard-tv">
+<body class="{% if is_tv %}recycling-leaderboard-tv{% else %}recycling-leaderboard-page{% endif %}">
+  {% if is_tv %}
   {{ tv_header("Recycling-leaderboard", crumb="RECYCLING") }}
+  {% else %}
+  <header>
+    {% set active_nav = 'dashboards' %}{% include "_topnav.html" %}
+  </header>
+  {% include "_dashboards_subnav.html" %}
+  {% endif %}
   <main class="rlb-main">
     <div class="rlb-range">
       <span>YTD: {{ data.ytd_start.strftime('%b %-d') }}-{{ data.ytd_end.strftime('%b %-d') }}</span>
@@ -33,6 +48,12 @@
         </header>
         {% if block.rows %}
         <table class="rlb-table">
+          <colgroup>
+            <col class="rlb-rank-col">
+            <col class="rlb-name-col">
+            <col class="rlb-score-col">
+            <col class="rlb-score-col">
+          </colgroup>
           <thead><tr><th>#</th><th>Name</th><th class="num">YTD Avg</th><th class="num">L30 Avg</th></tr></thead>
           <tbody>
           {% for r in block.rows %}

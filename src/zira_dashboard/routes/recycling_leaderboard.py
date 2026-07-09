@@ -33,21 +33,35 @@ def _leaderboard_payload(today: date) -> dict:
     )
 
 
+def _render_recycling_leaderboard(
+    request: Request,
+    *,
+    tv_mode: bool,
+    tv_theme: str = "dark",
+) -> HTMLResponse:
+    today = plant_today()
+    data = _leaderboard_payload(today)
+    context = {
+        "tv_mode": tv_mode,
+        "tv_theme": tv_theme if tv_theme in ("light", "dark") else "dark",
+        "data": data,
+    }
+    if not tv_mode:
+        context["active_dashboard_key"] = "vs_recycling_leaderboard"
+    return templates.TemplateResponse(request, "recycling_leaderboard_tv.html", context)
+
+
 def render_recycling_leaderboard_tv(
     request: Request,
     *,
     tv_theme: str = "dark",
 ) -> HTMLResponse:
-    today = plant_today()
-    data = _leaderboard_payload(today)
-    return templates.TemplateResponse(
-        request,
-        "recycling_leaderboard_tv.html",
-        {
-            "tv_theme": tv_theme if tv_theme in ("light", "dark") else "dark",
-            "data": data,
-        },
-    )
+    return _render_recycling_leaderboard(request, tv_mode=True, tv_theme=tv_theme)
+
+
+@router.get("/recycling-leaderboard", response_class=HTMLResponse)
+def recycling_leaderboard(request: Request):
+    return _render_recycling_leaderboard(request, tv_mode=False)
 
 
 @router.get("/tv/recycling-leaderboard", response_class=HTMLResponse)

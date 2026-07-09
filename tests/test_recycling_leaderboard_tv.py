@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 from zira_dashboard.app import app
 
 
-def test_tv_recycling_leaderboard_renders(monkeypatch):
-    fake_data = {
+def _fake_recycling_leaderboard_data():
+    return {
         "ytd_start": date(2026, 1, 1),
         "ytd_end": date(2026, 7, 9),
         "l30_start": date(2026, 6, 10),
@@ -41,9 +41,12 @@ def test_tv_recycling_leaderboard_renders(monkeypatch):
             }
         ],
     }
+
+
+def test_tv_recycling_leaderboard_renders(monkeypatch):
     monkeypatch.setattr(
         "zira_dashboard.routes.recycling_leaderboard._leaderboard_payload",
-        lambda today: fake_data,
+        lambda today: _fake_recycling_leaderboard_data(),
     )
     r = TestClient(app).get("/tv/recycling-leaderboard")
     assert r.status_code == 200
@@ -54,6 +57,24 @@ def test_tv_recycling_leaderboard_renders(monkeypatch):
     assert "q-days" not in r.text
     assert "actual times" not in r.text
     assert "tv-refresh.js" in r.text
+
+
+def test_dashboard_recycling_leaderboard_renders_as_dashboards_tab(monkeypatch):
+    monkeypatch.setattr(
+        "zira_dashboard.routes.recycling_leaderboard._leaderboard_payload",
+        lambda today: _fake_recycling_leaderboard_data(),
+    )
+
+    r = TestClient(app).get("/recycling-leaderboard")
+
+    assert r.status_code == 200
+    assert 'data-tv-theme="' not in r.text
+    assert "tv-refresh.js" not in r.text
+    assert ">Dashboards<" in r.text
+    assert 'href="/recycling-leaderboard"' in r.text
+    assert "Recycling-leaderboard" in r.text
+    assert "Maria S." in r.text
+    assert "Gold Ribbons" in r.text
 
 
 def test_direct_tv_recycling_leaderboard_uses_saved_theme(monkeypatch):
