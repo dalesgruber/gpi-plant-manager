@@ -155,7 +155,7 @@
           {% elif action and action.type == 'breakdown' %}
             <select class="inline-select js-wc" aria-label="Work center to transfer to">
               <option value="">Transfer to...</option>
-              {% for wc in work_centers %}
+              {% for wc in work_centers if wc != action.wc_name %}
                 <option value="{{ wc }}">{{ wc }}</option>
               {% endfor %}
             </select>

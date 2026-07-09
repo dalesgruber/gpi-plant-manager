@@ -7,7 +7,10 @@ directly (bypassing `attribution_for`'s defensive try/except), which uses the
 REAL `shift_config.productive_minutes_in_window` (not dependency-injected),
 which in turn reads `breaks_for()` -> `staffing.load_schedule()` -> Postgres.
 It needs a live DATABASE_URL to pass; every other test here is DB-less."""
+import os
 from datetime import date, datetime, timezone
+
+import pytest
 
 from zira_dashboard.production_history import attribute_for_day
 from zira_dashboard import production_history
@@ -31,6 +34,7 @@ def test_attribute_for_day_no_excluded_minutes_argument_defaults_zero():
     assert out["Lauro"]["Forklift"]["excluded_minutes"] == 0.0
 
 
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
 def test_excluded_minutes_by_person_wc_sums_closed_and_caps_open(monkeypatch):
     """Needs a live DATABASE_URL -- see the module docstring. Only
     `breakdown_windows_for_day` is mocked; `productive_minutes_in_window`

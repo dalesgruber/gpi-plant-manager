@@ -50,3 +50,15 @@ def test_breakdown_operator_row_renders_transfer_and_snooze(monkeypatch):
     assert "js-breakdown-transfer" in resp.text
     assert "js-breakdown-snooze" in resp.text
     assert '<option value="Repair 3">Repair 3</option>' in resp.text
+
+
+def test_breakdown_transfer_dropdown_excludes_current_work_center(monkeypatch):
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
+    client = TestClient(app)
+    resp = client.get("/exceptions")
+    assert resp.status_code == 200
+
+    transfer_select = resp.text.split('aria-label="Work center to transfer to"', 1)[1]
+    transfer_select = transfer_select.split("</select>", 1)[0]
+    assert '<option value="Repair 3">Repair 3</option>' in transfer_select
+    assert '<option value="Dismantler 2">Dismantler 2</option>' not in transfer_select
