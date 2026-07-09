@@ -30,7 +30,17 @@ def test_tv_leaderboard_table_pins_rank_and_name_columns():
     rank_block = CSS[CSS.index(".rlb-table .rlb-rank-col") : CSS.index(".rlb-table .rlb-name-col")]
     name_block = CSS[CSS.index(".rlb-table .rlb-name-col") : CSS.index(".rlb-table .rlb-score-col")]
     assert "width: clamp(" in rank_block
-    assert "width: 38%" in name_block
+    assert "width: 46%" in name_block
+
+
+def test_tv_leaderboard_horizontal_spacing_stays_compact():
+    assert "padding: 0 clamp(8px, 1vw, 20px) clamp(10px, 1.2vh, 22px)" in CSS
+    assert "gap: clamp(6px, 0.6vw, 12px)" in CSS
+    assert "padding: clamp(8px, 0.8vw, 14px)" in CSS
+    assert "padding: 0.3rem 0.2rem" in CSS
+    assert "padding: clamp(0.35rem, 1vh, 0.85rem) 0.2rem" in CSS
+    assert "gap: 0.2rem" in CSS
+    assert "padding: 0.25rem 0.25rem" in CSS
 
 
 def test_player_card_no_longer_labels_production_average_as_pph():
