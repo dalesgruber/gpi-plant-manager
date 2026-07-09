@@ -5,11 +5,16 @@ from datetime import date
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
-from .. import production_history, production_metrics, shift_config, staffing
+from .. import awards, production_history, production_metrics, shift_config, staffing
 from ..deps import templates
 from ..plant_day import today as plant_today
 
 router = APIRouter()
+
+_CURRENT_GOAT_GROUPS = (
+    ("Dismantler GOAT", "Dismantlers"),
+    ("Repair GOAT", "Repairs"),
+)
 
 
 def _wc_role_by_name() -> dict[str, str]:
@@ -33,6 +38,43 @@ def _leaderboard_payload(today: date) -> dict:
     )
 
 
+def _current_recycling_goats() -> list[dict]:
+    goats: list[dict] = []
+    for label, group_name in _CURRENT_GOAT_GROUPS:
+        final = None
+        try:
+            live = awards.goat(group_name)
+            final = awards.apply_overrides_single(
+                live,
+                scope="award_goat",
+                group_name=group_name,
+            )
+        except Exception:  # noqa: BLE001 - a broken award lookup must not blank the TV page
+            final = None
+
+        if final is not None and final.get("name"):
+            goats.append(
+                {
+                    "label": label,
+                    "group": group_name,
+                    "name": str(final.get("name") or ""),
+                    "units": final.get("units"),
+                    "day": final.get("day"),
+                }
+            )
+        else:
+            goats.append(
+                {
+                    "label": label,
+                    "group": group_name,
+                    "name": None,
+                    "units": None,
+                    "day": None,
+                }
+            )
+    return goats
+
+
 def _render_recycling_leaderboard(
     request: Request,
     *,
@@ -41,6 +83,8 @@ def _render_recycling_leaderboard(
 ) -> HTMLResponse:
     today = plant_today()
     data = _leaderboard_payload(today)
+    if "current_goats" not in data:
+        data["current_goats"] = _current_recycling_goats()
     context = {
         "tv_mode": tv_mode,
         "tv_theme": tv_theme if tv_theme in ("light", "dark") else "dark",

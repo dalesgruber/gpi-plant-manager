@@ -20,7 +20,13 @@
 </head>
 <body class="{% if is_tv %}recycling-leaderboard-tv{% else %}recycling-leaderboard-page{% endif %}">
   {% if is_tv %}
-  {{ tv_header("Recycling-leaderboard", crumb="RECYCLING") }}
+  {{ tv_header(
+      "Recycling-leaderboard",
+      crumb="RECYCLING",
+      right_label="CURRENT GOATS",
+      right_items=data.current_goats | default([]),
+      right_class="rlb-goat-banner",
+  ) }}
   {% else %}
   <header>
     {% set active_nav = 'dashboards' %}{% include "_topnav.html" %}

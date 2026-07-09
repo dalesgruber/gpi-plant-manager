@@ -10,6 +10,7 @@
      ...
      {{ tv_header("Recycling", crumb="DEPARTMENTS") }}
      {{ tv_header("REPAIR 1", crumb="RECYCLING · REPAIRS", right="CHRISTIAN · JOSE L") }}
+     {{ tv_header("Recycling-leaderboard", crumb="RECYCLING", right_label="CURRENT GOATS", right_items=goats) }}
 
    With a center slot (GOAT watch banner), use a call block:
      {% call tv_header("REPAIR 1", crumb="...", right="...") %}
@@ -17,7 +18,7 @@
      {% endcall %}
 #}
 
-{% macro tv_header(name, crumb=None, right=None) -%}
+{% macro tv_header(name, crumb=None, right=None, right_label="OPERATORS", right_items=None, right_class=None) -%}
 <div class="tv-header">
   <div class="tv-header-main">
     {%- if crumb %}<div class="crumb">{{ crumb }}</div>{% endif %}
@@ -26,10 +27,24 @@
   {# Center slot. Always emitted (even when empty) so the header keeps its
      three-column grid shape whether or not a caller passes content. #}
   <div class="tv-header-center">{% if caller %}{{ caller() }}{% endif %}</div>
-  {%- if right %}
-  <div class="right">
-    <div class="crumb">OPERATORS</div>
+  {%- if right or right_items %}
+  <div class="right{% if right_items %} tv-header-right-items{% endif %}{% if right_class %} {{ right_class }}{% endif %}">
+    <div class="crumb">{{ right_label }}</div>
+    {%- if right_items %}
+    <div class="tv-header-right-list">
+      {%- for item in right_items %}
+      <div class="tv-header-right-chip">
+        <span class="tv-header-right-role">{{ item.label }}</span>
+        <span class="tv-header-right-name">{{ item.name or "No GOAT yet" }}</span>
+        {%- if item.units is defined and item.units is not none %}
+        <span class="tv-header-right-meta">{{ "%.0f"|format(item.units) }} pallets</span>
+        {%- endif %}
+      </div>
+      {%- endfor %}
+    </div>
+    {%- else %}
     <div class="name">{{ right }}</div>
+    {%- endif %}
   </div>
   {%- endif %}
 </div>

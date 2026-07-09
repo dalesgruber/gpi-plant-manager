@@ -31,6 +31,20 @@ def _fake_recycling_leaderboard_data():
             },
             "Dismantler": {"thresholds": {"ytd": 12, "l30": 2}, "rows": []},
         },
+        "current_goats": [
+            {
+                "label": "Dismantler GOAT",
+                "group": "Dismantlers",
+                "name": "Daniel M.",
+                "units": 168.0,
+            },
+            {
+                "label": "Repair GOAT",
+                "group": "Repairs",
+                "name": "Maria S.",
+                "units": 118.0,
+            },
+        ],
         "ribbons": [
             {
                 "year": 2026,
@@ -56,7 +70,73 @@ def test_tv_recycling_leaderboard_renders(monkeypatch):
     assert "not enough days" in r.text
     assert "q-days" not in r.text
     assert "actual times" not in r.text
+    assert "CURRENT GOATS" in r.text
+    assert "Dismantler GOAT" in r.text
+    assert "Daniel M." in r.text
+    assert "Repair GOAT" in r.text
     assert "tv-refresh.js" in r.text
+
+
+def test_current_recycling_goats_uses_awards_with_overrides(monkeypatch):
+    from zira_dashboard.routes import recycling_leaderboard
+
+    def fake_goat(group_name):
+        return {
+            "Dismantlers": {"name": "Daniel M.", "units": 168.0},
+            "Repairs": {"name": "Maria S.", "units": 118.0},
+        }[group_name]
+
+    def fake_apply(slot, *, scope, group_name, overrides=None):
+        assert scope == "award_goat"
+        return {**slot, "name": f"{slot['name']} Final", "group_name": group_name}
+
+    monkeypatch.setattr(recycling_leaderboard.awards, "goat", fake_goat)
+    monkeypatch.setattr(
+        recycling_leaderboard.awards,
+        "apply_overrides_single",
+        fake_apply,
+    )
+
+    goats = recycling_leaderboard._current_recycling_goats()
+
+    assert [g["label"] for g in goats] == ["Dismantler GOAT", "Repair GOAT"]
+    assert [g["group"] for g in goats] == ["Dismantlers", "Repairs"]
+    assert [g["name"] for g in goats] == ["Daniel M. Final", "Maria S. Final"]
+    assert [g["units"] for g in goats] == [168.0, 118.0]
+
+
+def test_tv_recycling_leaderboard_adds_current_goats_from_route_helper(monkeypatch):
+    data = _fake_recycling_leaderboard_data()
+    data.pop("current_goats")
+    monkeypatch.setattr(
+        "zira_dashboard.routes.recycling_leaderboard._leaderboard_payload",
+        lambda today: data,
+    )
+    monkeypatch.setattr(
+        "zira_dashboard.routes.recycling_leaderboard._current_recycling_goats",
+        lambda: [
+            {
+                "label": "Dismantler GOAT",
+                "group": "Dismantlers",
+                "name": "Daniel M.",
+                "units": 168.0,
+            },
+            {
+                "label": "Repair GOAT",
+                "group": "Repairs",
+                "name": "Maria S.",
+                "units": 118.0,
+            },
+        ],
+        raising=False,
+    )
+
+    r = TestClient(app).get("/tv/recycling-leaderboard")
+
+    assert r.status_code == 200
+    assert "CURRENT GOATS" in r.text
+    assert "Daniel M." in r.text
+    assert "Maria S." in r.text
 
 
 def test_dashboard_recycling_leaderboard_renders_as_dashboards_tab(monkeypatch):
