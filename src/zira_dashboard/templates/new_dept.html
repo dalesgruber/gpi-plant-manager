@@ -5,13 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="/static/gpi-logo.png">
 <title>{% if tv_mode %}TV · {% endif %}Departments — New — GPI Plant Manager</title>
+<link rel="stylesheet" href="/static/vendor/gridstack.min.css?v={{ static_v('vendor/gridstack.min.css') }}">
 <link rel="stylesheet" href="/static/topnav.css?v={{ static_v('topnav.css') }}">
-<link rel="stylesheet" href="/static/new_dept.css?v={{ static_v('new_dept.css') }}">
+<link rel="stylesheet" href="/static/recycling.css?v={{ static_v('recycling.css') }}">
 <link rel="stylesheet" href="/static/goat_watch.css?v={{ static_v('goat_watch.css') }}">
 {% if tv_mode %}
 <link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
 {% endif %}
 {% from "_goat_badges.html" import goat_badges, goat_badges_css, hover_tip_clamp_script %}
+{% from "_widget_edit_controls.html" import edit_controls with context %}
+{% from "_department_dashboard_widgets.html" import
+   department_bar_chart,
+   department_progress_chart,
+   department_downtime_report
+   with context %}
+{% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
 <style>{{ goat_badges_css() }}</style>
 <link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
 </head>
@@ -20,136 +28,120 @@
 {% from "_tv_header.html" import tv_header %}
 {% call tv_header("New", crumb="DEPARTMENTS · TODAY") %}{% include "_goat_watch_banner.html" %}{% endcall %}
 {% endif %}
-{% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
+{% if not tv_mode %}
 <header>
   {% set active_nav = 'dashboards' %}{% include "_topnav.html" %}
-  <form method="get" action="/new">
-    <label for="day">Day</label>
-    <input id="day" type="date" name="day" value="{{ day }}" max="{{ today }}">
-    <button type="submit">Update</button>
-  </form>
 </header>
 {% include "_dashboards_subnav.html" %}
+<form class="rc-toolbar" method="get" action="/new">
+  <span class="rc-tool-label">Range:</span>
+  {% set windows = [
+    ('today', 'Today'),
+    ('yesterday', 'Yesterday'),
+    ('week', 'This Week'),
+    ('last_week', 'Last Week'),
+    ('month', 'This Month'),
+    ('last_month', 'Last Month'),
+  ] %}
+  {% for wval, wlabel in windows %}
+    <a href="/new?window={{ wval }}"
+       class="rc-chip{% if window == wval and not custom_range_active %} rc-chip-on{% endif %}">{{ wlabel }}</a>
+  {% endfor %}
+  <details class="rc-custom-popover">
+    <summary class="rc-chip{% if custom_range_active %} rc-chip-on{% endif %}">{% if custom_range_active %}Custom: {{ start }} → {{ end }}{% else %}Custom{% endif %}</summary>
+    <div class="rc-custom-panel">
+      <label>Start <input type="date" name="start" value="{{ start if custom_range_active else '' }}"></label>
+      <label>End <input type="date" name="end" value="{{ end if custom_range_active else '' }}"></label>
+      <button type="submit" class="rc-chip rc-custom-apply">Apply</button>
+    </div>
+  </details>
+  <div class="edit-bar">
+    <span class="save-indicator" id="save-indicator">Drag / resize — layout auto-saves</span>
+    <button type="button" id="reset-layout">Reset Layout</button>
+  </div>
+</form>
+{% endif %}
+{% macro widget_attrs(id, dx, dy, dw, dh) -%}
+  {%- set l = layout.get(id, {'x': dx, 'y': dy, 'w': dw, 'h': dh}) -%}
+  gs-id="{{ id }}" gs-x="{{ l.x }}" gs-y="{{ l.y }}" gs-w="{{ l.w }}" gs-h="{{ l.h }}"
+{%- endmacro %}
+
+{%- macro widget_title(id, default) -%}{{ customs.get(id, {}).get('title', default) }}{%- endmacro %}
 
 {# TV mode seats the banner in the header center (tv_header {% call %}
-   above); screen mode keeps it here below the sub-nav. #}
+   above); screen mode keeps it here below the edit bar. #}
 {% if not tv_mode %}{% include "_goat_watch_banner.html" %}{% endif %}
 
 <main>
-  <div class="kpi-row">
-    <div class="kpi">
-      <div class="label">Total Pallets Processed</div>
-      <div class="val">{{ '{:,}'.format(total_units) }}</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Up Time</div>
-      <div class="val">{{ uptime_pct }} %</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Total Downtime</div>
-      <div class="val">{{ total_downtime_display }}</div>
-    </div>
-    <div class="kpi">
-      <div class="label">pallets/hr/person</div>
-      <div class="val">{{ pph_per_person }}</div>
-    </div>
-  </div>
+  <div class="grid-stack"
+       data-layout-page="new"
+       data-tv-mode="{{ '1' if tv_mode else '0' }}"
+       data-fallback-rows="16">
 
-  <div class="panel">
-    <h3>Pallets by Work Center — New department</h3>
-    {% if bars %}
-      {% for b in bars %}
-        <div class="bar-row" title="{{ b.who if b.who else b.name }} — {{ b.units }}{% if b.expected %} / {{ b.expected }} expected{% endif %}{% if b.pct_of_target %} ({{ b.pct_of_target }}%){% endif %}">
-          <div class="name">
-            {% if b.who and b.who != b.name %}
-              <span class="name-primary">{{ b.who }}{{ goat_badges(b.who, goat_holders()) }}</span>
-              <span class="name-secondary">{{ b.name }}</span>
-            {% else %}
-              <span class="name-primary">{{ b.name }}</span>
-              {% if assignments_todo_by_wc and b.name in assignments_todo_by_wc %}
-                {% set _todo = assignments_todo_by_wc[b.name] %}
-                <button type="button" class="no-assign-btn" data-wc="{{ b.name }}" data-day="{{ today }}" data-start="{{ _todo.first_iso }}" data-end="{{ _todo.last_iso }}" title="Assign person to this WC's work">↪ assign</button>
-              {% else %}
-                <span class="name-secondary"><em>(no assignment)</em></span>
-              {% endif %}
-            {% endif %}
-          </div>
-          <div class="bar-track">
-            <div class="bar-fill" style="width: {{ b.pct }}%;{% if b.color %} background: {{ b.color }};{% endif %}"></div>
-          </div>
-          <div class="val">{{ b.units }}{% if b.expected %}<span class="pct">/{{ b.expected }}</span>{% endif %}</div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="empty-state">
-        No work centers in the &ldquo;New&rdquo; department have telemetry meters configured.
-        Tag work centers as <em>New</em> in <a href="/settings">Settings</a> and assign their meter IDs.
+    <div class="grid-stack-item" {{ widget_attrs('kpi-pallets', 0, 0, 2, 3) }}>
+      <div class="grid-stack-item-content align-center">
+        {% if not tv_mode %}{{ edit_controls('kpi-pallets', 'Total Pallets Processed', 'kpi') }}{% endif %}
+        <div class="label">{{ widget_title('kpi-pallets', 'Total Pallets Processed') }}</div>
+        <div class="val">{{ '{:,}'.format(total_units) }}</div>
       </div>
-    {% endif %}
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('kpi-palletshr', 0, 3, 2, 3) }}>
+      <div class="grid-stack-item-content align-center">
+        {% if not tv_mode %}{{ edit_controls('kpi-palletshr', 'pallets/hr/person', 'kpi') }}{% endif %}
+        <div class="label">{{ widget_title('kpi-palletshr', 'pallets/hr/person') }}</div>
+        <div class="val">{{ pph_per_person }}</div>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('new-bars', 2, 0, 5, 6) }}>
+      <div class="grid-stack-item-content">
+        {% if not tv_mode %}{{ edit_controls('new-bars', 'New Work Centers', 'bars') }}{% endif %}
+        <h3>{{ widget_title('new-bars', 'New Work Centers') }}</h3>
+        <div class="widget-body">{{ department_bar_chart('new-bars', new_bars) }}</div>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('downtime-report', 7, 0, 5, 6) }}>
+      <div class="grid-stack-item-content">
+        {% if not tv_mode %}{{ edit_controls('downtime-report', 'Downtime Report', 'downtime') }}{% endif %}
+        <h3>{{ widget_title('downtime-report', 'Downtime Report') }}</h3>
+        {{ department_downtime_report(downtime_rows, elapsed_minutes, uptime_pct) }}
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('new-progress', 0, 6, 12, 5) }}>
+      <div class="grid-stack-item-content">
+        {% if not tv_mode %}{{ edit_controls('new-progress', 'All New — 15-minute progress', 'progress') }}{% endif %}
+        <span class="people-count">{{ new_people }}{% if is_range %} pd{% endif %}</span>
+        <h3>{{ widget_title('new-progress', 'All New — 15-minute progress') }}</h3>
+        <div class="widget-body">{{ department_progress_chart(
+            new_progress, new_group_target,
+            (new_group_target / 4)|round|int, 'new-progress'
+        ) }}</div>
+      </div>
+    </div>
+
+    <div class="grid-stack-item" {{ widget_attrs('new-cumulative', 0, 11, 12, 5) }}>
+      <div class="grid-stack-item-content">
+        {% if not tv_mode %}{{ edit_controls('new-cumulative', 'All New — Daily Progress', 'progress') }}{% endif %}
+        <span class="people-count">{{ new_people }}{% if is_range %} pd{% endif %}</span>
+        <h3>{{ widget_title('new-cumulative', 'All New — Daily Progress') }}</h3>
+        <div class="widget-body">{{ cumulative_progress_chart(new_progress) }}</div>
+      </div>
+    </div>
   </div>
 
-  <div class="panel">
-    <h3>Downtime Report — green = working, red = down (shift-scoped)</h3>
-    {% if elapsed_minutes == 0 %}
-      <div class="empty-state">No elapsed shift minutes on this day (weekend or before 7:00 AM).</div>
-    {% elif downtime_rows %}
-      {% for d in downtime_rows %}
-        <div class="bar-row">
-          <div class="name">
-            {% if d.who and d.who != d.name %}
-              <span class="name-primary">{{ d.who }}</span>
-              <span class="name-secondary">{{ d.name }}</span>
-            {% else %}
-              <span class="name-primary">{{ d.name }}</span>
-              {% if assignments_todo_by_wc and d.name in assignments_todo_by_wc %}
-                {% set _todo = assignments_todo_by_wc[d.name] %}
-                <button type="button" class="no-assign-btn" data-wc="{{ d.name }}" data-day="{{ today }}" data-start="{{ _todo.first_iso }}" data-end="{{ _todo.last_iso }}" title="Assign person to this WC's work">↪ assign</button>
-              {% else %}
-                <span class="name-secondary"><em>(no assignment)</em></span>
-              {% endif %}
-            {% endif %}
-          </div>
-          <div class="stacked-track">
-            <div class="good" style="width: {{ d.working_pct }}%" title="Working {{ d.working }}m"></div>
-            <div class="bad"  style="width: {{ d.down_pct }}%"    title="Down {{ d.down }}m"></div>
-          </div>
-          <div class="val">{{ d.down }}m</div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="empty-state">No downtime data.</div>
-    {% endif %}
-  </div>
-
-  {% if has_dismantlers %}
-  <div class="panel">
-    <span class="people-count" title="People scheduled in this group">{{ new_dism_people }}</span>
-    <h3>All Dismantlers — Daily Progress</h3>
-    {% if new_dism_progress %}
-      {{ cumulative_progress_chart(new_dism_progress) }}
-    {% else %}
-      <div class="empty-state">No shift data for this day.</div>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {% if has_repairs %}
-  <div class="panel">
-    <span class="people-count" title="People scheduled in this group">{{ new_repair_people }}</span>
-    <h3>All Repairs — Daily Progress</h3>
-    {% if new_repair_progress %}
-      {{ cumulative_progress_chart(new_repair_progress) }}
-    {% else %}
-      <div class="empty-state">No shift data for this day.</div>
-    {% endif %}
-  </div>
-  {% endif %}
-
+  {% if not tv_mode %}
   <div class="footer">
-    Refreshed {{ refreshed_at }}{% if is_today %} · auto-refresh 60s{% endif %}
+    Refreshed {{ refreshed_at }}{% if range_includes_today %} · auto-refresh 60s{% endif %}
     {% if elapsed_minutes > 0 %} · shift elapsed: {{ elapsed_minutes }}m{% endif %}
   </div>
+  {% endif %}
 </main>
+
+<script src="/static/vendor/gridstack-all.js?v={{ static_v('vendor/gridstack-all.js') }}"></script>
+<script src="/static/dashboard-grid.js?v={{ static_v('dashboard-grid.js') }}"></script>
 
 {% if not tv_mode %}
 {# Inline-assign popover for "(no assignment)" bars. TV mode hides the
@@ -160,7 +152,7 @@
         data-people='{{ all_active_people | tojson }}'></script>
 {% endif %}
 
-{% if tv_mode or is_today %}
+{% if tv_mode or range_includes_today %}
 <script defer src="/static/tv-refresh.js?v={{ static_v('tv-refresh.js') }}"></script>
 {% endif %}
 {% if not tv_mode %}{% include '_footer.html' %}{% endif %}

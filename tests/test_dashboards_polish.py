@@ -219,3 +219,13 @@ def test_recycling_renders_edit_controls_after_partial_extraction():
     assert 'data-widget="kpi-pallets"' in r.text
     assert 'data-widget="kpi-uptime"' in r.text
     assert 'class="widget-edit-btn"' in r.text
+
+
+def test_new_renders_editable_gridstack_range_dashboard():
+    c = TestClient(app)
+    r = c.get("/new")
+    assert r.status_code == 200
+    assert 'class="grid-stack"' in r.text
+    assert 'data-layout-page="new"' in r.text
+    assert 'data-widget="new-bars"' in r.text
+    assert 'class="rc-toolbar"' in r.text

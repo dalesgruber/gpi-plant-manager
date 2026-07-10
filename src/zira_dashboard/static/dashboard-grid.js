@@ -4,7 +4,8 @@
  * Load AFTER gridstack-all.js. Configured via data attributes on the
  * .grid-stack container:
  *   data-layout-page    URL segment for persistence — /api/layout/{page}
- *                       and /api/widget/{page}/{id} ("recycling" | "operator")
+ *                       and /api/widget/{page}/{id}
+ *                       ("recycling" | "new" | "operator")
  *   data-tv-mode        "1" on /tv/* — static grid + fit-to-viewport
  *   data-fallback-rows  safety row count used only if the grid has no items
  */
