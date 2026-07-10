@@ -196,6 +196,8 @@ GOAT chips preserve the existing awards system's all-time best-day ranking
 semantics rather than introducing a second trophy definition. Add or reuse an
 awards helper that accepts an explicit set of work-center names, so family
 membership remains skill-derived and does not depend on a configured group.
+The helper accepts the route's already-loaded records instead of issuing its
+own database query.
 
 Canonical family labels for override matching are:
 
@@ -264,13 +266,15 @@ route provides the canonical family label for override matching.
 The route module:
 
 1. Builds the three work-center sets from `staffing.LOCATIONS` skills.
-2. Loads the covering historical range once.
+2. Loads normalized production records once from the existing awards data floor
+   (`2024-01-01`) through today.
 3. Calls the pure family builder.
 4. Removes families without current qualifying rows.
-5. Resolves GOAT chips for active families.
+5. Resolves GOAT chips for active families from the same loaded records.
 6. Renders normal or TV mode through one shared function.
 
-The covering range must include the current YTD, L30, and all 12 ribbon months.
+The all-time covering range supplies the current YTD, L30, all 12 ribbon months,
+and all-time GOATs without per-family or per-month database reads.
 
 ### Template and CSS
 
@@ -325,8 +329,8 @@ Add `New-Leaderboard` to `_dashboards_subnav.html` with active key
 - Missing ribbon months display dashes.
 - Preserve `tv-refresh.js` on empty and error screens so transient failures
   recover automatically.
-- Use one covering historical read per request; do not query once per family or
-  month.
+- Use one all-time historical read per response-cache fill; do not query once
+  per family, month, or GOAT.
 - Follow existing response-cache and cache-header conventions for dashboards
   containing today's data.
 
