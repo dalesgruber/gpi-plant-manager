@@ -1,0 +1,35 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "scripts/_preview_out/new_leaderboard"
+
+
+def test_preview_renderer_creates_all_new_leaderboard_fixtures():
+    env = os.environ | {
+        "ZIRA_API_KEY": "test",
+        "AUTH_DISABLED": "1",
+        "PYTHONPATH": str(ROOT / "src"),
+    }
+    result = subprocess.run(
+        [sys.executable, "scripts/preview_new_leaderboard.py"],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == str(OUT)
+    assert {
+        "dashboard-junior-only.html",
+        "tv-dark-junior-only.html",
+        "tv-dark-three-families.html",
+        "tv-light-three-families.html",
+        "static",
+    } <= {path.name for path in OUT.iterdir()}
