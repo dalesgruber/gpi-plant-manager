@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from zira_dashboard import _http_cache  # noqa: E402
 from zira_dashboard.app import app  # noqa: E402
+from zira_dashboard.deps import templates  # noqa: E402
 
 
 OUT = Path("scripts/_preview_out/new_leaderboard")
@@ -82,7 +83,13 @@ def _payload(active: list[str]) -> dict:
 
 def _write(client: TestClient, filename: str, url: str, payload: dict) -> None:
     _http_cache.invalidate_today_cache()
-    with patch("zira_dashboard.routes.new_leaderboard._leaderboard_payload", lambda today: payload):
+    with (
+        patch("zira_dashboard.routes.new_leaderboard._leaderboard_payload", lambda today: payload),
+        patch.dict(
+            templates.env.globals,
+            {"nav_inbox_summary": lambda: {"total": 0, "urgent_total": 0, "source_errors": []}},
+        ),
+    ):
         response = client.get(url)
     response.raise_for_status()
     html = response.text.replace('href="/static/', 'href="static/').replace('src="/static/', 'src="static/')
