@@ -472,12 +472,18 @@ CREATE TABLE IF NOT EXISTS odoo_open_attendance_cache (
 -- name, the dashboard it shows (kind + optional wc_name), and the theme
 -- (light/dark) for that physical display. The /tv/{slug} route looks
 -- up the row and dispatches to the underlying dashboard with the row's
--- theme. Seed list of 11 rows inserts on first boot only.
+-- theme. Seed list of 12 rows inserts on first boot only.
 CREATE TABLE IF NOT EXISTS tv_displays (
   id                  SERIAL PRIMARY KEY,
   name                TEXT NOT NULL,
   slug                TEXT NOT NULL UNIQUE,
-  kind                TEXT NOT NULL CHECK (kind IN ('vs_recycling', 'vs_new', 'vs_recycling_leaderboard', 'wc')),
+  kind                TEXT NOT NULL CHECK (kind IN (
+    'vs_recycling',
+    'vs_new',
+    'vs_recycling_leaderboard',
+    'vs_new_leaderboard',
+    'wc'
+  )),
   wc_name             TEXT,
   theme               TEXT NOT NULL DEFAULT 'dark' CHECK (theme IN ('light', 'dark')),
   sort_order          INTEGER NOT NULL DEFAULT 0,
@@ -526,7 +532,13 @@ BEGIN
       AND conrelid = 'tv_displays'::regclass
   ) THEN
     ALTER TABLE tv_displays ADD CONSTRAINT tv_displays_kind_check
-      CHECK (kind IN ('vs_recycling', 'vs_new', 'vs_recycling_leaderboard', 'wc'));
+      CHECK (kind IN (
+        'vs_recycling',
+        'vs_new',
+        'vs_recycling_leaderboard',
+        'vs_new_leaderboard',
+        'wc'
+      ));
   END IF;
 END $$;
 

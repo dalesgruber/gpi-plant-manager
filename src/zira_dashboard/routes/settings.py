@@ -262,6 +262,11 @@ def settings_page(
                 "ref": "",
                 "name": "Recycling-leaderboard",
             },
+            {
+                "kind": "vs_new_leaderboard",
+                "ref": "",
+                "name": "New-Leaderboard",
+            },
             {"kind": "vs_work_centers", "ref": "", "name": "Work Centers"},
         ]
         for loc in staffing.LOCATIONS:

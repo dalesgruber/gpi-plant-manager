@@ -57,6 +57,12 @@ def tv_display(request: Request, slug: str, theme: str | None = Query(default=No
             request,
             tv_theme=tv_theme,
         )
+    if kind == "vs_new_leaderboard":
+        from . import new_leaderboard
+        return new_leaderboard.render_new_leaderboard_tv(
+            request,
+            tv_theme=tv_theme,
+        )
     if kind == "wc":
         from .. import staffing
         wc_name = row["wc_name"]
@@ -112,7 +118,7 @@ async def post_display(request: Request):
     row_id = body.get("id")
     if not isinstance(name, str) or not name.strip():
         return JSONResponse({"ok": False, "error": "name required"}, status_code=400)
-    if kind not in ("vs_recycling", "vs_new", "vs_recycling_leaderboard", "wc"):
+    if kind not in ("vs_recycling", "vs_new", "vs_recycling_leaderboard", "vs_new_leaderboard", "wc"):
         return JSONResponse({"ok": False, "error": "kind invalid"}, status_code=400)
     if kind == "wc":
         from .. import staffing

@@ -126,6 +126,28 @@ def test_get_tv_recycling_leaderboard_dispatches(monkeypatch):
     assert "Recycling-leaderboard" in r.text
 
 
+def test_get_tv_new_leaderboard_dispatches(monkeypatch):
+    from zira_dashboard.routes import new_leaderboard
+
+    def fake_render(request, *, tv_theme="dark"):
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(
+            f'<html data-tv-theme="{tv_theme}">New-Leaderboard</html>'
+        )
+
+    monkeypatch.setattr(new_leaderboard, "render_new_leaderboard_tv", fake_render)
+    client = TestClient(app)
+    client.post("/api/tv-displays", json={
+        "name": "rt-new-leaderboard",
+        "kind": "vs_new_leaderboard",
+        "theme": "light",
+    })
+    response = client.get("/tv/rt-new-leaderboard")
+    assert response.status_code == 200
+    assert 'data-tv-theme="light"' in response.text
+    assert "New-Leaderboard" in response.text
+
+
 def test_get_tv_with_query_theme_overrides_stored():
     c = TestClient(app)
     c.post("/api/tv-displays", json={
