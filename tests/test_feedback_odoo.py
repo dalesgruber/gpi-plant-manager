@@ -29,6 +29,46 @@ def test_feedback_operations_live_in_private_module():
     assert callable(_odoo_feedback.ensure_feedback_stages)
 
 
+def test_ensure_feedback_project_uses_facade_stage_helper(monkeypatch):
+    _calls, responses = _stub(monkeypatch)
+    responses.append([{"id": 7}])
+    seeded_project_ids = []
+    monkeypatch.setattr(
+        odoo_client, "_ensure_feedback_stages", seeded_project_ids.append
+    )
+
+    assert odoo_client.ensure_feedback_project() == 7
+    assert seeded_project_ids == [7]
+
+
+def test_stage_failure_leaves_project_uncached_and_retries(monkeypatch):
+    import pytest
+
+    calls, responses = _stub(monkeypatch)
+    responses.extend([[{"id": 7}], [{"id": 7}]])
+    seeded_project_ids = []
+
+    def seed_stages(project_id):
+        seeded_project_ids.append(project_id)
+        if len(seeded_project_ids) == 1:
+            raise RuntimeError("stage seeding failed")
+
+    monkeypatch.setattr(odoo_client, "_ensure_feedback_stages", seed_stages)
+
+    with pytest.raises(RuntimeError, match="stage seeding failed"):
+        odoo_client.ensure_feedback_project()
+
+    assert odoo_client._feedback_project_id is None
+    assert odoo_client.ensure_feedback_project() == 7
+    assert seeded_project_ids == [7, 7]
+    project_searches = [
+        call
+        for call in calls
+        if call[0:2] == ("project.project", "search_read")
+    ]
+    assert len(project_searches) == 2
+
+
 def test_ensure_feedback_project_reuses_existing(monkeypatch):
     calls, responses = _stub(monkeypatch)
     responses.extend([

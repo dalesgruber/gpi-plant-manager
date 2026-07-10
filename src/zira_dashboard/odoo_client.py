@@ -847,12 +847,17 @@ def find_duplicate_leave(
     )
 
 
+def _ensure_feedback_stages(project_id: int) -> None:
+    _odoo_feedback.ensure_feedback_stages(execute, project_id)
+
+
 def ensure_feedback_project() -> int:
     """Find-or-create the 'Plant Manager' project (+ its stages); cache the id."""
     global _feedback_project_id
     if _feedback_project_id is None:
-        _feedback_project_id = _odoo_feedback.find_or_create_feedback_project(execute)
-        _odoo_feedback.ensure_feedback_stages(execute, _feedback_project_id)
+        project_id = _odoo_feedback.find_or_create_feedback_project(execute)
+        _ensure_feedback_stages(project_id)
+        _feedback_project_id = project_id
     return _feedback_project_id
 
 
