@@ -1,4 +1,4 @@
-{# Dashboards sub-nav. Fixed 4-tab strip — no pinning, no workshop.
+{# Dashboards sub-nav. Fixed tab strip — no pinning, no workshop.
 
    Context required:
      active_dashboard_key — one of 'vs_recycling',
@@ -18,6 +18,10 @@
   <a href="/new"
      class="subnav-item {% if active_dashboard_key == 'vs_new' %}active{% endif %}">
     New
+  </a>
+  <a href="/new-leaderboard"
+     class="subnav-item {% if active_dashboard_key == 'vs_new_leaderboard' %}active{% endif %}">
+    New-Leaderboard
   </a>
   <a href="/operator"
      class="subnav-item {% if active_dashboard_key and active_dashboard_key.startswith('wc:') %}active{% endif %}">

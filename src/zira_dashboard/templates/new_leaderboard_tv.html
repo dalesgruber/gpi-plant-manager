@@ -1,0 +1,86 @@
+{% from "_tv_header.html" import tv_header %}
+{% set is_tv = tv_mode | default(true) %}
+<!doctype html>
+<html lang="en"{% if is_tv %} data-tv-theme="{{ tv_theme or 'dark' }}"{% endif %}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="/static/gpi-logo.png">
+{% if is_tv %}<title>New-Leaderboard</title>{% else %}<title>New-Leaderboard - GPI Plant Manager</title>{% endif %}
+{% if is_tv %}
+<link rel="stylesheet" href="/static/tv-mode.css?v={{ static_v('tv-mode.css') }}">
+{% else %}
+<link rel="stylesheet" href="/static/topnav.css?v={{ static_v('topnav.css') }}">
+<link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
+{% endif %}
+<link rel="stylesheet" href="/static/recycling_leaderboard.css?v={{ static_v('recycling_leaderboard.css') }}">
+<link rel="stylesheet" href="/static/new_leaderboard.css?v={{ static_v('new_leaderboard.css') }}">
+{% if is_tv %}<script defer src="/static/tv-refresh.js?v={{ static_v('tv-refresh.js') }}"></script>{% endif %}
+</head>
+<body class="{% if is_tv %}new-leaderboard-tv{% else %}new-leaderboard-page{% endif %}">
+  {% if is_tv %}
+  {{ tv_header(
+      "New-Leaderboard",
+      crumb="NEW",
+      right_label="CURRENT GOATS",
+      right_items=data.current_goats,
+      right_class="rlb-goat-banner",
+  ) }}
+  {% else %}
+  <header>{% set active_nav = 'dashboards' %}{% include "_topnav.html" %}</header>
+  {% include "_dashboards_subnav.html" %}
+  {% endif %}
+  <main class="rlb-main">
+    <div class="rlb-range">
+      <span>YTD: {{ data.ytd_start.strftime('%b %-d') }}-{{ data.ytd_end.strftime('%b %-d') }}</span>
+      <span>L30: {{ data.l30_start.strftime('%b %-d') }}-{{ data.l30_end.strftime('%b %-d') }}</span>
+    </div>
+    {% if data.error_message %}
+      <section class="rlb-panel nlb-state"><h2>{{ data.error_message }}</h2></section>
+    {% elif not data.active_families %}
+      <section class="rlb-panel nlb-state"><h2>Waiting for qualifying Zira production.</h2></section>
+    {% else %}
+    <section class="nlb-grid nlb-family-count-{{ data.active_families|length }}">
+      <div class="nlb-family-panels">
+      {% for family in data.active_families %}
+        {% set block = data.families[family] %}
+        <section class="rlb-panel nlb-family-panel">
+          <div class="rlb-panel-head">
+            <div><h2>{{ family }}</h2><p>Sorted by YTD full-day avg</p></div>
+            <div class="rlb-thresholds"><div>YTD min {{ block.thresholds.ytd }} days</div><div>L30 min {{ block.thresholds.l30 }} days</div></div>
+          </div>
+          <table class="rlb-table">
+            <colgroup><col class="rlb-rank-col"><col class="rlb-name-col"><col class="rlb-score-col"><col class="rlb-score-col"></colgroup>
+            <thead><tr><th>#</th><th>Name</th><th class="num">YTD Avg</th><th class="num">L30 Avg</th></tr></thead>
+            <tbody>
+            {% for row in block.rows %}
+              <tr>
+                <td class="rank">{{ row.rank }}</td>
+                <td class="name" aria-label="{{ row.name }}">{{ row.name }}</td>
+                <td class="num">{% if row.ytd.eligible %}<span class="score">{{ "%.1f"|format(row.ytd.avg_units) }}</span><span class="days">{{ row.ytd.days }} days</span>{% else %}<span class="not-enough">not enough days</span>{% endif %}</td>
+                <td class="num">{% if row.l30.eligible %}<span class="score l30">{{ "%.1f"|format(row.l30.avg_units) }}</span><span class="days">{{ row.l30.days }} days</span>{% else %}<span class="not-enough">not enough days</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </section>
+      {% endfor %}
+      </div>
+      <section class="rlb-panel nlb-ribbons">
+        <div class="rlb-panel-head"><div><h2>Gold Ribbons</h2><p>Best normalized full day</p></div></div>
+        <div class="nlb-ribbon-grid" style="--nlb-family-count: {{ data.active_families|length }}">
+          <span></span>{% for family in data.active_families %}<strong>{{ family }}</strong>{% endfor %}
+          {% for month in data.ribbons %}
+            <strong class="nlb-month">{{ month.month_label }}</strong>
+            {% for family in data.active_families %}
+              {% set winner = month.winners[family] %}
+              <span class="nlb-ribbon-cell">{% if winner %}<strong>{{ winner.name }}</strong><small>{{ winner.day.strftime('%b %-d') }} - {{ "%.0f"|format(winner.amount) }}</small>{% else %}<strong>-</strong>{% endif %}</span>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </section>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>
