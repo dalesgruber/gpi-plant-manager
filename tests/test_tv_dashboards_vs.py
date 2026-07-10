@@ -30,6 +30,29 @@ def _stub_data(monkeypatch):
     ))
 
 
+def _empty_new_day():
+    return {
+        "total_units": 0,
+        "total_downtime": 0,
+        "elapsed": 0,
+        "available": 0,
+        "uptime_minutes": 0,
+        "total_man_hours": 0.0,
+        "total_recycling_people": 0,
+        "per_wc_units": {},
+        "per_wc_downtime": {},
+        "per_wc_expected": {},
+        "per_wc_who": {},
+        "per_wc_state": {},
+        "per_wc_category": {},
+        "per_wc_station_obj": {},
+        "active_wc_names": set(),
+        "schedule_assignments": {},
+        "group_buckets": {"New": []},
+        "shift_start_label": "07:00",
+    }
+
+
 def test_tv_recycling_renders_with_default_dark_theme(monkeypatch):
     _stub_data(monkeypatch)
     with patch("zira_dashboard.routes.departments.leaderboard", return_value=[]), \
@@ -72,6 +95,18 @@ def test_tv_new_vs_renders_with_default_dark_theme(monkeypatch):
     assert 'data-tv-theme="dark"' in r.text
     assert "/static/tv-mode.css" in r.text
     assert ">New<" in r.text or "TV · Departments — New" in r.text
+
+
+def test_tv_new_uses_static_new_grid(monkeypatch):
+    _stub_data(monkeypatch)
+    with patch("zira_dashboard.routes.departments._new_day_data", return_value=_empty_new_day()):
+        response = TestClient(app).get("/tv/new")
+    assert response.status_code == 200
+    assert 'data-layout-page="new"' in response.text
+    assert 'data-tv-mode="1"' in response.text
+    assert 'class="rc-toolbar"' not in response.text
+    assert 'id="reset-layout"' not in response.text
+    assert "tv-refresh.js" in response.text
 
 
 def test_screen_recycling_unaffected_by_tv_changes(monkeypatch):

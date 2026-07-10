@@ -134,6 +134,21 @@ def test_new_day_data_uses_one_new_group(monkeypatch):
     assert result["group_buckets"] == {"New": []}
 
 
+def test_new_station_discovery_expands_from_location_meter(monkeypatch):
+    locations = (
+        SimpleNamespace(name="Junior #2", skill="Junior", department="New", meter_id="42345"),
+        SimpleNamespace(name="Hand Build #1", skill="Hand Build", department="New", meter_id="hb-1"),
+        SimpleNamespace(name="Woodpecker #1", skill="Woodpecker", department="New", meter_id="wp-1"),
+        SimpleNamespace(name="Hand Build #2", skill="Hand Build", department="New", meter_id=None),
+    )
+    monkeypatch.setattr(departments.staffing, "LOCATIONS", locations)
+    monkeypatch.setattr(departments.work_centers_store, "department", lambda loc: loc.department)
+
+    assert [s.name for s in departments._new_stations()] == [
+        "Junior #2", "Hand Build #1", "Woodpecker #1",
+    ]
+
+
 def test_recycling_wrapper_preserves_two_groups(monkeypatch):
     captured = {}
 

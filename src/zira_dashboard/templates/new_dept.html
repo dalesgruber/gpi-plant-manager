@@ -34,7 +34,6 @@
 </header>
 {% include "_dashboards_subnav.html" %}
 <form class="rc-toolbar" method="get" action="/new">
-  <span class="rc-tool-label">Range:</span>
   {% set windows = [
     ('today', 'Today'),
     ('yesterday', 'Yesterday'),
@@ -98,7 +97,15 @@
       <div class="grid-stack-item-content">
         {% if not tv_mode %}{{ edit_controls('new-bars', 'New Work Centers', 'bars') }}{% endif %}
         <h3>{{ widget_title('new-bars', 'New Work Centers') }}</h3>
-        <div class="widget-body">{{ department_bar_chart('new-bars', new_bars) }}</div>
+        <div class="widget-body">
+          {% if new_bars %}
+            {{ department_bar_chart('new-bars', new_bars) }}
+          {% else %}
+            <div class="empty-state">
+              No New work centers have Zira production data for this range.
+            </div>
+          {% endif %}
+        </div>
       </div>
     </div>
 
