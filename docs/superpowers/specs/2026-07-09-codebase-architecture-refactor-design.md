@@ -83,8 +83,11 @@ Focused private modules will hold domain algorithms and request construction:
 - `_odoo_skills.py`: skill columns, level buckets, and employee-skill writes.
 - `_odoo_calendars.py`: work schedules, calendar hours, lunch windows, and
   employee resource-calendar derivation.
-- `_odoo_attendance.py`: attendance reads, datetime normalization, work-center
-  fields, punches, and transfers.
+- `_odoo_attendance.py`: attendance queries/reducers and pure datetime and
+  zero-duration normalization. The facade retains field-name helpers and all
+  attendance writes, including work-center assignment/clearing, `clock_in`,
+  `clock_out`, `transfer`, and `undo_transfer`, to preserve call-time
+  monkeypatch seams.
 - `_odoo_time_off.py`: leave types, balances, leave reads/writes, holidays, and
   duplicate detection.
 - `_odoo_feedback.py`: feedback project, stage, tag, task, message, and attachment
@@ -112,9 +115,10 @@ Targeted seams:
 - Recycling: extract multi-day aggregation and range-summary construction from
   `routes/departments.py`; single-day data loading and template rendering retain
   their current contracts.
-- Exception inbox: extract machine-breakdown transfer, snooze, dismiss, report,
-  and undo command logic from `routes/exceptions.py`; HTTP wrappers keep current
-  validation and JSON responses.
+- Exception inbox: extract machine-breakdown transfer, snooze, dismiss, and
+  report command logic from `routes/exceptions.py`; HTTP wrappers keep current
+  validation and JSON responses. Shared inbox reversal and undo coordination
+  remain route-owned because they span breakdown and non-breakdown categories.
 
 The extraction order is based on coupling and regression risk, not file size.
 If characterization reveals that one candidate depends on route-module globals
@@ -149,7 +153,7 @@ The request and integration paths remain:
    current dependencies.
 4. Route renders the same template or returns the same response shape.
 
-For Odoo operations:
+For Odoo operations that delegate to private domain implementations:
 
 1. Caller invokes `odoo_client.<operation>` exactly as before.
 2. Facade evaluates current cache and helper state.
@@ -157,6 +161,9 @@ For Odoo operations:
    implementation.
 4. Domain implementation builds the same Odoo model/method/domain/fields call.
 5. Facade returns the same result or propagates the same exception type.
+
+Facade-owned operations, including attendance writes, continue to build the same
+Odoo calls directly; this preserves their existing patch-by-name behavior.
 
 This indirection is deliberate: dependency lookup at call time keeps monkeypatch
 and retry behavior intact.
