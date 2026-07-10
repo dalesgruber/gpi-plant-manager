@@ -215,12 +215,24 @@ def test_skill_cell_update_reports_odoo_saved_when_local_mirror_fails(monkeypatc
             return [{"id": 2, "odoo_id": 88, "name": "Repair", "skill_type": "Production Skills"}]
         return []
 
-    def fail_local_mirror(*args):
-        raise RuntimeError("db unavailable")
+    # Odoo succeeds, but the shared writer's local mirror fails: the cursor
+    # blows up when it tries to upsert person_skills. This exercises the real
+    # refactored path (a non-SkillSyncError after a successful Odoo write ->
+    # 202), not a mocked-out mirror.
+    class FailingCursor:
+        def execute(self, sql, params=None):
+            raise RuntimeError("db unavailable")
+
+    class FailingCursorContext:
+        def __enter__(self):
+            return FailingCursor()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
     monkeypatch.setattr(skills_routes.db, "query", fake_query)
+    monkeypatch.setattr(skills_routes.db, "cursor", lambda: FailingCursorContext())
     monkeypatch.setattr(skills_routes.odoo_client, "set_employee_skill_level", lambda *args: None)
-    monkeypatch.setattr(skills_routes, "_mirror_skill_level", fail_local_mirror)
     monkeypatch.setattr(skills_routes.staffing, "_invalidate_roster_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_stable_cache", lambda: None)
@@ -234,3 +246,33 @@ def test_skill_cell_update_reports_odoo_saved_when_local_mirror_fails(monkeypatc
     assert response.json()["ok"] is True
     assert response.json()["level"] == 3
     assert "Saved in Odoo" in response.json()["warning"]
+
+
+def test_skill_cell_update_delegates_to_shared_skill_writer(monkeypatch):
+    """The matrix endpoint resolves the local person/skill ids, then hands the
+    write to the one shared promotion path with LOCAL ids and the level."""
+    from zira_dashboard.routes import skills as skills_routes
+
+    def fake_query(sql, params=None):
+        if "FROM people" in sql:
+            return [{"id": 1, "odoo_id": 77, "name": "Maria Garcia"}]
+        if "FROM skills" in sql:
+            return [{"id": 2, "odoo_id": 88, "name": "Repair", "skill_type": "Production Skills"}]
+        return []
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(skills_routes.db, "query", fake_query)
+    monkeypatch.setattr(
+        skills_routes.skill_levels,
+        "set_person_skill_level",
+        lambda person_id, skill_id, level: calls.append((person_id, skill_id, level)),
+    )
+
+    response = _client().post(
+        "/staffing/skills/cell",
+        json={"person_odoo_id": 77, "skill_odoo_id": 88, "level": 3},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "level": 3, "label": "proficient"}
+    assert calls == [(1, 2, 3)]

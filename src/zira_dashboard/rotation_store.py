@@ -38,6 +38,18 @@ class TrainingBlock:
     start_day: date
     planned_attended_days: int
     status: str
+    # Local people.id / skills.id. Defaulted so older constructions stay valid;
+    # populated from the joins below so reconciliation can promote by local id.
+    trainee_id: int = 0
+    skill_id: int = 0
+
+
+@dataclass(frozen=True)
+class TrainingBlockDay:
+    """One recorded outcome of a training block on a given day."""
+
+    day: date
+    status: str
 
 
 def preference_for(preferences: dict[tuple[int, str], str], person_id: int, group: str) -> str:
@@ -107,6 +119,8 @@ def _block_from_row(row: dict) -> TrainingBlock:
         start_day=start_day,
         planned_attended_days=int(row["planned_attended_days"]),
         status=row["status"],
+        trainee_id=int(row.get("trainee_id") or 0),
+        skill_id=int(row.get("skill_id") or 0),
     )
 
 
@@ -143,7 +157,7 @@ def create_block(
         "  RETURNING id, trainee_id, trainer_id, skill_id, start_day, planned_attended_days, status"
         ") "
         "SELECT i.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
-        "  i.start_day, i.planned_attended_days, i.status "
+        "  i.start_day, i.planned_attended_days, i.status, i.trainee_id, i.skill_id "
         "FROM inserted i "
         "JOIN people trainee ON trainee.id = i.trainee_id "
         "JOIN people trainer ON trainer.id = i.trainer_id "
@@ -159,7 +173,7 @@ def active_blocks_for_day(day: date) -> list[TrainingBlock]:
     """Return blocks that are active on or after their configured start day."""
     rows = db.query(
         "SELECT b.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
-        "  b.start_day, b.planned_attended_days, b.status "
+        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id "
         "FROM rotation_training_blocks b "
         "JOIN people trainee ON trainee.id = b.trainee_id "
         "JOIN people trainer ON trainer.id = b.trainer_id "
@@ -169,6 +183,47 @@ def active_blocks_for_day(day: date) -> list[TrainingBlock]:
         (day,),
     )
     return [_block_from_row(row) for row in rows]
+
+
+def active_blocks() -> list[TrainingBlock]:
+    """Return every active block, regardless of start day, deterministically."""
+    rows = db.query(
+        "SELECT b.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
+        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id "
+        "FROM rotation_training_blocks b "
+        "JOIN people trainee ON trainee.id = b.trainee_id "
+        "JOIN people trainer ON trainer.id = b.trainer_id "
+        "JOIN skills skill ON skill.id = b.skill_id "
+        "WHERE b.status = 'active' "
+        "ORDER BY b.start_day, b.id"
+    )
+    return [_block_from_row(row) for row in rows]
+
+
+def resolved_days(block_id: int) -> list[TrainingBlockDay]:
+    """Return the recorded day outcomes for a block, ordered by day."""
+    rows = db.query(
+        "SELECT day, status FROM rotation_training_block_days "
+        "WHERE block_id = %s ORDER BY day",
+        (block_id,),
+    )
+    out: list[TrainingBlockDay] = []
+    for row in rows:
+        day = row["day"]
+        if not isinstance(day, date):
+            day = date.fromisoformat(str(day))
+        out.append(TrainingBlockDay(day=day, status=row["status"]))
+    return out
+
+
+def mark_completed(block_id: int) -> None:
+    """Mark an active block completed; a no-op once it is no longer active."""
+    db.execute(
+        "UPDATE rotation_training_blocks "
+        "SET status = 'completed', completed_at = now() "
+        "WHERE id = %s AND status = 'active'",
+        (block_id,),
+    )
 
 
 def record_attended_day(block_id: int, day: date, status: str = "attended") -> None:

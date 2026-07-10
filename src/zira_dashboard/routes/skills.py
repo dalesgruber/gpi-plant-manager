@@ -16,8 +16,8 @@ import os
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import staffing
-from .. import _http_cache, db, odoo_client
+from .. import staffing, skill_levels
+from .. import _http_cache, db
 from ..deps import templates
 
 router = APIRouter()
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 @router.get("/staffing/skills", response_class=HTMLResponse)
 def staffing_skills(request: Request):
     from .. import odoo_sync, skill_matrix_views_store as views_store, db
-    from .. import cert_lookup, _http_cache
+    from .. import cert_lookup
 
     # Response cache. The matrix is roster + skill-level data, which changes
     # only on roster/skill writes (each invalidates the stable bucket) and on
@@ -106,7 +106,6 @@ async def staffing_skills_save(request: Request):
             if form.get(f"reserve_present__{name}"):
                 person.reserve = form.get(f"reserve__{name}") in ("on", "1", "true")
         staffing.save_roster(roster)
-        from .. import _http_cache
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         if (request.headers.get("accept") or "").startswith("application/json"):
@@ -129,27 +128,6 @@ def _strict_json_int(body: dict, field: str) -> int:
 
 def _level_label(level: int) -> str:
     return {0: "not trained", 1: "practicing", 2: "competent", 3: "proficient"}[level]
-
-
-def _mirror_skill_level(person_id: int, skill_id: int, level: int) -> None:
-    if level == 0:
-        with db.cursor() as cur:
-            cur.execute(
-                "DELETE FROM person_skills WHERE person_id = %s AND skill_id = %s",
-                (person_id, skill_id),
-            )
-        return
-
-    with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO person_skills "
-            "(person_id, skill_id, level, last_pushed_at, local_dirty) "
-            "VALUES (%s, %s, %s, now(), FALSE) "
-            "ON CONFLICT (person_id, skill_id) DO UPDATE SET "
-            "level = EXCLUDED.level, last_pushed_at = EXCLUDED.last_pushed_at, "
-            "local_dirty = FALSE",
-            (person_id, skill_id, level),
-        )
 
 
 @router.post("/staffing/skills/cell")
@@ -193,16 +171,16 @@ async def staffing_skill_cell_update(request: Request):
         if skill["skill_type"] not in ("Production Skills", "Supervisor Skills"):
             return _skill_cell_error("Skill is not editable in the People Matrix.", 400)
 
+        # One shared promotion path (also used by training-block completion):
+        # Odoo first, then the local mirror + cache invalidation. A rejected
+        # Odoo write raises SkillSyncError (no local write); a later local/cache
+        # failure surfaces as any other exception.
         try:
-            odoo_client.set_employee_skill_level(person_odoo_id, skill_odoo_id, level)
-        except Exception as exc:
+            skill_levels.set_person_skill_level(
+                int(person_rows[0]["id"]), int(skill["id"]), level
+            )
+        except skill_levels.SkillSyncError as exc:
             return _skill_cell_error(f"Odoo save failed: {exc}", 502)
-
-        try:
-            _mirror_skill_level(int(person_rows[0]["id"]), int(skill["id"]), level)
-            staffing._invalidate_roster_cache()
-            _http_cache.invalidate_today_cache()
-            _http_cache.invalidate_stable_cache()
         except Exception:
             log.exception("Odoo skill save succeeded but local mirror/cache refresh failed")
             return JSONResponse({
@@ -232,7 +210,6 @@ def staffing_skills_refresh(request: Request):
     full Odoo sync (seconds of XML-RPC) off the event loop."""
     from .. import odoo_sync
     result = odoo_sync.sync(force=True)
-    from .. import _http_cache
     _http_cache.invalidate_today_cache()
     _http_cache.invalidate_stable_cache()
     if (request.headers.get("accept") or "").startswith("application/json"):
@@ -259,7 +236,6 @@ async def staffing_skills_view_create(request: Request):
         if views_store.get_view(name) is not None:
             return JSONResponse({"ok": False, "error": "name already exists"}, status_code=409)
         view = views_store.create_view(name, body)
-        from .. import _http_cache
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         return JSONResponse({"ok": True, "view": view})
@@ -276,7 +252,6 @@ async def staffing_skills_view_update(name: str, request: Request):
         if views_store.get_view(name) is None:
             return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
         view = views_store.update_view(name, body)
-        from .. import _http_cache
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         return JSONResponse({"ok": True, "view": view})
@@ -288,7 +263,6 @@ async def staffing_skills_view_update(name: str, request: Request):
 def staffing_skills_view_clear_default():
     from .. import skill_matrix_views_store as views_store
     views_store.set_default(None)
-    from .. import _http_cache
     _http_cache.invalidate_today_cache()
     _http_cache.invalidate_stable_cache()
     return JSONResponse({"ok": True})
@@ -298,7 +272,6 @@ def staffing_skills_view_clear_default():
 def staffing_skills_view_delete(name: str):
     from .. import skill_matrix_views_store as views_store
     views_store.delete_view(name)
-    from .. import _http_cache
     _http_cache.invalidate_today_cache()
     _http_cache.invalidate_stable_cache()
     return JSONResponse({"ok": True})
@@ -310,7 +283,6 @@ def staffing_skills_view_set_default(name: str):
     if views_store.get_view(name) is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     views_store.set_default(name)
-    from .. import _http_cache
     _http_cache.invalidate_today_cache()
     _http_cache.invalidate_stable_cache()
     return JSONResponse({"ok": True})
@@ -330,7 +302,6 @@ async def staffing_person_add(request: Request):
         skills = {s: 0 for s in staffing.SKILLS}
         roster.append(staffing.Person(name=name, active=True, skills=skills))
         staffing.save_roster(roster)
-        from .. import _http_cache
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         if (request.headers.get("accept") or "").startswith("application/json"):
@@ -354,7 +325,6 @@ async def staffing_person_delete(request: Request):
         if len(roster) == before:
             return JSONResponse({"ok": False, "error": f"'{name}' not found"}, status_code=404)
         staffing.save_roster(roster)
-        from .. import _http_cache
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         if (request.headers.get("accept") or "").startswith("application/json"):
