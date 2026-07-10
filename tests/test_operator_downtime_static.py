@@ -23,3 +23,5 @@ def test_operator_downtime_label_can_overflow_left_into_green():
     body = _rule_body(selector)
 
     assert re.search(r"\boverflow:\s*visible\s*;", body)
+    assert re.search(r"\bmin-width:\s*0\s*;", body)
+    assert re.search(r"\bjustify-content:\s*flex-end\s*;", body)

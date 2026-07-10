@@ -496,6 +496,7 @@ html[data-tv-theme="dark"] .wc-dashboard .grid-stack-item[gs-id^="kpi-"] .val { 
   display: flex;
   align-items: center;
   justify-content: flex-end;   /* value stays on the RIGHT edge of red */
+  min-width: 0;               /* preserve the percentage width in the flex row */
   overflow: visible;          /* wide values may extend left over green */
 }
 .wc-dashboard .grid-stack-item[gs-id="downtime-row"] .up-label,
