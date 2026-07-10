@@ -28,7 +28,7 @@
 
 .nlb-family-count-2,
 .nlb-family-count-3 {
-  grid-template-rows: minmax(0, 1fr) minmax(8.5rem, 0.18fr);
+  grid-template-rows: minmax(0, 1fr) minmax(14rem, 0.42fr);
 }
 
 .nlb-family-count-2 .nlb-family-panels {
@@ -123,6 +123,26 @@ body.new-leaderboard-page .nlb-family-count-3 {
 
 body.new-leaderboard-page .nlb-ribbons {
   min-height: min-content;
+}
+
+/* The TV body owns the viewport budget: the header takes its natural height
+   and the main area receives the remaining space. This keeps the fixed-height
+   ribbon grid from starting below the header and extending past the clipped
+   TV viewport. */
+html[data-tv-theme] body.new-leaderboard-tv {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+}
+
+html[data-tv-theme] body.new-leaderboard-tv .rlb-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+html[data-tv-theme] body.new-leaderboard-tv .nlb-grid {
+  height: 100%;
 }
 
 /* Three family GOATs need one header row on wide TVs. The inherited
