@@ -43,6 +43,7 @@ def _stub_new_renderer(monkeypatch):
     monkeypatch.setattr(departments.templates, "TemplateResponse", render)
     monkeypatch.setattr(departments.widget_customizer, "load_all", lambda page: {})
     monkeypatch.setattr(departments.layout_store, "layout_map", lambda page: {})
+    monkeypatch.setattr(departments, "_new_stations", lambda: [])
     return rendered
 
 

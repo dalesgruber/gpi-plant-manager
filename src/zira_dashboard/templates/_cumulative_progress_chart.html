@@ -3,11 +3,12 @@
    Usage in a template:
      {% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
      ...
-     {{ cumulative_progress_chart(buckets) }}
+     {{ cumulative_progress_chart(buckets, 'my-progress-widget') }}
 
    Each `buckets` entry is a dict {label, actual, target, in_progress};
    running totals are computed in-template via a namespace accumulator. #}
-{% macro cumulative_progress_chart(buckets) -%}
+{% macro cumulative_progress_chart(buckets, widget_id='') -%}
+  {% set show_target = customs.get(widget_id, {}).get('show_target', True) if widget_id else True %}
   {% set acc = namespace(actual=[], target=[], a=0, t=0) %}
   {% for b in buckets %}
     {% set acc.a = acc.a + b.actual %}
@@ -21,7 +22,7 @@
   {% if scale <= 0 %}{% set scale = 1 %}{% endif %}
   {% set n = buckets|length %}
 
-  <div class="cum-progress no-legend" style="--n-cols: {{ n }}">
+  <div class="cum-progress no-legend {% if not show_target %}no-target{% endif %}" style="--n-cols: {{ n }}">
     {# Legend removed (Dale's request); plot fills the freed space. #}
     <div class="plot">
       <div class="bars">

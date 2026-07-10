@@ -818,6 +818,7 @@ def _render_new_dept(
         per_day = [_compute_day(d) for d in days]
 
     aggregate = recycling_range.aggregate_range(per_day, days, is_range=is_range)
+    configured_new_meter_count = len(_new_stations())
     new_progress = aggregate_buckets([
         item["group_buckets"]["New"] for item in per_day
     ])
@@ -895,6 +896,7 @@ def _render_new_dept(
             "total_units": total_units,
             "pph_per_person": round(pph_per_person, 1),
             "new_bars": new_bars,
+            "configured_new_meter_count": configured_new_meter_count,
             "new_progress": new_progress,
             "new_group_target": new_group_target,
             "new_people": new_people,

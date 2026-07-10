@@ -19,7 +19,7 @@
    department_progress_chart,
    department_downtime_report
    with context %}
-{% from "_cumulative_progress_chart.html" import cumulative_progress_chart %}
+{% from "_cumulative_progress_chart.html" import cumulative_progress_chart with context %}
 <style>{{ goat_badges_css() }}</style>
 <link rel="stylesheet" href="/static/dashboards-subnav.css?v={{ static_v('dashboards-subnav.css') }}">
 </head>
@@ -67,6 +67,11 @@
 
 {%- macro widget_title(id, default) -%}{{ customs.get(id, {}).get('title', default) }}{%- endmacro %}
 
+{%- macro widget_color_style(id, role) -%}
+  {%- set c = customs.get(id, {}).get('color') -%}
+  {%- if c -%}style="--wc: {{ c }}; {{ role }}: {{ c }} !important"{%- endif -%}
+{%- endmacro %}
+
 {# TV mode seats the banner in the header center (tv_header {% call %}
    above); screen mode keeps it here below the edit bar. #}
 {% if not tv_mode %}{% include "_goat_watch_banner.html" %}{% endif %}
@@ -78,18 +83,20 @@
        data-fallback-rows="16">
 
     <div class="grid-stack-item" {{ widget_attrs('kpi-pallets', 0, 0, 2, 3) }}>
-      <div class="grid-stack-item-content align-center">
+      {% set align = customs.get('kpi-pallets', {}).get('align', 'center') %}
+      <div class="grid-stack-item-content align-{{ align }}">
         {% if not tv_mode %}{{ edit_controls('kpi-pallets', 'Total Pallets Processed', 'kpi') }}{% endif %}
         <div class="label">{{ widget_title('kpi-pallets', 'Total Pallets Processed') }}</div>
-        <div class="val">{{ '{:,}'.format(total_units) }}</div>
+        <div class="val" {{ widget_color_style('kpi-pallets', 'color') }}>{{ '{:,}'.format(total_units) }}</div>
       </div>
     </div>
 
     <div class="grid-stack-item" {{ widget_attrs('kpi-palletshr', 0, 3, 2, 3) }}>
-      <div class="grid-stack-item-content align-center">
+      {% set align = customs.get('kpi-palletshr', {}).get('align', 'center') %}
+      <div class="grid-stack-item-content align-{{ align }}">
         {% if not tv_mode %}{{ edit_controls('kpi-palletshr', 'pallets/hr/person', 'kpi') }}{% endif %}
         <div class="label">{{ widget_title('kpi-palletshr', 'pallets/hr/person') }}</div>
-        <div class="val">{{ pph_per_person }}</div>
+        <div class="val" {{ widget_color_style('kpi-palletshr', 'color') }}>{{ pph_per_person }}</div>
       </div>
     </div>
 
@@ -100,9 +107,13 @@
         <div class="widget-body">
           {% if new_bars %}
             {{ department_bar_chart('new-bars', new_bars) }}
+          {% elif configured_new_meter_count == 0 %}
+            <div class="empty-state">
+              Configure a Zira meter for a New work center to start this dashboard.
+            </div>
           {% else %}
             <div class="empty-state">
-              No New work centers have Zira production data for this range.
+              No readings received from configured New Zira meters for this range.
             </div>
           {% endif %}
         </div>
@@ -118,7 +129,7 @@
     </div>
 
     <div class="grid-stack-item" {{ widget_attrs('new-progress', 0, 6, 12, 5) }}>
-      <div class="grid-stack-item-content">
+      <div class="grid-stack-item-content" {% set pc = customs.get('new-progress', {}).get('color') %}{% if pc %}style="--hit: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('new-progress', 'All New — 15-minute progress', 'progress') }}{% endif %}
         <span class="people-count">{{ new_people }}{% if is_range %} pd{% endif %}</span>
         <h3>{{ widget_title('new-progress', 'All New — 15-minute progress') }}</h3>
@@ -130,11 +141,11 @@
     </div>
 
     <div class="grid-stack-item" {{ widget_attrs('new-cumulative', 0, 11, 12, 5) }}>
-      <div class="grid-stack-item-content">
+      <div class="grid-stack-item-content" {% set pc = customs.get('new-cumulative', {}).get('color') %}{% if pc %}style="--good: {{ pc }}"{% endif %}>
         {% if not tv_mode %}{{ edit_controls('new-cumulative', 'All New — Daily Progress', 'progress') }}{% endif %}
         <span class="people-count">{{ new_people }}{% if is_range %} pd{% endif %}</span>
         <h3>{{ widget_title('new-cumulative', 'All New — Daily Progress') }}</h3>
-        <div class="widget-body">{{ cumulative_progress_chart(new_progress) }}</div>
+        <div class="widget-body">{{ cumulative_progress_chart(new_progress, 'new-cumulative') }}</div>
       </div>
     </div>
   </div>

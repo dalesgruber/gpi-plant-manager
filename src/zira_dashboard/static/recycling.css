@@ -777,6 +777,7 @@
     pointer-events: none;
     overflow: visible;
   }
+  .cum-progress.no-target .target-line { display: none; }
   .cum-progress .target-line svg {
     width: 100%;
     height: 100%;
