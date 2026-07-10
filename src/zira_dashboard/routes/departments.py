@@ -138,8 +138,17 @@ def _assign_popover_context(today, client):
     return assignments_todo_by_wc, all_active_people
 
 
-def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
-    """Compute the per-day numbers for the recycling dashboard.
+def _department_day_data(
+    d,
+    now,
+    is_today_d,
+    *,
+    stations: list[Station],
+    labor_department: str,
+    group_categories: tuple[str, ...],
+    align_to_standard: bool = False,
+):
+    """Compute the per-day numbers for a department dashboard.
 
     Returns a dict with the keys the route handler needs to aggregate:
       total_units, total_downtime, elapsed, available, uptime_minutes,
@@ -147,12 +156,11 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
       per_wc_units {name: int}, per_wc_downtime {name: int},
       per_wc_expected {name: float}, per_wc_who {name: str|None},
       per_wc_state {name: str},  # only meaningful when is_today_d
-      dism_buckets, repair_buckets,  # list[dict] from progress_buckets
+      group_buckets,  # dict[str, list[dict]] from progress_buckets
       shift_start_label, schedule_assignments,
       active_wc_names, per_wc_category, per_wc_station_obj.
     Days outside the working schedule (weekends) return zero-shaped values.
     """
-    stations = recycling_stations()
     results = leaderboard(client, stations, d, now_utc=now if is_today_d else None)
 
     sched = staffing.load_schedule(d)
@@ -224,7 +232,7 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
         # Tablets, and Work Orders set to "Recycled" as a value-stream
         # association, but those are forklift + mechanic support roles, not
         # production-line labor on the recycling line.
-        if loc.department != "Recycled":
+        if loc.department != labor_department:
             continue
         for person_name in present_assignments.get(loc.name, []):
             total_recycling_people += 1
@@ -244,10 +252,13 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
         total_recycling_people = inferred_people
     total_man_hours = total_man_minutes / 60.0
 
-    dismantlers = [r for r in active_results if r.station.category == "Dismantler"]
-    dismantlers.sort(key=lambda r: r.station.name)
-    repairs = [r for r in active_results if r.station.category == "Repair"]
-    repairs.sort(key=lambda r: r.station.name)
+    group_results = {
+        category: sorted(
+            [r for r in active_results if r.station.category == category],
+            key=lambda r: r.station.name,
+        )
+        for category in group_categories
+    }
 
     # ---- Productive intervals per WC ----
     grace_end_local = shift_start_local + timedelta(minutes=60)
@@ -334,16 +345,16 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
             return tot
         return fn
 
-    dism_buckets = progress_buckets(
-        dismantlers, d, now,
-        target_fn=_make_target_fn(dismantlers),
-        align_to_standard=align_to_standard,
-    )
-    repair_buckets = progress_buckets(
-        repairs, d, now,
-        target_fn=_make_target_fn(repairs),
-        align_to_standard=align_to_standard,
-    )
+    group_buckets = {
+        category: progress_buckets(
+            rows,
+            d,
+            now,
+            target_fn=_make_target_fn(rows),
+            align_to_standard=align_to_standard,
+        )
+        for category, rows in group_results.items()
+    }
 
     # Per-WC dicts the aggregator can sum.
     per_wc_units = {r.station.name: r.units for r in active_results}
@@ -401,10 +412,49 @@ def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
         "per_wc_station_obj": per_wc_station_obj,
         "active_wc_names": active_wc_names,
         "schedule_assignments": present_assignments,
-        "dism_buckets": dism_buckets,
-        "repair_buckets": repair_buckets,
+        "group_buckets": group_buckets,
         "shift_start_label": shift_start_local.strftime("%H:%M"),
     }
+
+
+def _recycling_day_data(d, now, is_today_d, align_to_standard=False):
+    data = _department_day_data(
+        d,
+        now,
+        is_today_d,
+        stations=recycling_stations(),
+        labor_department="Recycled",
+        group_categories=("Dismantler", "Repair"),
+        align_to_standard=align_to_standard,
+    )
+    data["dism_buckets"] = data["group_buckets"]["Dismantler"]
+    data["repair_buckets"] = data["group_buckets"]["Repair"]
+    return data
+
+
+def _new_stations() -> list[Station]:
+    return [
+        Station(
+            meter_id=loc.meter_id,
+            name=loc.name,
+            category="New",
+            cell="New",
+        )
+        for loc in staffing.LOCATIONS
+        if work_centers_store.department(loc) == "New" and loc.meter_id
+    ]
+
+
+def _new_day_data(d, now, is_today_d, align_to_standard=False):
+    return _department_day_data(
+        d,
+        now,
+        is_today_d,
+        stations=_new_stations(),
+        labor_department="New",
+        group_categories=("New",),
+        align_to_standard=align_to_standard,
+    )
 
 
 @router.get("/recycling", response_class=HTMLResponse)
