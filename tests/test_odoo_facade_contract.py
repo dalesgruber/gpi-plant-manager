@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from zira_dashboard import odoo_client
 
 
@@ -100,6 +102,97 @@ def test_facade_leave_cache_remains_assignable(monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("cache miss")),
     )
     assert odoo_client.fetch_leave_types() is expected
+
+
+def test_invalidate_leave_types_cache_clears_facade_cache(monkeypatch):
+    monkeypatch.setattr(
+        odoo_client,
+        "_leave_types_cache",
+        ([{"id": 1}], float("inf")),
+    )
+
+    odoo_client.invalidate_leave_types_cache()
+
+    assert odoo_client._leave_types_cache is None
+
+
+def test_time_off_facade_resolves_dependencies_at_call_time(monkeypatch):
+    assert hasattr(odoo_client, "_odoo_time_off"), (
+        "time-off operations have not been extracted"
+    )
+
+    calls = []
+    execute_fn = lambda *args, **kwargs: None
+    unwrap_m2o_fn = lambda value: value
+    types = [{"id": 7, "request_unit": "day"}]
+    expected = {3: [{"holiday_status_id": 7}]}
+    monkeypatch.setattr(odoo_client, "execute", execute_fn)
+    monkeypatch.setattr(odoo_client, "unwrap_m2o", unwrap_m2o_fn)
+    monkeypatch.setattr(odoo_client, "fetch_leave_types", lambda: types)
+    monkeypatch.setattr(
+        odoo_client._odoo_time_off,
+        "fetch_balances_for_many",
+        lambda *args: calls.append(args) or expected,
+    )
+
+    assert odoo_client.fetch_balances_for_many([3]) is expected
+    assert calls == [
+        (
+            execute_fn,
+            unwrap_m2o_fn,
+            types,
+            [3],
+            odoo_client._aggregate_balances,
+        )
+    ]
+
+
+def test_time_off_normalizer_is_resolved_at_call_time(monkeypatch):
+    monkeypatch.setattr(odoo_client, "_leave_types_cache", None)
+    monkeypatch.setattr(
+        odoo_client,
+        "execute",
+        lambda *args, **kwargs: [
+            {
+                "id": 7,
+                "name": "Vacation",
+                "request_unit": "day",
+                "requires_allocation": True,
+                "color": 1,
+                "active": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        odoo_client,
+        "_norm_requires_allocation",
+        lambda value: f"patched:{value!r}",
+    )
+
+    assert odoo_client.fetch_leave_types()[0]["requires_allocation"] == (
+        "patched:True"
+    )
+
+
+def test_time_off_datetime_converter_is_resolved_at_call_time(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        odoo_client,
+        "execute",
+        lambda model, method, *args, **kwargs: calls.append(
+            (model, method, args, kwargs)
+        )
+        or [],
+    )
+    monkeypatch.setattr(odoo_client, "_to_odoo_dt", lambda value: "patched")
+
+    odoo_client.fetch_leaves_for_range(
+        datetime(2026, 7, 1).date(),
+        datetime(2026, 7, 31).date(),
+        datetime(2026, 7, 9, tzinfo=timezone.utc),
+    )
+
+    assert ("write_date", ">", "patched") in calls[0][2][0]
 
 
 def test_facade_lunch_cache_remains_assignable(monkeypatch):

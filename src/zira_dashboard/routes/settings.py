@@ -1107,7 +1107,7 @@ def time_off_refresh_now(request: Request):
     # cache. If a previous call returned [] silently (e.g. due to an
     # earlier XML-RPC permission error), the cache would otherwise hold
     # that empty list and the Refresh button would be a no-op.
-    odoo_client._leave_types_cache = None
+    odoo_client.invalidate_leave_types_cache()
     try:
         time_off_sync.poll_odoo_leaves()
     except Exception:
@@ -1159,7 +1159,7 @@ def time_off_diagnostics(request: Request):
     would_fail_check = []
     if _odoo_configured():
         try:
-            odoo_client._leave_types_cache = None  # force a real Odoo round-trip
+            odoo_client.invalidate_leave_types_cache()
             raw = odoo_client.fetch_leave_types()
             live = []
             for t in raw:

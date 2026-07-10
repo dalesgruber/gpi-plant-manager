@@ -31,8 +31,8 @@ def resolve_absence_leave_type_id() -> int:
         for row in odoo_client.fetch_leave_types():
             if str(row.get("name") or "").strip().casefold() == target_norm:
                 return int(row["id"])
-        if attempt == 0 and hasattr(odoo_client, "_leave_types_cache"):
-            odoo_client._leave_types_cache = None
+        if attempt == 0:
+            odoo_client.invalidate_leave_types_cache()
     raise AbsenceSyncError(
         f"Active Odoo Time Off type named {target!r} was not found."
     )

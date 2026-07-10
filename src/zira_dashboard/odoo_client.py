@@ -26,7 +26,7 @@ import xmlrpc.client
 from datetime import datetime, timezone
 from typing import Any
 
-from . import _odoo_attendance, _odoo_calendars, _odoo_skills
+from . import _odoo_attendance, _odoo_calendars, _odoo_skills, _odoo_time_off
 
 
 UTC = timezone.utc
@@ -565,23 +565,7 @@ _LEAVE_TYPES_TTL_SECONDS = 10 * 60
 _leave_types_cache: tuple[list[dict], float] | None = None
 
 
-def _norm_requires_allocation(value) -> str:
-    """Canonicalize hr.leave.type.requires_allocation to 'yes' / 'no'.
-
-    Odoo <=18 exposes this as a Selection ('yes'/'no'); Odoo 19+ changed it
-    to a Boolean, so XML-RPC returns a Python bool. The rest of the app —
-    the leave_types_cache TEXT/CHECK('yes','no') column and the kiosk's
-    `data-requires-alloc` attribute compared against the literal "yes" —
-    assumes the string form. Normalizing here, at the Odoo boundary, keeps
-    every downstream consumer working regardless of Odoo version.
-
-    A raw boolean True both fails the cache CHECK *and* renders into the
-    kiosk option as "True" (!= "yes"), which is what made a fully-configured
-    Paid Time Off type show "No allocation tracked".
-    """
-    if isinstance(value, str):
-        return "yes" if value.strip().lower() in ("yes", "true", "1") else "no"
-    return "yes" if value else "no"
+_norm_requires_allocation = _odoo_time_off._norm_requires_allocation
 
 
 def fetch_leave_types() -> list[dict]:
@@ -596,17 +580,14 @@ def fetch_leave_types() -> list[dict]:
     now = time.time()
     if _leave_types_cache and _leave_types_cache[1] > now:
         return _leave_types_cache[0]
-    rows = execute(
-        "hr.leave.type", "search_read",
-        [("active", "=", True)],
-        fields=["id", "name", "request_unit",
-                "requires_allocation", "color", "active"],
-    )
-    for r in rows:
-        r["requires_allocation"] = _norm_requires_allocation(
-            r.get("requires_allocation"))
+    rows = _odoo_time_off.fetch_leave_types(execute, _norm_requires_allocation)
     _leave_types_cache = (rows, now + _LEAVE_TYPES_TTL_SECONDS)
     return rows
+
+
+def invalidate_leave_types_cache() -> None:
+    global _leave_types_cache
+    _leave_types_cache = None
 
 
 def fetch_leaves_for_range(start_d, end_d, modified_since=None) -> list[dict]:
@@ -619,26 +600,8 @@ def fetch_leaves_for_range(start_d, end_d, modified_since=None) -> list[dict]:
     ``write_date >`` it — the incremental poller's filter, so a normal tick
     only pulls leaves that changed since the last poll.
     """
-    domain = [
-        ("request_date_to", ">=", start_d.isoformat()),
-        ("request_date_from", "<=", end_d.isoformat()),
-        ("employee_id.active", "=", True),
-    ]
-    if modified_since is not None:
-        domain.append(("write_date", ">", _to_odoo_dt(modified_since)))
-    return execute(
-        "hr.leave", "search_read",
-        domain,
-        fields=[
-            "id", "employee_id", "holiday_status_id", "state",
-            "date_from", "date_to",
-            "request_date_from", "request_date_to",
-            "request_hour_from", "request_hour_to", "request_unit_hours",
-            # Odoo 19 renamed hr.leave.number_of_hours_display -> number_of_hours
-            # (the _display variant was dropped from hr.leave; it survives on
-            # hr.leave.allocation — see fetch_balances_for).
-            "number_of_days", "number_of_hours", "name",
-        ],
+    return _odoo_time_off.fetch_leaves_for_range(
+        execute, start_d, end_d, modified_since, _to_odoo_dt
     )
 
 
@@ -674,11 +637,9 @@ def _fetch_resource_calendar_uncached(employee_odoo_id: int) -> dict | None:
     )
 
 
-# hr.leave.allocation states that contribute to allocated_total.
-_ALLOCATION_STATE_VALIDATED = "validate"
-# hr.leave states pulled together; "validate" is taken, others are pending.
-_LEAVE_STATES_OPEN = ("confirm", "validate1", "validate")
-_LEAVE_STATE_TAKEN = "validate"
+_ALLOCATION_STATE_VALIDATED = _odoo_time_off._ALLOCATION_STATE_VALIDATED
+_LEAVE_STATES_OPEN = _odoo_time_off._LEAVE_STATES_OPEN
+_LEAVE_STATE_TAKEN = _odoo_time_off._LEAVE_STATE_TAKEN
 
 
 def fetch_balances_for(employee_odoo_id: int) -> list[dict]:
@@ -707,90 +668,24 @@ def fetch_balances_for_many(employee_odoo_ids: list[int]) -> dict[int, list[dict
     {employee_odoo_id: [balance rows]} with an entry (possibly all-zero) for
     every requested id.
     """
-    ids = list(dict.fromkeys(employee_odoo_ids))   # de-dup, keep order
-    if not ids:
+    if not employee_odoo_ids:
         return {}
     types = fetch_leave_types()
-    # NOTE on field-name asymmetry (Odoo 19): hr.leave.allocation still
-    # exposes the *_display duration fields, but hr.leave dropped
-    # number_of_hours_display in favor of number_of_hours. So the allocation
-    # query keeps _display while the leave query uses number_of_hours.
-    allocations = execute(
-        "hr.leave.allocation", "search_read",
-        [("employee_id", "in", ids),
-         ("state", "=", _ALLOCATION_STATE_VALIDATED)],
-        fields=["employee_id", "holiday_status_id", "number_of_days_display",
-                "number_of_hours_display"],
+    return _odoo_time_off.fetch_balances_for_many(
+        execute,
+        unwrap_m2o,
+        types,
+        employee_odoo_ids,
+        _aggregate_balances,
     )
-    leaves = execute(
-        "hr.leave", "search_read",
-        [("employee_id", "in", ids),
-         ("state", "in", list(_LEAVE_STATES_OPEN))],
-        fields=["employee_id", "holiday_status_id", "state",
-                "number_of_days", "number_of_hours"],
-    )
-    alloc_by_emp: dict[int, list[dict]] = {eid: [] for eid in ids}
-    leave_by_emp: dict[int, list[dict]] = {eid: [] for eid in ids}
-    for a in allocations:
-        eid = unwrap_m2o(a.get("employee_id"))
-        if eid in alloc_by_emp:
-            alloc_by_emp[eid].append(a)
-    for lv in leaves:
-        eid = unwrap_m2o(lv.get("employee_id"))
-        if eid in leave_by_emp:
-            leave_by_emp[eid].append(lv)
-    return {
-        eid: _aggregate_balances(types, alloc_by_emp[eid], leave_by_emp[eid])
-        for eid in ids
-    }
 
 
 def _aggregate_balances(
-    types: list[dict], allocations: list[dict], leaves: list[dict],
+    types: list[dict], allocations: list[dict], leaves: list[dict]
 ) -> list[dict]:
-    """Reduce one employee's allocation + leave rows to per-type balances."""
-
-    def _hsid(row: dict) -> int:
-        """Many2one fields come as [id, name] from Odoo — unwrap to id."""
-        v = row["holiday_status_id"]
-        return unwrap_m2o(v)
-
-    out: list[dict] = []
-    for t in types:
-        tid = t["id"]
-        unit = "hours" if t["request_unit"] == "hour" else "days"
-        # Allocations keep the _display field name; leaves use number_of_hours
-        # (Odoo 19 — see the search_read field lists above).
-        alloc_field = ("number_of_hours_display" if unit == "hours"
-                       else "number_of_days_display")
-        leave_field = ("number_of_hours" if unit == "hours"
-                       else "number_of_days")
-        alloc = 0.0
-        for a in allocations:
-            if _hsid(a) == tid:
-                alloc += float(a.get(alloc_field) or 0)
-        taken = 0.0
-        pending = 0.0
-        for lv in leaves:
-            if _hsid(lv) != tid:
-                continue
-            val = float(lv.get(leave_field) or 0)
-            if lv["state"] == _LEAVE_STATE_TAKEN:
-                taken += val
-            else:
-                pending += val
-        available = alloc - taken
-        practical = alloc - taken - pending
-        out.append({
-            "holiday_status_id": tid,
-            "unit": unit,
-            "allocated_total": alloc,
-            "taken": taken,
-            "pending": pending,
-            "available": available,
-            "available_practical": practical,
-        })
-    return out
+    return _odoo_time_off._aggregate_balances(
+        types, allocations, leaves, unwrap_m2o
+    )
 
 
 # ---------- Time-off writes (2026-05-27) ----------
@@ -816,19 +711,16 @@ def create_leave(
     Sets request_unit_hours=True with float hour_from/hour_to when given;
     otherwise creates a day-unit leave for the date range.
     """
-    payload: dict[str, Any] = {
-        "employee_id": employee_odoo_id,
-        "holiday_status_id": holiday_status_id,
-        "request_date_from": date_from.isoformat(),
-        "request_date_to": date_to.isoformat(),
-    }
-    if hour_from is not None and hour_to is not None:
-        payload["request_unit_hours"] = True
-        payload["request_hour_from"] = float(hour_from)
-        payload["request_hour_to"] = float(hour_to)
-    if note:
-        payload["name"] = note
-    return execute("hr.leave", "create", payload)
+    return _odoo_time_off.create_leave(
+        execute,
+        employee_odoo_id,
+        holiday_status_id,
+        date_from,
+        date_to,
+        hour_from,
+        hour_to,
+        note,
+    )
 
 
 def confirm_leave(leave_id: int) -> None:
@@ -841,9 +733,7 @@ def confirm_leave(leave_id: int) -> None:
     raises on records already past draft; this keeps the call idempotent
     across sync retries and the duplicate-leave path.
     """
-    rows = execute("hr.leave", "read", [leave_id], ["state"])
-    if rows and rows[0].get("state") == "draft":
-        execute("hr.leave", "action_confirm", [leave_id])
+    _odoo_time_off.confirm_leave(execute, leave_id)
 
 
 def approve_leave(leave_id: int) -> str | None:
@@ -854,30 +744,18 @@ def approve_leave(leave_id: int) -> str | None:
     ``validate1``. Read between each workflow action so this is safe to call
     on duplicates and retries.
     """
-    state: str | None = None
-    for _ in range(3):
-        rows = execute("hr.leave", "read", [leave_id], ["state"])
-        state = rows[0].get("state") if rows else None
-        if state == "draft":
-            confirm_leave(leave_id)
-            continue
-        if state in ("confirm", "validate1"):
-            execute("hr.leave", "action_approve", [leave_id])
-            continue
-        return state
-    rows = execute("hr.leave", "read", [leave_id], ["state"])
-    return rows[0].get("state") if rows else state
+    return _odoo_time_off.approve_leave(execute, leave_id)
 
 
 def write_leave(leave_id: int, **fields: Any) -> None:
     """Update fields on an existing hr.leave."""
-    execute("hr.leave", "write", [leave_id], fields)
+    _odoo_time_off.write_leave(execute, leave_id, **fields)
 
 
 def refuse_leave(leave_id: int) -> None:
     """Call hr.leave.action_refuse — handles pending-cancel and
     approved-cancel via the same workflow."""
-    execute("hr.leave", "action_refuse", [leave_id])
+    _odoo_time_off.refuse_leave(execute, leave_id)
 
 
 def reset_leave_to_confirm(leave_id: int) -> None:
@@ -889,19 +767,14 @@ def reset_leave_to_confirm(leave_id: int) -> None:
     action ('hr.leave.action_draft' does not exist, and action_reset_confirm
     crashes upstream with a super() AttributeError). The state field is
     change-tracked, so the write still leaves a chatter breadcrumb."""
-    execute("hr.leave", "write", [leave_id], {"state": "confirm"})
+    _odoo_time_off.reset_leave_to_confirm(execute, leave_id)
 
 
 def fetch_leave_state(leave_id: int) -> str | None:
     """Current hr.leave state, or None when the record no longer exists.
     search_read (not read) so a deleted leave returns [] instead of
     raising."""
-    rows = execute(
-        "hr.leave", "search_read",
-        [("id", "=", leave_id)],
-        fields=["state"],
-    )
-    return rows[0]["state"] if rows else None
+    return _odoo_time_off.fetch_leave_state(execute, leave_id)
 
 
 def post_leave_message(leave_id: int, body: str) -> None:
@@ -913,7 +786,7 @@ def post_leave_message(leave_id: int, body: str) -> None:
     requester. Callers treat this as best-effort — a failed post must not
     roll back a completed refusal.
     """
-    execute("hr.leave", "message_post", [leave_id], body=body)
+    _odoo_time_off.post_leave_message(execute, leave_id, body)
 
 
 _PUBLIC_HOLIDAYS_TTL_SECONDS = 10 * 60
@@ -943,16 +816,7 @@ def fetch_public_holidays(start_d, end_d) -> list[dict]:
     cached = _public_holidays_cache.get((start_d, end_d))
     if cached and cached[1] > now:
         return cached[0]
-    domain = [
-        ("resource_id", "=", False),
-        ("date_to", ">=", start_d.isoformat() + " 00:00:00"),
-        ("date_from", "<=", end_d.isoformat() + " 23:59:59"),
-    ]
-    rows = execute(
-        "resource.calendar.leaves", "search_read",
-        domain,
-        fields=["id", "name", "date_from", "date_to", "calendar_id"],
-    )
+    rows = _odoo_time_off.fetch_public_holidays(execute, start_d, end_d)
     # Drop expired entries so navigating many ranges can't grow the dict.
     for k in [k for k, (_, exp) in _public_holidays_cache.items() if exp <= now]:
         del _public_holidays_cache[k]
@@ -969,16 +833,13 @@ def find_duplicate_leave(
 ) -> int | None:
     """Return id of an existing hr.leave matching this employee+type+range
     in non-rejected state, else None. Retry-dedupe guard."""
-    rows = execute(
-        "hr.leave", "search_read",
-        [("employee_id", "=", employee_odoo_id),
-         ("holiday_status_id", "=", holiday_status_id),
-         ("request_date_from", "=", date_from.isoformat()),
-         ("request_date_to", "=", date_to.isoformat()),
-         ("state", "in", list(_LEAVE_STATES_OPEN))],
-        fields=["id"], limit=1,
+    return _odoo_time_off.find_duplicate_leave(
+        execute,
+        employee_odoo_id,
+        holiday_status_id,
+        date_from,
+        date_to,
     )
-    return rows[0]["id"] if rows else None
 
 
 def _ensure_feedback_stages(project_id: int) -> None:
