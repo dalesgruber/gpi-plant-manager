@@ -162,6 +162,23 @@ def test_tv_displays_kind_allows_recycling_leaderboard():
         db.execute("DELETE FROM tv_displays WHERE slug = 'db-recycling-leaderboard'")
 
 
+def test_tv_displays_kind_allows_new_leaderboard():
+    db.init_pool()
+    db.bootstrap_schema()
+    db.execute("DELETE FROM tv_displays WHERE slug = 'db-new-leaderboard'")
+    try:
+        db.execute(
+            "INSERT INTO tv_displays (name, slug, kind, wc_name, theme) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            ("db New-Leaderboard", "db-new-leaderboard", "vs_new_leaderboard", None, "dark"),
+        )
+        assert db.query(
+            "SELECT kind FROM tv_displays WHERE slug = 'db-new-leaderboard'"
+        ) == [{"kind": "vs_new_leaderboard"}]
+    finally:
+        db.execute("DELETE FROM tv_displays WHERE slug = 'db-new-leaderboard'")
+
+
 def test_bootstrap_drops_workshop_tables():
     """The widget workshop / custom dashboards experiment was torn out
     on 2026-05-14. After bootstrap_schema, none of those tables exist."""
