@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from zira_dashboard import odoo_client
 from zira_dashboard.routes.skills import router
 
 
@@ -38,7 +39,7 @@ def test_skill_cell_update_writes_odoo_then_mirrors_local(monkeypatch):
     monkeypatch.setattr(skills_routes.db, "query", fake_query)
     monkeypatch.setattr(skills_routes.db, "cursor", lambda: FakeCursorContext())
     monkeypatch.setattr(
-        skills_routes.odoo_client,
+        odoo_client,
         "set_employee_skill_level",
         lambda employee_id, skill_id, level: calls.append(("odoo", employee_id, skill_id, level)),
     )
@@ -87,7 +88,7 @@ def test_skill_cell_update_zero_deletes_local_after_odoo_success(monkeypatch):
 
     monkeypatch.setattr(skills_routes.db, "query", fake_query)
     monkeypatch.setattr(skills_routes.db, "cursor", lambda: FakeCursorContext())
-    monkeypatch.setattr(skills_routes.odoo_client, "set_employee_skill_level", lambda *args: None)
+    monkeypatch.setattr(odoo_client, "set_employee_skill_level", lambda *args: None)
     monkeypatch.setattr(skills_routes.staffing, "_invalidate_roster_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_stable_cache", lambda: None)
@@ -193,7 +194,7 @@ def test_skill_cell_update_leaves_local_state_when_odoo_fails(monkeypatch):
 
     monkeypatch.setattr(skills_routes.db, "query", fake_query)
     monkeypatch.setattr(skills_routes.db, "cursor", lambda: FakeCursorContext())
-    monkeypatch.setattr(skills_routes.odoo_client, "set_employee_skill_level", fail_odoo)
+    monkeypatch.setattr(odoo_client, "set_employee_skill_level", fail_odoo)
 
     response = _client().post(
         "/staffing/skills/cell",
@@ -232,7 +233,7 @@ def test_skill_cell_update_reports_odoo_saved_when_local_mirror_fails(monkeypatc
 
     monkeypatch.setattr(skills_routes.db, "query", fake_query)
     monkeypatch.setattr(skills_routes.db, "cursor", lambda: FailingCursorContext())
-    monkeypatch.setattr(skills_routes.odoo_client, "set_employee_skill_level", lambda *args: None)
+    monkeypatch.setattr(odoo_client, "set_employee_skill_level", lambda *args: None)
     monkeypatch.setattr(skills_routes.staffing, "_invalidate_roster_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(skills_routes._http_cache, "invalidate_stable_cache", lambda: None)
