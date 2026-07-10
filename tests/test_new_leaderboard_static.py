@@ -1,4 +1,8 @@
+from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+
+from jinja2 import Environment, FileSystemLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +33,45 @@ def test_new_leaderboard_ribbon_matrix_uses_calendar_columns_and_family_rows():
     assert "{% for family in data.active_families %}" in TEMPLATE
     assert "{% set winner = month.winners[family] %}" in TEMPLATE
     assert "nlb-work-center" in TEMPLATE
+
+    calendar_ribbons = [
+        SimpleNamespace(month=month, month_label=label, winners={"Alpha": None, "Beta": None})
+        for month, label in reversed(list(enumerate((
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ), start=1)))
+    ]
+    data = SimpleNamespace(
+        active_families=["Alpha", "Beta"],
+        current_goats=[],
+        error_message=None,
+        families={
+            family: SimpleNamespace(
+                thresholds=SimpleNamespace(ytd=1, l30=1),
+                rows=[],
+            )
+            for family in ("Alpha", "Beta")
+        },
+        ribbons=calendar_ribbons,
+        ytd_start=date(2026, 1, 1),
+        ytd_end=date(2026, 12, 31),
+        l30_start=date(2026, 12, 2),
+        l30_end=date(2026, 12, 31),
+    )
+    environment = Environment(loader=FileSystemLoader(ROOT / "src/zira_dashboard/templates"))
+    environment.globals["static_v"] = lambda _: "test"
+    rendered = environment.get_template("new_leaderboard_tv.html").render(data=data)
+    ribbon_grid = rendered.split('<div class="nlb-ribbon-grid"', 1)[1].split("</div>", 1)[0]
+    month_positions = [
+        ribbon_grid.index(f'class="nlb-month">{label}</strong>')
+        for label in ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    ]
+    work_center_positions = [
+        ribbon_grid.index(f'class="nlb-work-center">{family}</strong>')
+        for family in ("Alpha", "Beta")
+    ]
+    assert month_positions == sorted(month_positions)
+    assert max(month_positions) < min(work_center_positions)
 
 
 def test_new_leaderboard_copy_and_empty_states_are_exact():
