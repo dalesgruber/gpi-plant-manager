@@ -214,6 +214,13 @@ def test_publish_prefills_next_day_with_smart_defaults(monkeypatch):
 
     current_day = date(2026, 7, 6)
     next_day = date(2026, 7, 7)
+    next_schedule = staffing_mod.Schedule(
+        day=next_day,
+        published=False,
+        assignments={},
+        rotation_mode="training",
+        assignment_sources={"Trim Saw 1": {"Jordan": "manual"}},
+    )
     saved = []
     smart_calls = []
 
@@ -234,7 +241,9 @@ def test_publish_prefills_next_day_with_smart_defaults(monkeypatch):
     monkeypatch.setattr(
         staffing_mod,
         "load_schedule",
-        lambda d: staffing_mod.Schedule(day=d, published=False, assignments={}),
+        lambda d: next_schedule if d == next_day else staffing_mod.Schedule(
+            day=d, published=False, assignments={},
+        ),
     )
     monkeypatch.setattr(staffing_mod, "save_schedule", lambda sched: saved.append(sched))
     monkeypatch.setattr(staffing_mod, "load_roster", lambda: [])
@@ -258,6 +267,8 @@ def test_publish_prefills_next_day_with_smart_defaults(monkeypatch):
     assert smart_calls == [(next_day, {"Trim Saw 1": ["Stored"]})]
     assert saved[-1].day == next_day
     assert saved[-1].assignments == {"Trim Saw 1": ["Smart"]}
+    assert saved[-1].rotation_mode == "training"
+    assert saved[-1].assignment_sources == {"Trim Saw 1": {"Jordan": "manual"}}
 
 
 def test_route_smart_defaults_falls_back_to_raw_defaults(monkeypatch):

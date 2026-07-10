@@ -570,6 +570,11 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
                     day=next_day,
                     published=False,
                     assignments=smart_defaults,
+                    rotation_mode=next_sched.rotation_mode,
+                    assignment_sources={
+                        wc_name: dict(sources or {})
+                        for wc_name, sources in next_sched.assignment_sources.items()
+                    },
                 ))
         return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
