@@ -6,6 +6,30 @@ from zira_dashboard.routes import exceptions as exceptions_route
 _STOP = datetime(2026, 7, 8, 18, 2, tzinfo=timezone.utc)
 
 
+def test_breakdown_transfer_sync_delegates_with_actor(monkeypatch):
+    from zira_dashboard import breakdown_actions
+    from zira_dashboard.routes import exceptions as exceptions_route
+
+    seen = {}
+
+    def fake(body, actor_upn=None, actor_name=None, friendly_error=None):
+        seen.update(body=body, actor_upn=actor_upn, actor_name=actor_name)
+        return exceptions_route.JSONResponse({"ok": True})
+
+    monkeypatch.setattr(breakdown_actions, "transfer", fake)
+    response = exceptions_route._breakdown_transfer_sync(
+        {"incident_id": 1, "person_name": "Ana", "to_wc": "Repair 3"},
+        "dale@example.com",
+        "Dale",
+    )
+    assert response.status_code == 200
+    assert seen == {
+        "body": {"incident_id": 1, "person_name": "Ana", "to_wc": "Repair 3"},
+        "actor_upn": "dale@example.com",
+        "actor_name": "Dale",
+    }
+
+
 def test_transfer_sync_caps_exclusion_and_calls_decide_and_apply(monkeypatch):
     from zira_dashboard import machine_breakdown, wc_attributions, staffing_transfer, inbox_log
     monkeypatch.setattr(machine_breakdown, "get_incident", lambda iid: {

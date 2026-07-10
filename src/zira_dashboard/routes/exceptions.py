@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import exception_inbox, inbox_keys, inbox_log, plant_day, time_off_audit
+from .. import breakdown_actions, exception_inbox, inbox_keys, inbox_log, plant_day, time_off_audit
 from ..deps import templates
 
 router = APIRouter()
@@ -754,58 +754,12 @@ async def undo_inbox_event(event_id: int, request: Request):
 
 
 def _breakdown_transfer_sync(body: dict, actor_upn=None, actor_name=None) -> JSONResponse:
-    """Blocking half of /api/exceptions/breakdown/transfer: caps the
-    operator's breakdown exclusion at the detected stop time, then runs the
-    normal transfer chokepoint from that same timestamp."""
-    from .. import inbox_keys, inbox_log, machine_breakdown, staffing_transfer, wc_attributions
-
-    incident_id = body.get("incident_id")
-    person_name = str(body.get("person_name") or "").strip()
-    to_wc = str(body.get("to_wc") or "").strip()
-    if not incident_id or not person_name or not to_wc:
-        return _json_error("incident_id, person_name, and to_wc are required", 400)
-
-    incident = machine_breakdown.get_incident(incident_id)
-    if incident is None:
-        return _json_error("incident not found", 404)
-
-    transfer_at = incident["detected_stop_utc"]
-    row = wc_attributions.open_breakdown_row(incident["day"], incident["wc_name"], person_name)
-    if row is not None:
-        wc_attributions.cap_breakdown(row["id"], transfer_at)
-
-    # Note: the breakdown-row cap above is not rolled back if decide_and_apply
-    # fails below; a failed transfer leaves the operator's exclusion capped
-    # as-if-departed. Retrying the transfer re-caps harmlessly (cap_breakdown
-    # is idempotent on an already-closed row) but does not reopen the
-    # exclusion -- a manual wc_attributions.reopen_breakdown would be needed
-    # if this matters in practice. Matches this file's existing convention
-    # for Odoo-calling handlers (_approve_time_off_sync, _refuse_time_off_sync):
-    # log and return a friendly error, no rollback.
-    try:
-        result = staffing_transfer.decide_and_apply(person_name, to_wc, transfer_at)
-    except Exception as e:
-        return _json_error(_friendly_odoo_error(e), 500)
-
-    eid = inbox_log.log_event_safe(
-        item_kind="breakdown",
-        item_key=inbox_keys.breakdown(incident["wc_name"], incident["detected_stop_utc"].isoformat(), person_name),
-        person_name=person_name,
-        category_label="Machine Breakdown",
-        action="transfer",
-        outcome=f"Transferred to {to_wc}",
-        after_value=to_wc,
-        actor_upn=actor_upn,
-        actor_name=actor_name,
-        source="inbox",
-        reversible=True,
-        detail={
-            "closed_id": result.get("closed_id"),
-            "new_id": result.get("new_id"),
-            "attribution_id": row["id"] if row is not None else None,
-        },
+    return breakdown_actions.transfer(
+        body,
+        actor_upn,
+        actor_name,
+        friendly_error=_friendly_odoo_error,
     )
-    return JSONResponse({"ok": True, "event_id": eid, "transfer": result.get("transfer")})
 
 
 @router.post("/api/exceptions/breakdown/transfer")
@@ -821,15 +775,7 @@ async def breakdown_transfer(request: Request):
 
 
 def _breakdown_snooze_sync(body: dict) -> JSONResponse:
-    """Blocking half of /api/exceptions/breakdown/snooze."""
-    from .. import machine_breakdown
-
-    incident_id = body.get("incident_id")
-    person_name = str(body.get("person_name") or "").strip()
-    if not incident_id or not person_name:
-        return _json_error("incident_id and person_name are required", 400)
-    machine_breakdown.snooze_operator(incident_id, person_name)
-    return JSONResponse({"ok": True})
+    return breakdown_actions.snooze(body)
 
 
 @router.post("/api/exceptions/breakdown/snooze")
@@ -843,43 +789,7 @@ async def breakdown_snooze(request: Request):
 
 
 def _breakdown_dismiss_sync(body: dict, actor_upn=None, actor_name=None) -> JSONResponse:
-    """Blocking half of /api/exceptions/breakdown/dismiss ("Not a
-    breakdown"): snapshots the incident's exclusion rows into the undo
-    detail BEFORE deleting them, then resolves the incident."""
-    from .. import inbox_keys, inbox_log, machine_breakdown, wc_attributions
-
-    incident_id = body.get("incident_id")
-    if not incident_id:
-        return _json_error("incident_id is required", 400)
-    incident = machine_breakdown.get_incident(incident_id)
-    if incident is None:
-        return _json_error("incident not found", 404)
-
-    # for_day()'s SELECT does not include `day` (it's the WHERE filter, not a
-    # returned column) -- stamp it back on before storing, since undo needs
-    # the full row shape to re-insert via wc_attributions.add().
-    snapshot_rows = [
-        {**r, "day": incident["day"]}
-        for r in wc_attributions.for_day(incident["day"])
-        if r.get("wc_name") == incident["wc_name"] and r.get("source") == wc_attributions.BREAKDOWN_SOURCE
-    ]
-    wc_attributions.delete_breakdown_rows_for_incident(incident_id)
-    machine_breakdown.resolve_incident(incident_id, "dismissed")
-
-    eid = inbox_log.log_event_safe(
-        item_kind="breakdown",
-        item_key=inbox_keys.breakdown(incident["wc_name"], incident["detected_stop_utc"].isoformat()),
-        person_name=None,
-        category_label="Machine Breakdown",
-        action="dismiss",
-        outcome="Not a breakdown",
-        actor_upn=actor_upn,
-        actor_name=actor_name,
-        source="inbox",
-        reversible=True,
-        detail={"rows": snapshot_rows, "incident_id": incident_id},
-    )
-    return JSONResponse({"ok": True, "event_id": eid})
+    return breakdown_actions.dismiss(body, actor_upn, actor_name)
 
 
 @router.post("/api/exceptions/breakdown/dismiss")
@@ -895,15 +805,7 @@ async def breakdown_dismiss(request: Request):
 
 
 def _breakdown_report_sync(body: dict) -> JSONResponse:
-    """Blocking half of /api/exceptions/breakdown/report (the manual
-    "+ Report a breakdown" button)."""
-    from .. import machine_breakdown, staffing
-
-    wc_name = str(body.get("wc_name") or "").strip()
-    if wc_name not in {loc.name for loc in staffing.LOCATIONS}:
-        return _json_error("unknown work center", 400)
-    result = machine_breakdown.report_manual(wc_name)
-    return JSONResponse(result)
+    return breakdown_actions.report(body)
 
 
 @router.post("/api/exceptions/breakdown/report")
