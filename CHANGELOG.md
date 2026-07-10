@@ -7,6 +7,12 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
      (anything ungrouped renders as "Highlights"). An entry with a Features
      group shows a green "New feature" badge in the What's New panel. -->
 
+## 2026-07-10
+
+### Fixes
+
+- **Operator dashboards now keep every downtime minute readable.** When the red downtime portion of the working/down bar was narrower than its label, the left side of the value was cut off. Wide values can now extend onto the adjacent green portion while staying right-aligned inside the overall bar, in both editor and TV views.
+
 ## 2026-07-04
 
 ### Features
