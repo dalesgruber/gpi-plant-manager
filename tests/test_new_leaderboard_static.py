@@ -23,10 +23,12 @@ def test_new_leaderboard_layout_responds_to_active_family_count():
     assert "repeat(3, minmax(0, 1fr))" in CSS
 
 
-def test_new_leaderboard_ribbon_grid_is_family_driven():
-    assert "--nlb-family-count: {{ data.active_families|length }}" in TEMPLATE
-    assert "repeat(var(--nlb-family-count), minmax(0, 1fr))" in CSS
-    assert "month.winners[family]" in TEMPLATE
+def test_new_leaderboard_ribbon_matrix_uses_calendar_columns_and_family_rows():
+    assert "data.ribbons|sort(attribute='month')" in TEMPLATE
+    assert "{% for month in calendar_ribbons %}" in TEMPLATE
+    assert "{% for family in data.active_families %}" in TEMPLATE
+    assert "{% set winner = month.winners[family] %}" in TEMPLATE
+    assert "nlb-work-center" in TEMPLATE
 
 
 def test_new_leaderboard_copy_and_empty_states_are_exact():
