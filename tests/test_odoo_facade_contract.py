@@ -1,6 +1,30 @@
 from zira_dashboard import odoo_client
 
 
+def test_attendance_facade_resolves_dependencies_at_call_time(monkeypatch):
+    assert hasattr(odoo_client, "_odoo_attendance"), (
+        "attendance operations have not been extracted"
+    )
+
+    calls = []
+    execute_fn = lambda *args, **kwargs: None
+    monkeypatch.setattr(odoo_client, "execute", execute_fn)
+    monkeypatch.setattr(odoo_client, "_kiosk_wc_field", lambda: "x_current_wc")
+    monkeypatch.setattr(
+        odoo_client,
+        "_kiosk_department_field",
+        lambda: "x_current_department",
+    )
+    monkeypatch.setattr(
+        odoo_client._odoo_attendance,
+        "fetch_open_attendances",
+        lambda *args: calls.append(args) or [],
+    )
+
+    assert odoo_client.fetch_open_attendances() == []
+    assert calls == [(execute_fn, "x_current_wc", "x_current_department")]
+
+
 def test_facade_uses_execute_replaced_after_import(monkeypatch):
     calls = []
 

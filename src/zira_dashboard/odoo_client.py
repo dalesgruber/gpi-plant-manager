@@ -23,10 +23,13 @@ import os
 import threading
 import time
 import xmlrpc.client
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import Any
 
-from . import _odoo_calendars, _odoo_skills
+from . import _odoo_attendance, _odoo_calendars, _odoo_skills
+
+
+UTC = timezone.utc
 
 
 def unwrap_m2o(val):
@@ -359,235 +362,40 @@ def _department_id_for_wc(wc_name: str | None) -> int | None:
     return dept_id
 
 
-def _to_odoo_dt(ts: datetime) -> str:
-    """Odoo expects naive UTC strings in 'YYYY-MM-DD HH:MM:SS' format.
-    Accepts aware or naive datetimes; aware ones are converted to UTC."""
-    if ts.tzinfo is not None:
-        ts = ts.astimezone(UTC).replace(tzinfo=None)
-    return ts.strftime("%Y-%m-%d %H:%M:%S")
+_to_odoo_dt = _odoo_attendance.to_odoo_dt
+_odoo_dt_to_iso = _odoo_attendance.odoo_dt_to_iso
+_is_zero_duration_attendance = _odoo_attendance.is_zero_duration_attendance
 
 
 def get_current_attendance(employee_odoo_id: int) -> dict | None:
-    """Return the open hr.attendance row for this employee (check_out IS
-    NULL), or None if they're already clocked out. Most recent open
-    attendance wins if there's somehow more than one.
-
-    When ODOO_KIOSK_DEPARTMENT_FIELD is configured, the returned dict also
-    carries ``department_id`` (int|None) and ``department_name`` (str|None)
-    parsed from that Many2one, so callers can tell which department the
-    person is currently punched into."""
-    dept_field = _kiosk_department_field()
-    fields = ["id", "employee_id", "check_in"]
-    if dept_field:
-        fields.append(dept_field)
-    rows = execute(
-        "hr.attendance", "search_read",
-        [("employee_id", "=", employee_odoo_id), ("check_out", "=", False)],
-        fields=fields,
-        limit=1,
+    return _odoo_attendance.get_current_attendance(
+        execute,
+        employee_odoo_id,
+        _kiosk_wc_field(),
+        _kiosk_department_field(),
     )
-    if not rows:
-        return None
-    row = rows[0]
-    dept_val = row.get(dept_field) if dept_field else None
-    if isinstance(dept_val, list) and dept_val:
-        row["department_id"] = dept_val[0]
-        row["department_name"] = dept_val[1] if len(dept_val) > 1 else None
-    else:
-        row["department_id"] = None
-        row["department_name"] = None
-    return row
 
 
 def fetch_attendances_missing_wc(since) -> list[dict]:
-    """hr.attendance from `since` (a tz-aware datetime) with NO kiosk
-    work-center tag. Returns
-    [{att_id, employee_odoo_id, employee_name, check_in (ISO), check_out (ISO|None)}].
-
-    Returns [] (and logs once) when the kiosk WC field isn't configured — with
-    no WC field we can't tell tagged from untagged, so the alert stays dark
-    rather than flagging every record."""
-    import logging
-    wc_field = _kiosk_wc_field()
-    if not wc_field:
-        logging.getLogger(__name__).warning(
-            "ODOO_KIOSK_WC_FIELD not configured; missing-work-center alert disabled"
-        )
-        return []
-    rows = execute(
-        "hr.attendance", "search_read",
-        [("check_in", ">=", _to_odoo_dt(since)), (wc_field, "=", False)],
-        fields=["id", "employee_id", "check_in", "check_out"],
-        order="check_in desc",
-        limit=500,
+    return _odoo_attendance.fetch_attendances_missing_wc(
+        execute, since, _kiosk_wc_field()
     )
-    out: list[dict] = []
-    for r in rows:
-        emp = r.get("employee_id")
-        out.append({
-            "att_id": r["id"],
-            "employee_odoo_id": unwrap_m2o(emp),
-            "employee_name": emp[1] if isinstance(emp, list) and len(emp) > 1 else None,
-            "check_in": _odoo_dt_to_iso(r.get("check_in")),
-            "check_out": _odoo_dt_to_iso(r.get("check_out")),
-        })
-    return out
-
-
-def _odoo_dt_to_iso(value: Any) -> str | None:
-    """Odoo returns datetimes as naive-UTC 'YYYY-MM-DD HH:MM:SS' strings
-    (and False for empty). Return an ISO-8601 string with an explicit UTC
-    offset, or None."""
-    if not value:
-        return None
-    if isinstance(value, str):
-        dt = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(
-            tzinfo=UTC)
-        return dt.isoformat()
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-    return None
-
-
-def _is_zero_duration_attendance(row: dict) -> bool:
-    """True for closed Odoo rows with no meaningful worked interval.
-
-    Odoo can surface cleanup/no-op rows around midnight as 12:00:00 to
-    12:00:01, which displays as 00:00 worked time. Those should not make the
-    dashboard treat someone as present for the day.
-    """
-    check_in = _odoo_dt_to_iso(row.get("check_in"))
-    check_out = _odoo_dt_to_iso(row.get("check_out"))
-    if not check_in or not check_out:
-        return False
-    try:
-        start = datetime.fromisoformat(check_in)
-        end = datetime.fromisoformat(check_out)
-    except (TypeError, ValueError):
-        return False
-    return 0 <= (end - start).total_seconds() < 60
 
 
 def fetch_open_attendances() -> list[dict]:
-    """Every currently-open hr.attendance (check_out IS NULL), one entry
-    per clocked-in employee. Returns
-    [{att_id, employee_odoo_id, check_in, wc_name}, ...] where check_in is
-    an ISO-8601 UTC string and wc_name is None when the kiosk WC field is
-    unset or empty (e.g. a punch added by hand directly in Odoo)."""
-    wc_field = _kiosk_wc_field()
-    fields = ["id", "employee_id", "check_in"]
-    if wc_field:
-        fields.append(wc_field)
-    rows = execute(
-        "hr.attendance", "search_read",
-        [("check_out", "=", False)],
-        fields=fields,
+    return _odoo_attendance.fetch_open_attendances(
+        execute, _kiosk_wc_field(), _kiosk_department_field()
     )
-    out: list[dict] = []
-    for r in rows:
-        emp = r.get("employee_id")
-        emp_id = unwrap_m2o(emp)
-        if not emp_id:
-            continue
-        out.append({
-            "att_id": r["id"],
-            "employee_odoo_id": emp_id,
-            "check_in": _odoo_dt_to_iso(r.get("check_in")),
-            "wc_name": (r.get(wc_field) or None) if wc_field else None,
-        })
-    return out
 
 
 def fetch_attendances_for_day(day) -> list[dict]:
-    """Every hr.attendance whose check_in falls on `day` (site-local day,
-    open AND closed), reduced to one entry per employee — their EARLIEST
-    check_in plus whether any of their punches is still open.
-
-    Returns [{employee_odoo_id, first_check_in, currently_open}, ...] where
-    first_check_in is an ISO-8601 UTC string. `day` bounds are the local
-    day converted to UTC, since Odoo stores naive-UTC datetimes."""
-    from datetime import datetime, time as _time, timedelta
-    from . import shift_config
-    start_local = datetime.combine(day, _time.min, tzinfo=shift_config.SITE_TZ)
-    end_local = start_local + timedelta(days=1)
-    rows = execute(
-        "hr.attendance", "search_read",
-        [
-            ("check_in", ">=", _to_odoo_dt(start_local)),
-            ("check_in", "<", _to_odoo_dt(end_local)),
-        ],
-        fields=["id", "employee_id", "check_in", "check_out"],
-    )
-    agg: dict[int, dict] = {}
-    for r in rows:
-        if _is_zero_duration_attendance(r):
-            continue
-        emp = r.get("employee_id")
-        emp_id = unwrap_m2o(emp)
-        if not emp_id:
-            continue
-        ci = _odoo_dt_to_iso(r.get("check_in"))
-        if ci is None:
-            continue
-        is_open = not r.get("check_out")
-        cur = agg.get(emp_id)
-        if cur is None:
-            agg[emp_id] = {"employee_odoo_id": emp_id, "first_check_in": ci, "currently_open": is_open}
-        else:
-            if ci < cur["first_check_in"]:
-                cur["first_check_in"] = ci
-            if is_open:
-                cur["currently_open"] = True
-    return list(agg.values())
+    return _odoo_attendance.fetch_attendances_for_day(execute, day)
 
 
 def fetch_attendance_intervals_for_day(day) -> list[dict]:
-    """EVERY hr.attendance whose check_in falls on `day` (site-local), as full
-    intervals -- NOT collapsed per employee like fetch_attendances_for_day.
-
-    Returns [{employee_odoo_id, check_in, check_out, wc_name}, ...] where
-    check_in/check_out are ISO-8601 UTC strings (check_out is None for a record
-    still open) and wc_name is the kiosk WC field (None if unset/untagged).
-
-    This is the goal's source of truth for where each operator was clocked in:
-    auto-lunch splits the day into a morning + afternoon record, and mid-shift
-    transfers each create their own record, so a person can legitimately have
-    several intervals in a day. Day bounds are the local day converted to UTC
-    (Odoo stores naive-UTC datetimes)."""
-    from datetime import datetime, time as _time, timedelta
-    from . import shift_config
-    start_local = datetime.combine(day, _time.min, tzinfo=shift_config.SITE_TZ)
-    end_local = start_local + timedelta(days=1)
-    wc_field = _kiosk_wc_field()
-    fields = ["id", "employee_id", "check_in", "check_out"]
-    if wc_field:
-        fields.append(wc_field)
-    rows = execute(
-        "hr.attendance", "search_read",
-        [
-            ("check_in", ">=", _to_odoo_dt(start_local)),
-            ("check_in", "<", _to_odoo_dt(end_local)),
-        ],
-        fields=fields,
+    return _odoo_attendance.fetch_attendance_intervals_for_day(
+        execute, day, _kiosk_wc_field()
     )
-    out: list[dict] = []
-    for r in rows:
-        if _is_zero_duration_attendance(r):
-            continue
-        emp = r.get("employee_id")
-        emp_id = unwrap_m2o(emp)
-        if not emp_id:
-            continue
-        ci = _odoo_dt_to_iso(r.get("check_in"))
-        if ci is None:
-            continue
-        out.append({
-            "employee_odoo_id": emp_id,
-            "check_in": ci,
-            "check_out": _odoo_dt_to_iso(r.get("check_out")),
-            "wc_name": (r.get(wc_field) or None) if wc_field else None,
-        })
-    return out
 
 
 def set_attendance_wc(attendance_id: int, wc_name: str | None) -> None:
