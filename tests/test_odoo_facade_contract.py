@@ -22,6 +22,27 @@ def test_facade_uses_execute_replaced_after_import(monkeypatch):
     ]
 
 
+def test_facade_uses_unwrap_m2o_replaced_after_import(monkeypatch):
+    monkeypatch.setattr(
+        odoo_client,
+        "execute",
+        lambda model, method, *args, **kwargs: (
+            [{"id": 1, "name": "Production Skills"}]
+            if model == "hr.skill.type"
+            else [{"id": 11, "name": "Planer", "skill_type_id": "patched-type"}]
+        ),
+    )
+    monkeypatch.setattr(
+        odoo_client,
+        "unwrap_m2o",
+        lambda value: 1 if value == "patched-type" else value,
+    )
+
+    assert odoo_client.fetch_skill_columns_with_types() == [
+        {"id": 11, "name": "Planer", "type": "Production Skills"}
+    ]
+
+
 def test_facade_leave_cache_remains_assignable(monkeypatch):
     expected = [{"id": 7, "name": "Vacation", "request_unit": "day"}]
     monkeypatch.setattr(odoo_client, "_leave_types_cache", (expected, float("inf")))
