@@ -9,6 +9,7 @@ recommendation inputs stubbed, so nothing here touches Postgres or the clock.
 from __future__ import annotations
 
 from datetime import date, time, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -18,6 +19,8 @@ from zira_dashboard import staffing
 
 
 TARGET_DAY = date(2026, 7, 14)
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _person(name: str, level: int, group: str = "Repair", *, active: bool = True, reserve: bool = False):
@@ -352,6 +355,21 @@ def test_rebuild_rejects_bad_day(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     resp = client.post("/api/rotations/rebuild", json={"day": "nope", "mode": "normal"})
     assert resp.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Staffing controls + reason data (static template / JS contract)
+# --------------------------------------------------------------------------- #
+
+
+def test_staffing_has_rotation_mode_controls_and_reason_data():
+    html = (ROOT / "src/zira_dashboard/templates/staffing.html").read_text()
+    js = (ROOT / "src/zira_dashboard/static/staffing.js").read_text()
+    assert 'data-rotation-mode="optimized"' in html
+    assert 'data-rotation-mode="normal"' in html
+    assert 'data-rotation-mode="training"' in html
+    assert "rotation_reasons" in html
+    assert "/api/rotations/rebuild" in js
 
 
 # --------------------------------------------------------------------------- #

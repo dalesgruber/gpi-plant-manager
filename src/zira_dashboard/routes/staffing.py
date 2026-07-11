@@ -91,6 +91,30 @@ def _forklift_scheduled_counts(assignments, overload_responders, wc_names):
 # development cap defaults to the engine's own default (two) for Task 4.
 _RECYCLED_TRAINING_CAP = 2
 
+# Short per-mode help line for the Staffing "Recycled schedule goal" control.
+# A generic one-liner per mode — no settings/config surface, just enough to
+# explain what clicking each button optimizes for.
+_ROTATION_MODE_HELP = {
+    "optimized": "Optimized favors maximum level-3 coverage on the Recycled lines.",
+    "normal": "Normal balances coverage, preferences, and fair rotation.",
+    "training": "Training develops level-1/2 operators while protecting coverage.",
+}
+
+
+def _rotation_mode_help(mode: str) -> str:
+    return _ROTATION_MODE_HELP.get(mode or "normal", _ROTATION_MODE_HELP["normal"])
+
+
+def _recycled_wc_names() -> list[str]:
+    """Flat list of Recycled work-center names (Dismantler/Repair/Trim Saw).
+
+    Derived from ``staffing.LOCATIONS`` (no I/O). Lets the Staffing page scope
+    the mode-driven rebuild apply to Recycled centers only, so a rebuild never
+    touches non-Recycled selections the user may have edited.
+    """
+    groups = rotation_suggestions._default_group_locations()
+    return [center for centers in groups.values() for center in centers]
+
 
 def _roster_minus_full_day_off(roster, time_off_entries):
     """Drop people on a full-day absence so the pure engine never seats them.
@@ -571,6 +595,10 @@ def staffing_page(
             {
                 "active": "plant",
                 **recycled_ctx,
+                "rotation_mode_help": _rotation_mode_help(
+                    recycled_ctx["recycled_rotation_mode"]
+                ),
+                "recycled_wc_names": _recycled_wc_names(),
                 "day": d.isoformat(),
                 "day_short": d.strftime("%m/%d/%y"),
                 "day_pretty": f"{d.strftime('%A, %B')} {d.day}, {d.year}",

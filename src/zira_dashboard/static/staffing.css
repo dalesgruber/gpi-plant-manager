@@ -630,6 +630,67 @@
   }
   .clear-btn:hover { color: var(--bad); border-color: var(--bad); }
 
+  /* ---------- Recycled rotation controls (mode goal + reasons + warnings) ---------- */
+  .rotation-controls {
+    display: flex; flex-wrap: wrap; align-items: flex-start;
+    gap: 0.6rem 1rem;
+    margin: 0 0 0.85rem;
+  }
+  .rotation-mode {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.4rem 0.7rem; margin: 0; min-width: 0;
+    background: var(--panel-2);
+  }
+  .rotation-mode legend {
+    padding: 0 0.35rem; font-size: 0.68rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted);
+  }
+  .rotation-mode-btn {
+    background: var(--panel); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.3rem 0.75rem; font: inherit; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .rotation-mode-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--muted); }
+  .rotation-mode-btn.active {
+    background: var(--accent-dim); color: var(--accent); border-color: var(--accent);
+  }
+  .rotation-mode-btn:disabled { opacity: 0.6; cursor: progress; }
+  .rotation-reset-btn {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; cursor: pointer;
+    white-space: nowrap;
+  }
+  .rotation-reset-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--muted); }
+  .rotation-reset-btn:disabled { opacity: 0.6; cursor: progress; }
+  /* Override the global centered .hint for the in-fieldset help line. */
+  .rotation-mode-help.hint {
+    flex-basis: 100%;
+    margin: 0.15rem 0 0; padding: 0;
+    text-align: left; font-style: italic;
+  }
+  .rotation-warning {
+    flex: 1 1 16rem; min-width: 0;
+    background: var(--warn-dim); color: var(--warn);
+    border: 1px solid var(--warn); border-radius: 8px;
+    padding: 0.4rem 0.75rem; font-size: 0.82rem;
+  }
+  .rotation-warning[hidden] { display: none; }
+  .rotation-warning ul { margin: 0; padding-left: 1.1rem; }
+  .rotation-warning li { margin: 0.1rem 0; }
+  /* "Why" annotation shown next to a generated Recycled pill. Reuses the
+     level-3 accent palette so it reads as the engine's recommendation. */
+  .rotation-reason {
+    margin-left: 0.3rem; padding: 0 0.35rem;
+    background: var(--accent-dim); color: var(--accent);
+    border-radius: 4px;
+    font-size: 0.66rem; font-weight: 600; font-style: normal;
+    letter-spacing: 0.2px; vertical-align: 1px;
+    white-space: nowrap;
+  }
+
   /* Lock inputs on posted days until Edit */
   form.locked select,
   form.locked textarea,

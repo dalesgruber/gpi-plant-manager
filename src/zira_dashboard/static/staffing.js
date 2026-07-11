@@ -407,6 +407,21 @@
 
   }
 
+  // Append the Recycled rotation "why" badge to a summary name span, mirroring
+  // the server-rendered .rotation-reason pill. No-op unless the engine reported
+  // a reason for this person at this work center (i.e. a generated placement),
+  // so manually-placed people never get a spurious reason.
+  function appendReasonBadge(parentEl, loc, name) {
+    const reasons = (window.ROTATION_REASONS || {})[loc];
+    const reason = reasons && reasons[name];
+    if (!reason) return;
+    const span = document.createElement('span');
+    span.className = 'rotation-reason';
+    span.title = reason;
+    span.textContent = reason;
+    parentEl.appendChild(span);
+  }
+
   // ---------- Dropdown item click: toggles checkbox + selected class + summary ----------
   function updateDdSummary(dd) {
     const text = dd.querySelector('.dd-summary-text');
@@ -416,7 +431,7 @@
       text.innerHTML = '<span class="empty">—</span>';
       return;
     }
-    // Rebuild via DOM so we can attach cert badges to each name span.
+    // Rebuild via DOM so we can attach cert + reason badges to each name span.
     text.innerHTML = '';
     items.forEach((it, idx) => {
       const lvl = it.dataset.level;
@@ -425,6 +440,7 @@
       span.className = 'lvl-' + (lvl || '2');
       span.appendChild(document.createTextNode(name));
       appendCertBadges(span, name);
+      appendReasonBadge(span, dd.dataset.loc, name);
       text.appendChild(span);
       if (idx < items.length - 1) {
         const sep = document.createElement('span');
@@ -1358,5 +1374,138 @@
       btn.innerHTML = originalContent;
     }
   }
+
+  // ---------- Recycled rotation goal (mode buttons + reset) ----------
+  // The three mode buttons set the Recycled goal (optimized / normal /
+  // training) and rebuild the Recycled lines in that mode; "Reset non-manual
+  // assignments" rebuilds in the current mode. The server is authoritative: it
+  // returns the full assignment map with manual locks preserved, so we
+  // reconcile only the Recycled pickers to the returned selections — manual
+  // pills stay checked and non-Recycled centers are never touched.
+  (function () {
+    const controls = document.querySelector('.rotation-controls');
+    if (!controls) return;
+    const modeBtns = [...controls.querySelectorAll('.rotation-mode-btn')];
+    const resetBtn = document.getElementById('rotation-reset-btn');
+    const warnBox = document.getElementById('rotation-warnings');
+    const helpEl = document.getElementById('rotation-mode-help');
+    const day = controls.dataset.day || window.SCHEDULE_DAY;
+    let rebuilding = false;
+
+    // Per-mode help lines mirror routes/staffing.py::_ROTATION_MODE_HELP so the
+    // hint updates instantly when the goal changes (no reload).
+    const HELP = {
+      optimized: 'Optimized favors maximum level-3 coverage on the Recycled lines.',
+      normal: 'Normal balances coverage, preferences, and fair rotation.',
+      training: 'Training develops level-1/2 operators while protecting coverage.',
+    };
+
+    function currentMode() {
+      const active = modeBtns.find(b => b.classList.contains('active'));
+      return (active && active.dataset.rotationMode)
+        || window.RECYCLED_ROTATION_MODE || 'normal';
+    }
+
+    function setActiveMode(mode) {
+      modeBtns.forEach(b => {
+        const on = b.dataset.rotationMode === mode;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      window.RECYCLED_ROTATION_MODE = mode;
+      if (helpEl && HELP[mode]) helpEl.textContent = HELP[mode];
+    }
+
+    function renderWarnings(warnings) {
+      window.ROTATION_WARNINGS = warnings || [];
+      if (!warnBox) return;
+      warnBox.innerHTML = '';
+      if (!warnings || !warnings.length) {
+        warnBox.hidden = true;
+        return;
+      }
+      const ul = document.createElement('ul');
+      warnings.forEach(w => {
+        const li = document.createElement('li');
+        li.textContent = w;
+        ul.appendChild(li);
+      });
+      warnBox.appendChild(ul);
+      warnBox.hidden = false;
+    }
+
+    // Reconcile every Recycled picker's checkboxes to the server-returned
+    // assignment map. Manual pills are already in that map, so they stay
+    // checked; regenerated people replace the rest. Non-Recycled centers are
+    // untouched. Mirrors the "Reset to defaults" reconcile pattern above.
+    function applyRebuild(data) {
+      const assignments = data.assignments || {};
+      window.ROTATION_REASONS = data.reasons || {};
+      const recycled = new Set(window.RECYCLED_WC_NAMES || []);
+      recycled.forEach(loc => {
+        const dd = document.querySelector('details.sched-dd[data-loc="' + CSS.escape(loc) + '"]');
+        if (!dd) return;
+        const wanted = new Set(assignments[loc] || []);
+        dd.querySelectorAll('.dd-item').forEach(item => {
+          const cb = item.querySelector('input[type=checkbox]');
+          if (!cb) return;
+          const should = wanted.has(item.dataset.name);
+          cb.checked = should;
+          item.classList.toggle('selected', should);
+        });
+        updateDdSummary(dd);
+        __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
+      });
+      renderWarnings(data.warnings);
+      syncLeftRailWithSchedule();
+      refreshPickerVisibility();
+      kickAutosave();
+    }
+
+    async function rebuild(mode) {
+      if (rebuilding || !mode) return;
+      if (__isPublished && !__unlocked) {
+        alert('This schedule is Posted. Click Edit first to change the Recycled goal.');
+        return;
+      }
+      if (__viewingPosted) return;
+      rebuilding = true;
+      controls.classList.add('rebuilding');
+      modeBtns.forEach(b => { b.disabled = true; });
+      if (resetBtn) resetBtn.disabled = true;
+      try {
+        const resp = await fetch('/api/rotations/rebuild', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ day, mode }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          const err = (data && data.error) || ('HTTP ' + resp.status);
+          // Surface the failure without wiping the grid.
+          renderWarnings(['Could not rebuild the Recycled schedule: ' + err]);
+          if (window.showToast) showToast('Rebuild failed: ' + err, null, 'error');
+          return;
+        }
+        setActiveMode(mode);
+        applyRebuild(data);
+      } catch (err) {
+        renderWarnings(['Could not rebuild the Recycled schedule: ' + (err.message || 'network error')]);
+        if (window.showToast) showToast('Rebuild failed — network error', null, 'error');
+      } finally {
+        rebuilding = false;
+        controls.classList.remove('rebuilding');
+        modeBtns.forEach(b => { b.disabled = false; });
+        if (resetBtn) resetBtn.disabled = false;
+      }
+    }
+
+    modeBtns.forEach(btn => {
+      btn.addEventListener('click', () => rebuild(btn.dataset.rotationMode));
+    });
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => rebuild(currentMode()));
+    }
+  })();
 
   // Assignments to Do modal moved to the global footer; no per-page handler here.
