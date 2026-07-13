@@ -134,6 +134,39 @@ def active_snoozes(day) -> list[dict]:
     )
 
 
+def set_expected_arrival(day, emp_id: str, name: str, expected_at_utc: datetime) -> None:
+    db.execute(
+        """
+        INSERT INTO late_expected_arrivals (day, emp_id, name, expected_at_utc)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (day, emp_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          expected_at_utc = EXCLUDED.expected_at_utc,
+          created_at = now()
+        """,
+        (day, str(emp_id), name, expected_at_utc),
+    )
+
+
+def active_expected_arrivals(day) -> list[dict]:
+    return db.query(
+        """
+        SELECT emp_id, name, expected_at_utc
+        FROM late_expected_arrivals
+        WHERE day = %s AND expected_at_utc > now()
+        ORDER BY expected_at_utc ASC
+        """,
+        (day,),
+    )
+
+
+def clear_expected_arrival(day, emp_id: str) -> None:
+    db.execute(
+        "DELETE FROM late_expected_arrivals WHERE day = %s AND emp_id = %s",
+        (day, str(emp_id)),
+    )
+
+
 def clear_time_off_request(day, request_id) -> None:
     """Mark a StratusTime time-off request as cleared for `day`. Filters
     out the entry from time_off_entries_for_day, hiding the partial pill

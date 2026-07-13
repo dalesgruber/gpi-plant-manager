@@ -308,6 +308,17 @@ CREATE TABLE IF NOT EXISTS late_snoozes (
 );
 CREATE INDEX IF NOT EXISTS late_snoozes_day_idx ON late_snoozes(day);
 
+CREATE TABLE IF NOT EXISTS late_expected_arrivals (
+  day             DATE NOT NULL,
+  emp_id          TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  expected_at_utc TIMESTAMPTZ NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, emp_id)
+);
+CREATE INDEX IF NOT EXISTS late_expected_arrivals_day_idx
+  ON late_expected_arrivals(day);
+
 CREATE TABLE IF NOT EXISTS global_schedule (
   id              INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   shift_start     TIME NOT NULL,
