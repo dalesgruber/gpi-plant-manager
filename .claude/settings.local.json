@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/dalegruber/Projects/gpi-plant-manager log --oneline -- src/zira_dashboard/shift_config.py)",
+      "Bash(git -C /Users/dalegruber/Projects/gpi-plant-manager log --oneline --all -- src/zira_dashboard/progress.py)"
+    ]
+  }
+}
