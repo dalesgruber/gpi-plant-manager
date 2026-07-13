@@ -124,3 +124,13 @@ def test_reset_to_defaults_reconciles_left_rail():
     assert "Object.keys(__peopleMeta || {}).forEach(name => {" in js
     assert "scheduledNames.has(name)" in js
     assert "addBackToCorrectList(name);" in js
+
+
+def test_auto_toggle_removes_only_disabled_center_warnings():
+    js = _script()
+
+    assert "function removeDisabledAutoWarnings()" in js
+    assert "warning.startsWith(center + ' is staffed below its minimum')" in js
+    assert "warning === 'No safe operator pairing available for ' + center + '.'" in js
+    assert "renderWarnings((window.ROTATION_WARNINGS || []).filter" in js
+    assert "removeDisabledAutoWarnings();" in js

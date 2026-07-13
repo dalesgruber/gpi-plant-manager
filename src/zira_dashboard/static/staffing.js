@@ -1446,6 +1446,19 @@
       });
     }
 
+    function removeDisabledAutoWarnings() {
+      const enabled = new Set(selectedAutoCenters());
+      renderWarnings((window.ROTATION_WARNINGS || []).filter(warning => {
+        const center = autoCbs.map(cb => cb.dataset.loc).find(center =>
+          center && (
+            warning.startsWith(center + ' is staffed below its minimum')
+            || warning === 'No safe operator pairing available for ' + center + '.'
+          )
+        );
+        return !center || enabled.has(center);
+      }));
+    }
+
     async function saveAutoCenters(changedCb) {
       if (savingAutoCenters) return;
       const before = !!changedCb.checked;
@@ -1462,6 +1475,7 @@
           throw new Error((data && data.error) || ('HTTP ' + resp.status));
         }
         applyEnabledCenters(data.enabled_work_centers || selectedAutoCenters());
+        removeDisabledAutoWarnings();
         if (window.showToast) showToast('Auto work centers saved');
       } catch (err) {
         changedCb.checked = !before;
