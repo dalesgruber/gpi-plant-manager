@@ -33,6 +33,18 @@ def _error(message: str, status_code: int = 422) -> JSONResponse:
     return JSONResponse({"ok": False, "error": message}, status_code=status_code)
 
 
+def _capacity_payload(capacity) -> dict:
+    """Serialize the stable, client-facing portion of an AutoCapacity result."""
+    return {
+        "required_people": capacity.required_people,
+        "available_people": capacity.available_people,
+        "shortage": capacity.shortage,
+        "centers_to_disable": capacity.centers_to_disable,
+        "runnable_centers": list(capacity.runnable_centers),
+        "blocked_centers": list(capacity.blocked_centers),
+    }
+
+
 async def _json_body(request: Request):
     try:
         body = await request.json()
@@ -196,15 +208,49 @@ async def save_auto_work_centers(request: Request):
     body = await _json_body(request)
     if body is None:
         return _error("Invalid JSON body.", 400)
+    day_raw = str(body.get("day") or "").strip()
     names = body.get("work_centers")
-    if not isinstance(names, list):
-        return _error("work_centers must be a list.")
+    turn_off = body.get("turn_off")
+    try:
+        d = date.fromisoformat(day_raw)
+    except ValueError:
+        return _error("Invalid day.")
+    if not isinstance(names, list) or not isinstance(turn_off, list):
+        return _error("work_centers and turn_off must be lists.")
 
     def _work():
-        enabled = staffing_route._save_enabled_auto_work_centers(names)
+        proposed = staffing_route._ordered_work_center_names(names)
+        turn_off_names = set(staffing_route._ordered_work_center_names(turn_off))
+        enabled = [name for name in proposed if name not in turn_off_names]
+        roster = staffing.load_roster()
+        sched = staffing.load_schedule(d)
+        time_off = staffing_route._safe_time_off_entries(d)
+        capacity = staffing_route._auto_capacity_for_day(
+            d=d,
+            enabled_work_centers=enabled,
+            roster=roster,
+            assignments=sched.assignments,
+            assignment_sources=sched.assignment_sources,
+            time_off_entries=time_off,
+        )
+        if capacity.shortage:
+            return JSONResponse({
+                "ok": False,
+                "error": (
+                    f"Auto centers need {capacity.shortage} more people to run. "
+                    f"Turn off at least {capacity.centers_to_disable} work center(s)."
+                ),
+                "capacity": _capacity_payload(capacity),
+                "required_disable_count": capacity.centers_to_disable,
+            }, status_code=409)
+        enabled = staffing_route._save_enabled_auto_work_centers(enabled)
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
-        return JSONResponse({"ok": True, "enabled_work_centers": enabled})
+        return JSONResponse({
+            "ok": True,
+            "enabled_work_centers": enabled,
+            "capacity": _capacity_payload(capacity),
+        })
 
     return await asyncio.to_thread(_work)
 
@@ -260,6 +306,7 @@ async def rebuild_rotation(request: Request):
             locked_assignments=locked,
             time_off_entries=time_off,
             enabled_work_centers=enabled_centers,
+            assignment_sources=sched.assignment_sources,
         )
         if suggestion is None:
             return _error("Could not rebuild the schedule.", 503)
