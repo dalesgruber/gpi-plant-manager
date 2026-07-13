@@ -64,6 +64,7 @@ def test_late_report_payload_excludes_unscheduled_no_punch(monkeypatch):
     )
     monkeypatch.setattr(late_report, "report_eligible_emp_ids", lambda roster, n2i: {"1", "2"})
     monkeypatch.setattr(late_report, "absent_emp_ids_for_day", lambda day: set())
+    monkeypatch.setattr(late_report, "active_expected_arrivals", lambda day: [])
     monkeypatch.setattr(late_report, "active_snoozes", lambda day: [])
     monkeypatch.setattr(late_report, "late_arrivals_for_day", lambda day: set())
     monkeypatch.setattr(

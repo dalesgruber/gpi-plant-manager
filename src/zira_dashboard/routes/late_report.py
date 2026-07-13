@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, time as dt_time
+from datetime import UTC, datetime, time as dt_time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -30,7 +30,7 @@ from .. import (
     shift_config,
     timeclock_sync,
 )
-from ..plant_day import today as plant_today
+from ..plant_day import now as plant_now, today as plant_today
 
 _log = logging.getLogger(__name__)
 
@@ -330,6 +330,38 @@ async def late_report_snooze(request: Request):
     """
     body = await request.json()
     return await asyncio.to_thread(_snooze_sync, body)
+
+
+def _running_late_sync(body: dict) -> JSONResponse:
+    """Record a manager-confirmed expected arrival for a late employee."""
+    emp_id = str(body.get("emp_id") or "").strip()
+    name = str(body.get("name") or "").strip()
+    selected = _parse_clock_time(body.get("expected_time"))
+    if not emp_id or not name:
+        return JSONResponse({"ok": False, "error": "emp_id and name required"}, status_code=400)
+    if selected is None:
+        return JSONResponse({"ok": False, "error": "expected_time must be HH:MM"}, status_code=400)
+
+    today = plant_today()
+    expected_local = datetime.combine(today, selected, tzinfo=shift_config.SITE_TZ)
+    if expected_local <= plant_now():
+        return JSONResponse(
+            {"ok": False, "error": "expected time must be later than now"}, status_code=400
+        )
+    try:
+        late_report.set_expected_arrival(
+            today, emp_id, name, expected_local.astimezone(UTC)
+        )
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    _bust_caches()
+    return JSONResponse({"ok": True, "expected_at": expected_local.isoformat()})
+
+
+@router.post("/api/late-report/running-late")
+async def late_report_running_late(request: Request):
+    """Record when a no-punch employee is expected to arrive today."""
+    return await asyncio.to_thread(_running_late_sync, await request.json())
 
 
 def _undo_absent_sync(body: dict) -> JSONResponse:

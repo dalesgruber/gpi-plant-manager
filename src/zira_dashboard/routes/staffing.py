@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, UTC
@@ -12,7 +13,7 @@ from datetime import date, datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, app_settings, attendance, db, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, app_settings, attendance, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -1311,12 +1312,13 @@ def late_report_payload(force: bool = False) -> dict:
 
     Always for today. Covers people who were on today's schedule only —
     people not assigned today are never flagged for a missing punch. Returns
-    four sections:
+    five sections:
       scheduled_late:   scheduled people who haven't punched in past threshold
       unscheduled_late: always empty (kept for the JSON/UI contract)
       needs_reason:     scheduled people who punched in past threshold + no
                         late_arrivals record yet — manager fills in reason
       snoozed:          silenced rows (no reason field; transient)
+      running_late:     expected arrivals (informational; no action required)
 
     `late` is an alias for `scheduled_late` for legacy clients.
     `count` is the badge number = sum of the three actionable sections.
@@ -1325,7 +1327,6 @@ def late_report_payload(force: bool = False) -> dict:
     ``force=True`` skips the cache read and recomputes, resetting the TTL —
     used by the inbox warmer to keep the nav badge warm for human requests.
     """
-    from .. import late_report
     now_ts = time.time()
     cached = _LATE_REPORT_CACHE.get("value")
     if not force and cached is not None and now_ts < _LATE_REPORT_CACHE.get("expires_at", 0):
@@ -1340,6 +1341,7 @@ def late_report_payload(force: bool = False) -> dict:
         "needs_reason": [],
         "late": [],  # alias for scheduled_late
         "snoozed": [],
+        "running_late": [],
     }
     try:
         sched = staffing.load_schedule(today)
@@ -1351,7 +1353,11 @@ def late_report_payload(force: bool = False) -> dict:
                 today, shift_config.shift_start_for(today), tzinfo=shift_config.SITE_TZ
             )
             absent_ids = late_report.absent_emp_ids_for_day(today)
-            snoozed_ids = {s["emp_id"] for s in late_report.active_snoozes(today)}
+            expected_arrivals = late_report.active_expected_arrivals(today)
+            expected_ids = {str(row["emp_id"]) for row in expected_arrivals}
+            snoozed_ids = {
+                str(s["emp_id"]) for s in late_report.active_snoozes(today)
+            } | expected_ids
             already_recorded_late_ids = late_report.late_arrivals_for_day(today)
 
             # Eligibility filter: the report applies only to hourly people on
@@ -1415,6 +1421,24 @@ def late_report_payload(force: bool = False) -> dict:
                     "minutes_late": r["minutes_late"],
                 })
             out["late"] = list(out["scheduled_late"])  # legacy alias
+
+            now_utc = datetime.now(UTC)
+            for row in expected_arrivals:
+                emp_id = str(row["emp_id"])
+                if (by_id.get(emp_id) or {}).get("status") != "no_punch":
+                    late_report.clear_expected_arrival(today, emp_id)
+                    continue
+                expected_local = row["expected_at_utc"].astimezone(shift_config.SITE_TZ)
+                fmt = "%#I:%M %p" if os.name == "nt" else "%-I:%M %p"
+                out["running_late"].append({
+                    "emp_id": emp_id,
+                    "name": row["name"],
+                    "until_iso": row["expected_at_utc"].isoformat(),
+                    "expected_label": expected_local.strftime(fmt),
+                    "mins_remaining": max(
+                        0, int((row["expected_at_utc"] - now_utc).total_seconds() // 60)
+                    ),
+                })
 
         # Snoozed list (independent of attendance).
         now_utc = datetime.now(UTC)
