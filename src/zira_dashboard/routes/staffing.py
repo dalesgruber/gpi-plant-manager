@@ -1353,7 +1353,14 @@ def late_report_payload(force: bool = False) -> dict:
                 today, shift_config.shift_start_for(today), tzinfo=shift_config.SITE_TZ
             )
             absent_ids = late_report.absent_emp_ids_for_day(today)
-            expected_arrivals = late_report.active_expected_arrivals(today)
+            for row in late_report.expected_arrivals_for_day(today):
+                emp_id = str(row["emp_id"])
+                if (by_id.get(emp_id) or {}).get("status") != "no_punch":
+                    late_report.clear_expected_arrival(today, emp_id)
+            expected_arrivals = [
+                row for row in late_report.active_expected_arrivals(today)
+                if (by_id.get(str(row["emp_id"])) or {}).get("status") == "no_punch"
+            ]
             expected_ids = {str(row["emp_id"]) for row in expected_arrivals}
             snoozed_ids = {
                 str(s["emp_id"]) for s in late_report.active_snoozes(today)
@@ -1425,9 +1432,6 @@ def late_report_payload(force: bool = False) -> dict:
             now_utc = datetime.now(UTC)
             for row in expected_arrivals:
                 emp_id = str(row["emp_id"])
-                if (by_id.get(emp_id) or {}).get("status") != "no_punch":
-                    late_report.clear_expected_arrival(today, emp_id)
-                    continue
                 expected_local = row["expected_at_utc"].astimezone(shift_config.SITE_TZ)
                 fmt = "%#I:%M %p" if os.name == "nt" else "%-I:%M %p"
                 out["running_late"].append({

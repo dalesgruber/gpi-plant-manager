@@ -160,6 +160,25 @@ def active_expected_arrivals(day) -> list[dict]:
     )
 
 
+def expected_arrivals_for_day(day) -> list[dict]:
+    """Return expected-arrival records regardless of whether they expired.
+
+    The late-report snapshot uses this narrow cleanup read to remove an
+    expected arrival once attendance shows the employee punched in. The
+    future-only ``active_expected_arrivals`` remains the source for UI
+    suppression and the informational running-late section.
+    """
+    return db.query(
+        """
+        SELECT emp_id, name, expected_at_utc
+        FROM late_expected_arrivals
+        WHERE day = %s
+        ORDER BY expected_at_utc ASC
+        """,
+        (day,),
+    )
+
+
 def clear_expected_arrival(day, emp_id: str) -> None:
     db.execute(
         "DELETE FROM late_expected_arrivals WHERE day = %s AND emp_id = %s",
