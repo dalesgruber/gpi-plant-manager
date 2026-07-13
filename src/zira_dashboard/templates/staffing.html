@@ -208,6 +208,7 @@
 
     {# Auto-scheduler controls. The mode buttons set the goal for the enabled
        work centers; manual/default locks always survive. #}
+    {% if auto_scheduler_available %}
     <div class="rotation-controls" data-day="{{ day }}">
       <div class="rotation-mode" role="group" aria-labelledby="rotation-mode-label">
         <span class="rotation-mode-label" id="rotation-mode-label">Schedule goal</span>
@@ -228,6 +229,7 @@
         {% if rotation_warnings %}<ul>{% for w in rotation_warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
+    {% endif %}
 
     <table class="sched">
       <thead>
@@ -284,11 +286,13 @@
                   <input type="checkbox" class="wc-training-cb" data-loc="{{ row.loc.name }}">
                   Training
                 </label>
+                {% if auto_scheduler_available %}
                 <label class="wc-auto-toggle" title="Include this work center when automatic scheduling runs">
                   <input type="checkbox" class="wc-auto-cb" data-loc="{{ row.loc.name }}"
                          {% if row.loc.name in auto_schedule_enabled_wc_names %}checked{% endif %}>
                   Auto
                 </label>
+                {% endif %}
               </div>
               <div class="sub">
                 <span class="ops-range">min {{ row.min_ops }} · max {{ row.max_ops_label }}</span>

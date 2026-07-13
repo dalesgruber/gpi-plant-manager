@@ -782,25 +782,9 @@ def staffing_page(
     except Exception:
         log.exception("Could not load auto-schedule work-center settings for %s", d)
         enabled_auto_work_centers = []
-    # If the day has no saved assignments, pre-fill from per-work-center defaults.
-    seeded_from_defaults = False
-    if not sched.assignments:
-        seeded: dict[str, list[str]] = {}
-        for loc in staffing.LOCATIONS:
-            dp = work_centers_store.default_people(loc)
-            if dp:
-                seeded[loc.name] = list(dp)
-        if not seeded:  # fallback for first-run: legacy CSV defaults
-            seeded = staffing.default_assignments()
-        sched.assignments = _smart_defaults_for_day(
-            d,
-            roster,
-            seeded,
-            time_off_entries,
-            enabled_work_centers=enabled_auto_work_centers,
-            assignment_sources=sched.assignment_sources,
-        )
-        seeded_from_defaults = True
+    # New schedules intentionally start blank. Automatic scheduling remains an
+    # explicit action, and Saturday schedules are manual-only in the UI.
+    auto_scheduler_available = d.weekday() != 5
 
     # Now that the schedule is in hand, kick off attendance in parallel
     # with our render-prep work below.
@@ -894,11 +878,7 @@ def staffing_page(
         publish_blocked=publish_blocked,
     )
     raw_defaults_by_loc = bay_model.get("defaults_by_loc") or {}
-    if seeded_from_defaults:
-        smart_defaults_by_loc = {k: list(v) for k, v in sched.assignments.items()}
-        for loc_name, names in raw_defaults_by_loc.items():
-            smart_defaults_by_loc.setdefault(loc_name, list(names))
-    else:
+    if sched.assignments and auto_scheduler_available:
         # A saved day keeps its stored mode so the empty-slot fill hints agree
         # with the reason badges/warnings (which also use sched.rotation_mode).
         smart_defaults_by_loc = _smart_defaults_for_day(
@@ -910,6 +890,8 @@ def staffing_page(
             enabled_work_centers=enabled_auto_work_centers,
             assignment_sources=sched.assignment_sources,
         )
+    else:
+        smart_defaults_by_loc = {}
 
     eff_start = shift_config.configured_shift_start_for(d)
     eff_end   = shift_config.configured_shift_end_for(d)
@@ -977,6 +959,8 @@ def staffing_page(
                 "rotation_mode_help": _rotation_mode_help(
                     recycled_ctx["recycled_rotation_mode"]
                 ),
+                "sched": sched,
+                "auto_scheduler_available": auto_scheduler_available,
                 "auto_schedule_enabled_wc_names": enabled_auto_work_centers,
                 "auto_schedule_available_wc_names": [loc.name for loc in staffing.LOCATIONS],
                 "recycled_wc_names": _recycled_wc_names(),

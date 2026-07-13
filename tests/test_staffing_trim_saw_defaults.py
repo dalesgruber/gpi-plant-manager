@@ -36,7 +36,7 @@ def test_staffing_template_exposes_smart_defaults():
     assert '"Smart"' in rendered
 
 
-def test_staffing_page_seeds_empty_day_with_smart_defaults(monkeypatch):
+def test_staffing_page_leaves_empty_day_unseeded(monkeypatch):
     from zira_dashboard import cert_lookup
     from zira_dashboard import staffing as staffing_mod, staffing_view
     from zira_dashboard.routes import staffing as staffing_routes
@@ -113,8 +113,8 @@ def test_staffing_page_seeds_empty_day_with_smart_defaults(monkeypatch):
 
     staffing_routes.staffing_page(request=object(), day=None, publish_blocked=0, view="draft")
 
-    assert captured["assignments"] == {"Trim Saw 1": ["Smart"]}
-    assert captured["context"]["smart_defaults_by_loc"]["Trim Saw 1"] == ["Smart"]
+    assert captured["assignments"] == {}
+    assert captured["context"]["smart_defaults_by_loc"] == {}
 
 
 def test_staffing_page_preserves_saved_manual_trim_saw_assignments(monkeypatch):

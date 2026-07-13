@@ -1418,6 +1418,32 @@ def test_blank_staffing_day_context_defaults_to_normal(monkeypatch):
     assert ctx["active_training_blocks"] == []
 
 
+def test_blank_staffing_day_stays_empty_without_default_or_smart_seed(monkeypatch):
+    calls = []
+    ctx = _render_staffing_page(
+        monkeypatch,
+        smart_defaults=lambda *args, **kwargs: calls.append(args) or {"Repair 1": ["Unexpected"]},
+    )
+
+    assert calls == []
+    assert ctx["sched"].assignments == {}
+    assert ctx["auto_scheduler_available"] is True
+
+
+def test_saturday_staffing_context_is_manual_only(monkeypatch):
+    ctx = _render_staffing_page(monkeypatch, day=date(2026, 7, 18))
+
+    assert ctx["auto_scheduler_available"] is False
+
+
+def test_staffing_template_gates_auto_controls_for_saturday():
+    html = (ROOT / "src/zira_dashboard/templates/staffing.html").read_text()
+
+    assert "{% if auto_scheduler_available %}" in html
+    assert 'class="rotation-controls"' in html
+    assert 'class="wc-auto-cb"' in html
+
+
 def test_saved_staffing_day_context_hydrates_stored_mode(monkeypatch):
     sched = staffing.Schedule(
         day=TARGET_DAY, published=False,
