@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import _http_cache, app_settings, attendance, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
-from ..auto_schedule_capacity import AutoCapacity, analyze_auto_capacity, analyze_auto_expansion
+from ..auto_schedule_capacity import analyze_auto_expansion
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
 from ..staffing_attendance import _late_emp_ids, _safe_attendance, _safe_time_off_entries
@@ -285,137 +285,6 @@ def _protected_locks(
     return locks
 
 
-def _auto_capacity_for_day(
-    *, d: date, enabled_work_centers, roster, assignments, assignment_sources, time_off_entries,
-    block_effects=None, strict_default_reads: bool = False,
-) -> AutoCapacity:
-    """Return the Auto-center crew capacity for one actual schedule day.
-
-    Only active, non-reserve people who are neither absent nor protected by a
-    manual/default lock remain available to Auto.  Locks on enabled centers
-    reduce that center's required crew; locks elsewhere still reserve their
-    person from the Auto candidate pool.
-    """
-    enabled = _ordered_work_center_names(enabled_work_centers)
-    if block_effects is None:
-        block_effects = _block_effects_for_day(
-            d,
-            time_off_entries,
-            assignments=assignments,
-            assignment_sources=assignment_sources,
-        )
-    assignments, assignment_sources = _capacity_inputs_with_block_effects(
-        assignments,
-        assignment_sources,
-        block_effects,
-        enabled,
-        strict_default_reads=strict_default_reads,
-    )
-    locks = _protected_locks(
-        assignment_sources,
-        assignments,
-        allowed_centers=None,
-        strict_default_reads=strict_default_reads,
-    )
-    locked_names = {name for names in locks.values() for name in names}
-    assigned_outside_auto = {
-        str(name).strip()
-        for center, names in (assignments or {}).items()
-        if center not in enabled
-        for name in (names or [])
-        if str(name or "").strip()
-    }
-    unavailable = rotation_suggestions._full_day_time_off_names(time_off_entries or [])
-    people_by_name = {person.name: person for person in roster}
-
-    def _eligible_lock(name: str) -> bool:
-        person = people_by_name.get(name)
-        return bool(
-            person
-            and person.active
-            and not person.reserve
-            and name not in unavailable
-        )
-
-    available = [
-        person
-        for person in _roster_minus_full_day_off(roster, time_off_entries)
-        if (
-            person.active
-            and not person.reserve
-            and person.name not in locked_names
-            and person.name not in assigned_outside_auto
-        )
-    ]
-    minimums = {
-        loc.name: _effective_minimum(loc)
-        for loc in staffing.LOCATIONS if loc.name in enabled
-    }
-    manual_counts = {
-        center: len({name for name in locks.get(center, []) if _eligible_lock(name)})
-        for center in enabled
-    }
-    return analyze_auto_capacity(
-        enabled_centers=enabled,
-        minimum_by_center=minimums,
-        manual_count_by_center=manual_counts,
-        available_people=len(available),
-        center_order=_location_order(),
-    )
-
-
-def _capacity_inputs_with_block_effects(
-    base_assignments,
-    assignment_sources,
-    block_effects,
-    enabled_work_centers,
-    *,
-    strict_default_reads: bool = False,
-):
-    """Represent protected trainees as one occupied Auto slot for capacity.
-
-    Training effects are transient and therefore absent from the saved schedule
-    source map.  Copy them into a capacity-only manual map: this removes each
-    trainee from the available roster and lets ``analyze_auto_capacity`` count
-    the trainee against exactly one center's effective minimum.  The actual
-    engine still owns center selection and level-3 partner placement.
-    """
-    assignments = {wc: list(names or []) for wc, names in (base_assignments or {}).items()}
-    sources = {wc: dict(values or {}) for wc, values in (assignment_sources or {}).items()}
-    enabled = _ordered_work_center_names(enabled_work_centers)
-    groups, _required_skills = _auto_group_maps(enabled)
-    protected = _protected_locks(
-        sources,
-        assignments,
-        allowed_centers=enabled,
-        strict_default_reads=strict_default_reads,
-    )
-
-    for effect in block_effects or ():
-        for group, names in (getattr(effect, "locked_people", None) or {}).items():
-            centers = list(groups.get(group, ()))
-            for raw_name in names or ():
-                name = str(raw_name or "").strip()
-                if not name or any(name in existing for existing in protected.values()):
-                    continue
-                # Spread trainees across the least-filled eligible center so
-                # each can satisfy an outstanding effective-minimum slot.
-                center = min(
-                    centers,
-                    key=lambda candidate: (
-                        len(protected.get(candidate, [])),
-                        _location_order().get(candidate, 1_000_000),
-                    ),
-                    default=None,
-                )
-                if center is None:
-                    continue
-                assignments.setdefault(center, []).append(name)
-                sources.setdefault(center, {})[name] = "manual"
-                protected.setdefault(center, []).append(name)
-    return assignments, sources
-
-
 def _absence_by_day_for_block(block, d: date):
     """Full-day-off names per date across the block's bounded planning window.
 
@@ -510,7 +379,6 @@ def _gather_recycled_inputs(d: date, time_off_entries, *, assignments=None, assi
 def _append_auto_expansion_warning(
     *,
     suggestion,
-    capacity,
     day,
     mode,
     available_roster,
@@ -523,16 +391,14 @@ def _append_auto_expansion_warning(
 ):
     """Append an expansion hint only when a counterfactual engine run proves it.
 
-    The numeric capacity helper selects the deterministic smallest set of
-    disabled Auto centers.  Its result is merely a candidate action: the same
-    pure scheduling engine must then place every currently available Auto
-    candidate with exactly those centers enabled.  This deliberately withholds
-    advice when qualification, preference, pairing, or training constraints
-    are also limiting the roster.
+    The same pure scheduling engine must place every currently available Auto
+    candidate with the proof centers enabled. This deliberately withholds
+    advice when coverage, qualification, preference, pairing, or training
+    constraints are also limiting the roster.
     """
+    if suggestion.issues:
+        return suggestion
     try:
-        if capacity.shortage:
-            return suggestion
         enabled = set(_ordered_work_center_names(enabled_work_centers))
         locks = _protected_locks(assignment_sources, base_assignments, allowed_centers=None)
         locked_names = {name for names in locks.values() for name in names}
@@ -634,7 +500,17 @@ def _append_auto_expansion_warning(
             for name, source in sources.items()
             if source == rotation_suggestions.GENERATED_SOURCE
         }
-        if not candidate_names.issubset(proof_generated):
+        proof_overrides = {
+            name
+            for reason_codes in proof.reason_codes.values()
+            for name, reason_code in reason_codes.items()
+            if reason_code == "preference_override"
+        }
+        if (
+            proof.issues
+            or not candidate_names.issubset(proof_generated)
+            or candidate_names & proof_overrides
+        ):
             return suggestion
 
         noun = "center" if expansion.centers_to_enable == 1 else "centers"
@@ -675,15 +551,6 @@ def _recycled_suggestion_for_day(
             )
         )
         group_locations, group_required_skills = _auto_group_maps(enabled)
-        capacity = _auto_capacity_for_day(
-            d=d,
-            enabled_work_centers=enabled,
-            roster=roster,
-            assignments=base_assignments,
-            assignment_sources=assignment_sources,
-            time_off_entries=time_off_entries,
-            block_effects=block_effects,
-        )
         center_minimums = {
             loc.name: _effective_minimum(loc)
             for loc in staffing.LOCATIONS if loc.name in enabled
@@ -708,17 +575,10 @@ def _recycled_suggestion_for_day(
             training_cap=_RECYCLED_TRAINING_CAP,
             center_minimums=center_minimums,
             center_capacities=center_capacities,
-            runnable_centers=capacity.runnable_centers,
+            runnable_centers=enabled,
         )
-        if capacity.shortage:
-            warning = (
-                f"Auto centers need {capacity.shortage} more people to run. "
-                f"Turn off at least {capacity.centers_to_disable} work center(s)."
-            )
-            suggestion = replace(suggestion, warnings=tuple(suggestion.warnings) + (warning,))
         suggestion = _append_auto_expansion_warning(
             suggestion=suggestion,
-            capacity=capacity,
             day=d,
             mode=mode,
             available_roster=available,
@@ -786,7 +646,9 @@ def _recycled_context_for_day(
     ctx = {
         "recycled_rotation_mode": mode or "normal",
         "rotation_reasons": {},
+        "rotation_reason_codes": {},
         "rotation_warnings": [],
+        "rotation_issues": [],
         "active_training_blocks": [],
     }
     try:
@@ -805,15 +667,6 @@ def _recycled_context_for_day(
             )
         )
         group_locations, group_required_skills = _auto_group_maps(enabled)
-        capacity = _auto_capacity_for_day(
-            d=d,
-            enabled_work_centers=enabled,
-            roster=roster,
-            assignments=base_assignments,
-            assignment_sources=assignment_sources,
-            time_off_entries=time_off_entries,
-            block_effects=block_effects,
-        )
         center_minimums = {
             loc.name: _effective_minimum(loc)
             for loc in staffing.LOCATIONS if loc.name in enabled
@@ -838,18 +691,11 @@ def _recycled_context_for_day(
             training_cap=_RECYCLED_TRAINING_CAP,
             center_minimums=center_minimums,
             center_capacities=center_capacities,
-            runnable_centers=capacity.runnable_centers,
+            runnable_centers=enabled,
         )
-        if capacity.shortage:
-            warning = (
-                f"Auto centers need {capacity.shortage} more people to run. "
-                f"Turn off at least {capacity.centers_to_disable} work center(s)."
-            )
-            suggestion = replace(suggestion, warnings=tuple(suggestion.warnings) + (warning,))
         if d.weekday() != 5:
             suggestion = _append_auto_expansion_warning(
                 suggestion=suggestion,
-                capacity=capacity,
                 day=d,
                 mode=mode,
                 available_roster=available,
@@ -861,7 +707,11 @@ def _recycled_context_for_day(
                 assignment_sources=assignment_sources,
             )
         ctx["rotation_reasons"] = {wc: dict(r) for wc, r in suggestion.reasons.items()}
+        ctx["rotation_reason_codes"] = {
+            wc: dict(values) for wc, values in suggestion.reason_codes.items()
+        }
         ctx["rotation_warnings"] = list(suggestion.warnings)
+        ctx["rotation_issues"] = [issue.to_dict() for issue in suggestion.issues]
         ctx["active_training_blocks"] = _training_blocks_context(active_blocks, d)
     except Exception:
         log.exception("Recycled context failed for %s; degrading to empty defaults", d)

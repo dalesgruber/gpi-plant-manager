@@ -17,8 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.datastructures import FormData
 
-from zira_dashboard import staffing
-from zira_dashboard.auto_schedule_capacity import AutoCapacity
+from zira_dashboard import rotation_suggestions, schedule_solver, staffing
 
 
 TARGET_DAY = date(2026, 7, 14)
@@ -504,6 +503,74 @@ def test_rebuild_generates_and_reports_reasons(monkeypatch):
     assert "green coverage" not in str(body["reasons"])
 
 
+def test_rebuild_persists_safe_partial_assignments_and_reports_coverage(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    saved = []
+    issue = schedule_solver.CoverageIssue(
+        center="Dismantler 1",
+        group="Dismantler",
+        code="training_required",
+        message="Dismantler 1 could not be staffed. Training is required for Dismantler.",
+    )
+    suggestion = rotation_suggestions.RecycledSuggestion(
+        assignments={"Repair 1": ["Qualified"]},
+        sources={"Repair 1": {"Qualified": "generated"}},
+        reasons={"Repair 1": {"Qualified": "Assigned to meet minimum coverage."}},
+        warnings=(issue.message,),
+        group_locations={
+            "Repair": ("Repair 1",),
+            "Dismantler": ("Dismantler 1",),
+        },
+        reason_codes={"Repair 1": {"Qualified": "minimum_coverage"}},
+        staffed_centers=("Repair 1",),
+        unresolved_centers=("Dismantler 1",),
+        issues=(issue,),
+    )
+    sched = staffing.Schedule(
+        day=TARGET_DAY,
+        assignments={"Dismantler 1": ["Stale Generated"]},
+        assignment_sources={"Dismantler 1": {"Stale Generated": "generated"}},
+    )
+
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_enabled_auto_work_centers",
+        lambda _d: {"Repair 1", "Dismantler 1"},
+    )
+    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "default_people", lambda _loc: [])
+    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda _d: [])
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_recycled_suggestion_for_day",
+        lambda *args, **kwargs: suggestion,
+    )
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Qualified", 3)])
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda _d: sched)
+    monkeypatch.setattr(rotations.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+
+    response = client.post(
+        "/api/rotations/rebuild",
+        json={"day": TARGET_DAY.isoformat(), "mode": "normal"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["coverage"] == {
+        "staffed_centers": ["Repair 1"],
+        "unresolved_centers": ["Dismantler 1"],
+        "issues": [issue.to_dict()],
+    }
+    assert response.json()["assignments"]["Repair 1"] == ["Qualified"]
+    assert "Dismantler 1" not in response.json()["assignments"]
+    assert response.json()["sources"] == {
+        "Repair 1": {"Qualified": "generated"},
+    }
+    assert saved[-1].assignments == {"Repair 1": ["Qualified"]}
+    assert saved[-1].assignment_sources == {
+        "Repair 1": {"Qualified": "generated"},
+    }
+
+
 def test_rebuild_warns_how_many_auto_centers_to_enable_for_unused_people(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     staffing_route = _stub_recommendation_inputs(monkeypatch)
@@ -817,9 +884,10 @@ def test_auto_work_centers_endpoint_saves_global_setting(monkeypatch):
     monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
     monkeypatch.setattr(
         rotations.staffing_route,
-        "_auto_capacity_for_day",
-        lambda **kwargs: AutoCapacity(0, 0, 0, 0, (), ()),
+        "_recycled_suggestion_for_day",
+        lambda *args, **kwargs: rotation_suggestions.RecycledSuggestion({}, {}, {}, ()),
     )
+    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "default_people", lambda _loc: [])
     monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: invalidated.append("today"))
     monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: invalidated.append("stable"))
 
@@ -836,82 +904,71 @@ def test_auto_work_centers_endpoint_saves_global_setting(monkeypatch):
     assert resp.json() == {
         "ok": True,
         "enabled_work_centers": ["Repair 1", "Junior #1"],
-        "capacity": {
-            "required_people": 0,
-            "available_people": 0,
-            "shortage": 0,
-            "centers_to_disable": 0,
-            "runnable_centers": [],
-            "blocked_centers": [],
+        "warnings": [],
+        "coverage": {
+            "staffed_centers": [],
+            "unresolved_centers": [],
+            "issues": [],
         },
     }
     assert saved[rotations.staffing_route.AUTO_SCHEDULE_WC_SETTING] == ["Repair 1", "Junior #1"]
     assert invalidated == ["today", "stable"]
 
 
-def test_auto_center_endpoint_rejects_unsafe_enable_without_replacement(monkeypatch):
-    from zira_dashboard import scheduler_time_off
-
-    client, rotations = _rotations_client(monkeypatch)
-    monkeypatch.setattr(
-        rotations.staffing_route,
-        "_auto_capacity_for_day",
-        lambda **kwargs: AutoCapacity(4, 2, 2, 1, ("Repair 1",), ("Hand Build #2",)),
-    )
-    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [])
-    monkeypatch.setattr(
-        rotations.staffing,
-        "load_schedule",
-        lambda d: staffing.Schedule(day=d),
-    )
-    monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
-
-    resp = client.post("/api/rotations/auto-work-centers", json={
-        "day": "2026-07-14",
-        "work_centers": ["Repair 1", "Hand Build #2"],
-        "turn_off": [],
-    })
-
-    assert resp.status_code == 409
-    assert resp.json()["required_disable_count"] == 1
-    assert "need 2 more people" in resp.json()["error"]
-
-
-def test_auto_center_endpoint_accepts_sufficient_replacement(monkeypatch):
+def test_auto_center_selection_is_saved_and_reports_unresolved_coverage(monkeypatch):
     from zira_dashboard import scheduler_time_off
 
     client, rotations = _rotations_client(monkeypatch)
     saved = []
+    issue = schedule_solver.CoverageIssue(
+        center="Dismantler 1",
+        group="Dismantler",
+        code="training_required",
+        message="Dismantler 1 could not be staffed. Training is required for Dismantler.",
+    )
     monkeypatch.setattr(
         rotations.staffing_route,
-        "_auto_capacity_for_day",
-        lambda **kwargs: AutoCapacity(2, 2, 0, 0, ("Hand Build #2",), ()),
+        "_recycled_suggestion_for_day",
+        lambda *args, **kwargs: rotation_suggestions.RecycledSuggestion(
+            assignments={"Repair 1": ["Qualified"]},
+            sources={"Repair 1": {"Qualified": "generated"}},
+            reasons={},
+            warnings=(issue.message,),
+            issues=(issue,),
+            staffed_centers=("Repair 1",),
+            unresolved_centers=("Dismantler 1",),
+        ),
     )
     monkeypatch.setattr(
         rotations.staffing_route,
         "_save_enabled_auto_work_centers",
-        lambda names: saved.append(names) or names,
+        lambda centers: saved.append(tuple(centers)) or list(centers),
     )
-    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [])
-    monkeypatch.setattr(
-        rotations.staffing,
-        "load_schedule",
-        lambda d: staffing.Schedule(day=d),
-    )
+    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "default_people", lambda _loc: [])
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Qualified", 3)])
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda d: staffing.Schedule(day=d))
     monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
 
     resp = client.post("/api/rotations/auto-work-centers", json={
         "day": "2026-07-14",
-        "work_centers": ["Hand Build #2"],
-        "turn_off": ["Repair 1"],
+        "work_centers": ["Repair 1", "Dismantler 1"],
+        "turn_off": [],
     })
 
     assert resp.status_code == 200
-    assert saved == [["Hand Build #2"]]
+    assert saved[-1] == ("Repair 1", "Dismantler 1")
+    assert resp.json()["coverage"] == {
+        "staffed_centers": ["Repair 1"],
+        "unresolved_centers": ["Dismantler 1"],
+        "issues": [issue.to_dict()],
+    }
 
 
 def test_auto_center_endpoint_fails_closed_when_minimum_lookup_fails(monkeypatch):
+    from zira_dashboard import scheduler_time_off
+
     client, rotations = _rotations_client(monkeypatch, raise_server_exceptions=False)
+    _stub_recommendation_inputs(monkeypatch)
     saved = []
     monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Green", 3, "Hand Build")])
     monkeypatch.setattr(
@@ -919,7 +976,7 @@ def test_auto_center_endpoint_fails_closed_when_minimum_lookup_fails(monkeypatch
         "load_schedule",
         lambda d: staffing.Schedule(day=d),
     )
-    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda d: [])
+    monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
     monkeypatch.setattr(
         rotations.staffing_route.work_centers_store,
         "min_ops",
@@ -942,7 +999,10 @@ def test_auto_center_endpoint_fails_closed_when_minimum_lookup_fails(monkeypatch
 
 
 def test_auto_center_endpoint_fails_closed_when_training_effect_read_fails(monkeypatch):
+    from zira_dashboard import scheduler_time_off
+
     client, rotations = _rotations_client(monkeypatch, raise_server_exceptions=False)
+    _stub_recommendation_inputs(monkeypatch)
     saved = []
     invalidated = []
     monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Green", 3)])
@@ -951,11 +1011,11 @@ def test_auto_center_endpoint_fails_closed_when_training_effect_read_fails(monke
         "load_schedule",
         lambda d: staffing.Schedule(day=d),
     )
-    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda d: [])
+    monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
     monkeypatch.setattr(
-        rotations.staffing_route,
-        "_block_effects_for_day",
-        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("blocks unavailable")),
+        rotations.staffing_route.rotation_store,
+        "active_blocks_for_day",
+        lambda _d: (_ for _ in ()).throw(RuntimeError("blocks unavailable")),
     )
     monkeypatch.setattr(rotations.staffing_route.work_centers_store, "min_ops", lambda loc: loc.min_ops)
     monkeypatch.setattr(
@@ -996,16 +1056,10 @@ def test_auto_center_endpoint_fails_closed_when_time_off_read_fails(monkeypatch)
         "load_schedule",
         lambda d: staffing.Schedule(day=d),
     )
-    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda d: [])
     monkeypatch.setattr(
         scheduler_time_off,
         "time_off_entries_for_day",
         lambda d: (_ for _ in ()).throw(RuntimeError("time off unavailable")),
-    )
-    monkeypatch.setattr(
-        rotations.staffing_route,
-        "_auto_capacity_for_day",
-        lambda **kwargs: AutoCapacity(1, 1, 0, 0, ("Repair 1",), ()),
     )
     monkeypatch.setattr(
         rotations.staffing_route,
@@ -1034,10 +1088,7 @@ def test_auto_center_endpoint_fails_closed_when_default_read_fails(monkeypatch):
         "load_schedule",
         lambda d: staffing.Schedule(day=d),
     )
-    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda d: [])
     monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
-    monkeypatch.setattr(rotations.staffing_route, "_block_effects_for_day", lambda *args, **kwargs: [])
-    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "min_ops", lambda loc: loc.min_ops)
     monkeypatch.setattr(
         rotations.staffing_route.work_centers_store,
         "default_people",
@@ -1205,111 +1256,6 @@ def test_recycled_history_prefers_published_snapshot():
 # --------------------------------------------------------------------------- #
 # Staffing orchestration helpers
 # --------------------------------------------------------------------------- #
-
-
-def test_capacity_for_day_uses_effective_minimum_and_excludes_absent_and_manual(monkeypatch):
-    staffing_route = _stub_recommendation_inputs(monkeypatch)
-    monkeypatch.setattr(
-        staffing_route.work_centers_store,
-        "min_ops",
-        lambda loc: 2 if loc.name == "Hand Build #2" else 1,
-    )
-    roster = [
-        staffing.Person(name="Manual", skills={"Hand Build": 3}),
-        staffing.Person(name="Off", skills={"Hand Build": 3}),
-        staffing.Person(name="Available", skills={"Hand Build": 3}),
-    ]
-
-    result = staffing_route._auto_capacity_for_day(
-        d=TARGET_DAY,
-        enabled_work_centers={"Hand Build #2"},
-        roster=roster,
-        assignments={"Repair 1": ["Manual"]},
-        assignment_sources={"Repair 1": {"Manual": "manual"}},
-        time_off_entries=[{"name": "Off", "hours": None}],
-    )
-
-    assert result.available_people == 1
-    assert result.required_people == 2
-    assert result.shortage == 1
-
-
-def test_capacity_for_day_excludes_generated_assignment_outside_auto_centers(monkeypatch):
-    staffing_route = _stub_recommendation_inputs(monkeypatch)
-    monkeypatch.setattr(staffing_route.work_centers_store, "min_ops", lambda loc: loc.min_ops)
-
-    result = staffing_route._auto_capacity_for_day(
-        d=TARGET_DAY,
-        enabled_work_centers={"Hand Build #2"},
-        roster=[
-            staffing.Person(name="Auto Candidate", skills={"Hand Build": 3}),
-            staffing.Person(name="Generated Elsewhere", skills={"Hand Build": 3}),
-        ],
-        assignments={"Junior #1": ["Generated Elsewhere"]},
-        assignment_sources={"Junior #1": {"Generated Elsewhere": "generated"}},
-        time_off_entries=[],
-        block_effects=(),
-    )
-
-    assert result.available_people == 1
-    assert result.required_people == 2
-    assert result.shortage == 1
-
-
-@pytest.mark.parametrize(
-    "lock_kind,locked_person,time_off",
-    [
-        ("manual", _person("Inactive", 3, "Hand Build", active=False), []),
-        ("manual", _person("Reserve", 3, "Hand Build", reserve=True), []),
-        ("manual", _person("Absent", 3, "Hand Build"), [{"name": "Absent", "hours": None}]),
-        ("default", _person("Default Absent", 3, "Hand Build"), [{"name": "Default Absent", "hours": None}]),
-        (
-            "training",
-            _person("Trainee Absent", 0, "Hand Build"),
-            [{"name": "Trainee Absent", "hours": None}],
-        ),
-    ],
-)
-def test_capacity_for_day_nonworking_locks_do_not_reduce_minimum(
-    monkeypatch, lock_kind, locked_person, time_off,
-):
-    from zira_dashboard.routes import staffing as staffing_route
-
-    _stub_recommendation_inputs(monkeypatch)
-    monkeypatch.setattr(staffing_route.work_centers_store, "min_ops", lambda loc: loc.min_ops)
-    if lock_kind == "default":
-        monkeypatch.setattr(
-            staffing_route.work_centers_store,
-            "default_people",
-            lambda loc: [locked_person.name] if loc.name == "Hand Build #2" else [],
-        )
-        assignments, sources = {}, {}
-        block_effects = ()
-    elif lock_kind == "training":
-        assignments, sources = {}, {}
-        block_effects = (
-            staffing_route.rotation_training.BlockEffect(
-                locked_people={"Hand Build": [locked_person.name]},
-            ),
-        )
-    else:
-        assignments = {"Hand Build #2": [locked_person.name]}
-        sources = {"Hand Build #2": {locked_person.name: "manual"}}
-        block_effects = ()
-
-    result = staffing_route._auto_capacity_for_day(
-        d=TARGET_DAY,
-        enabled_work_centers={"Hand Build #2"},
-        roster=[locked_person, _person("Available", 3, "Hand Build")],
-        assignments=assignments,
-        assignment_sources=sources,
-        time_off_entries=time_off,
-        block_effects=block_effects,
-    )
-
-    assert result.available_people == 1
-    assert result.required_people == 2
-    assert result.shortage == 1
 
 
 def test_auto_group_maps_keep_hand_build_centers_under_one_target():
@@ -1493,12 +1439,22 @@ def test_recycled_context_surfaces_reasons_warnings_blocks(monkeypatch):
     monkeypatch.setattr(staffing_route, "_absence_by_day_for_block", lambda block, d: {})
 
     def fake_engine(**kwargs):
+        issue = schedule_solver.CoverageIssue(
+            center="Dismantler 1",
+            group="Dismantler",
+            code="training_required",
+            message="Dismantler 1 needs training.",
+        )
         return rotation_suggestions.RecycledSuggestion(
             assignments={"Repair 1": ["Green"]},
             sources={"Repair 1": {"Green": "generated"}},
             reasons={},
             warnings=("Trim Saw 1 short",),
             group_locations={"Repair": ("Repair 1",)},
+            reason_codes={"Repair 1": {"Green": "minimum_coverage"}},
+            staffed_centers=("Repair 1",),
+            unresolved_centers=("Dismantler 1",),
+            issues=(issue,),
         )
 
     monkeypatch.setattr(rotation_suggestions, "suggest_recycled_assignments", fake_engine)
@@ -1510,6 +1466,16 @@ def test_recycled_context_surfaces_reasons_warnings_blocks(monkeypatch):
 
     assert ctx["recycled_rotation_mode"] == "training"
     assert ctx["rotation_reasons"] == {}
+    assert ctx["rotation_reason_codes"] == {
+        "Repair 1": {"Green": "minimum_coverage"},
+    }
+    assert ctx["rotation_issues"] == [{
+        "center": "Dismantler 1",
+        "group": "Dismantler",
+        "code": "training_required",
+        "message": "Dismantler 1 needs training.",
+        "rejections": [],
+    }]
     assert "Trim Saw 1 short" in ctx["rotation_warnings"]
     assert len(ctx["active_training_blocks"]) == 1
     tb = ctx["active_training_blocks"][0]
