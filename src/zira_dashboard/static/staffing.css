@@ -636,7 +636,7 @@
 
   /* ---------- Recycled rotation controls (mode goal + reasons + warnings) ---------- */
   .rotation-controls {
-    display: flex; flex-wrap: wrap; align-items: flex-start;
+    display: flex; flex-wrap: wrap; align-items: center;
     gap: 0.6rem 1rem;
     margin: 0 0 0.85rem;
   }
@@ -646,9 +646,9 @@
     padding: 0.4rem 0.7rem; margin: 0; min-width: 0;
     background: var(--panel-2);
   }
-  .rotation-mode legend {
-    padding: 0 0.35rem; font-size: 0.68rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted);
+  .rotation-mode-label {
+    color: var(--muted); font-size: 0.68rem; font-weight: 700;
+    letter-spacing: 0.6px; text-transform: uppercase; white-space: nowrap;
   }
   .rotation-mode-btn {
     background: var(--panel); color: var(--muted);
@@ -661,6 +661,10 @@
     background: var(--accent-dim); color: var(--accent); border-color: var(--accent);
   }
   .rotation-mode-btn:disabled { opacity: 0.6; cursor: progress; }
+  .rotation-mode-icon {
+    min-width: 2.4rem; padding: 0.3rem 0.45rem;
+    font-size: 1rem; line-height: 1;
+  }
   .rotation-reset-btn {
     background: transparent; color: var(--muted);
     border: 1px solid var(--border); border-radius: 6px;
@@ -669,10 +673,9 @@
   }
   .rotation-reset-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--muted); }
   .rotation-reset-btn:disabled { opacity: 0.6; cursor: progress; }
-  /* Override the global centered .hint for the in-fieldset help line. */
+  /* Override the global centered .hint for the inline help text. */
   .rotation-mode-help.hint {
-    flex-basis: 100%;
-    margin: 0.15rem 0 0; padding: 0;
+    flex: 1 1 15rem; margin: 0; min-width: 0; padding: 0;
     text-align: left; font-style: italic;
   }
   .rotation-warning {

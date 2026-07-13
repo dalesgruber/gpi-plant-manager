@@ -209,15 +209,21 @@
     {# Auto-scheduler controls. The mode buttons set the goal for the enabled
        work centers; manual/default locks always survive. #}
     <div class="rotation-controls" data-day="{{ day }}">
-      <fieldset class="rotation-mode" aria-label="Schedule goal">
-        <legend>Schedule goal</legend>
-        <button type="button" class="rotation-mode-btn {% if recycled_rotation_mode == 'optimized' %}active{% endif %}" data-rotation-mode="optimized" aria-pressed="{{ (recycled_rotation_mode == 'optimized')|tojson }}">Optimized</button>
-        <button type="button" class="rotation-mode-btn {% if recycled_rotation_mode == 'normal' %}active{% endif %}" data-rotation-mode="normal" aria-pressed="{{ (recycled_rotation_mode == 'normal')|tojson }}">Normal</button>
-        <button type="button" class="rotation-mode-btn {% if recycled_rotation_mode == 'training' %}active{% endif %}" data-rotation-mode="training" aria-pressed="{{ (recycled_rotation_mode == 'training')|tojson }}">Training</button>
+      <div class="rotation-mode" role="group" aria-labelledby="rotation-mode-label">
+        <span class="rotation-mode-label" id="rotation-mode-label">Schedule goal</span>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'optimized' %}active{% endif %}"
+                data-rotation-mode="optimized" aria-pressed="{{ (recycled_rotation_mode == 'optimized')|tojson }}"
+                aria-label="Optimized schedule goal" title="Optimized: strongest coverage">⚡⚡⚡</button>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'normal' %}active{% endif %}"
+                data-rotation-mode="normal" aria-pressed="{{ (recycled_rotation_mode == 'normal')|tojson }}"
+                aria-label="Normal schedule goal" title="Normal: balanced coverage and fair rotation">⚖</button>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'training' %}active{% endif %}"
+                data-rotation-mode="training" aria-pressed="{{ (recycled_rotation_mode == 'training')|tojson }}"
+                aria-label="Training schedule goal" title="Training: develop operator skills">🎓</button>
         <button type="button" class="rotation-reset-btn" id="rotation-reset-btn"
                 title="Regenerate enabled auto work centers in the current goal, keeping manual and default locks">Reset auto assignments</button>
         <p class="hint rotation-mode-help" id="rotation-mode-help">{{ rotation_mode_help }}</p>
-      </fieldset>
+      </div>
       <div class="rotation-warning" id="rotation-warnings" role="alert"{% if not rotation_warnings %} hidden{% endif %}>
         {% if rotation_warnings %}<ul>{% for w in rotation_warnings %}<li>{{ w }}</li>{% endfor %}</ul>{% endif %}
       </div>

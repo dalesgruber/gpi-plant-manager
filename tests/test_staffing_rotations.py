@@ -614,6 +614,15 @@ def test_staffing_has_rotation_mode_controls_and_reason_data():
     assert 'data-rotation-mode="optimized"' in html
     assert 'data-rotation-mode="normal"' in html
     assert 'data-rotation-mode="training"' in html
+    assert 'aria-label="Optimized schedule goal"' in html
+    assert 'aria-label="Normal schedule goal"' in html
+    assert 'aria-label="Training schedule goal"' in html
+    assert 'title="Optimized: strongest coverage"' in html
+    assert 'title="Normal: balanced coverage and fair rotation"' in html
+    assert 'title="Training: develop operator skills"' in html
+    assert '⚡⚡⚡' in html
+    assert '⚖' in html
+    assert '🎓' in html
     assert 'class="wc-auto-cb"' in html
     assert "rotation_reasons" in html
     assert "/api/rotations/rebuild" in js
