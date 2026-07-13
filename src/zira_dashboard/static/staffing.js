@@ -1496,6 +1496,12 @@
       warnBox.hidden = list.childElementCount === 0;
     }
 
+    function renderCoverageFailure(message) {
+      const warnings = [...(window.ROTATION_WARNINGS || [])];
+      if (!warnings.includes(message)) warnings.push(message);
+      renderCoverageIssues(warnings, window.ROTATION_ISSUES);
+    }
+
     function selectedAutoCenters() {
       return autoCbs.filter(cb => cb.checked).map(cb => cb.dataset.loc).filter(Boolean);
     }
@@ -1542,7 +1548,9 @@
         renderCoverageIssues(data.warnings, data.coverage?.issues || []);
         if (window.showToast) showToast('Auto work centers saved');
       } catch (err) {
-        if (window.showToast) showToast('Auto toggle failed: ' + (err.message || 'network error'), null, 'error');
+        const message = 'Auto toggle failed: ' + (err.message || 'network error');
+        renderCoverageFailure(message);
+        if (window.showToast) showToast(message, null, 'error');
       } finally {
         setAutoCentersSaving(false);
       }
@@ -1596,14 +1604,14 @@
         if (!resp.ok || !data.ok) {
           const err = (data && data.error) || ('HTTP ' + resp.status);
           // Surface the failure without wiping the grid.
-          renderCoverageIssues(['Could not rebuild the schedule: ' + err], []);
+          renderCoverageFailure('Could not rebuild the schedule: ' + err);
           if (window.showToast) showToast('Rebuild failed: ' + err, null, 'error');
           return;
         }
         setActiveMode(mode);
         applyRebuild(data);
       } catch (err) {
-        renderCoverageIssues(['Could not rebuild the schedule: ' + (err.message || 'network error')], []);
+        renderCoverageFailure('Could not rebuild the schedule: ' + (err.message || 'network error'));
         if (window.showToast) showToast('Rebuild failed — network error', null, 'error');
       } finally {
         rebuilding = false;

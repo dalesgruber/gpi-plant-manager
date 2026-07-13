@@ -9,6 +9,10 @@ def _script():
     return Path("src/zira_dashboard/static/staffing.js").read_text()
 
 
+def _style():
+    return Path("src/zira_dashboard/static/staffing.css").read_text()
+
+
 def _print_css():
     return Path("src/zira_dashboard/static/staffing-print.css").read_text()
 
@@ -171,20 +175,86 @@ def test_reset_to_defaults_reconciles_left_rail():
 def test_rotation_warning_supports_structured_coverage_issues():
     html = _template()
     js = _script()
+    renderer = js.split("function renderCoverageIssues(warnings, issues) {", 1)[1].split(
+        "function selectedAutoCenters()", 1
+    )[0]
 
-    assert 'id="rotation-warnings"' in html
+    assert 'id="rotation-warnings" role="alert"' in html
+    assert "{% if not rotation_warnings and not rotation_issues %}hidden{% endif %}" in html
     assert 'class="coverage-why"' in html
     assert "rotation_issues" in html
     assert "renderCoverageIssues" in js
     assert "ROTATION_ISSUES" in js
+    assert "list.replaceChildren();" in renderer
+    assert "document.createElement('li')" in renderer
+    assert "message.textContent = issue.message" in renderer
+    assert "reason.textContent = `${rejection.person}: ${rejection.detail}`;" in renderer
+    assert "item.textContent = warning;" in renderer
+    assert "innerHTML" not in renderer
+    assert "const issueMessages = new Set();" in renderer
+    assert "if (issueMessages.has(warning)) return;" in renderer
+    assert "warnBox.hidden = list.childElementCount === 0;" in renderer
+
+
+def test_rotation_warning_success_replaces_alert_with_authoritative_response():
+    js = _script()
+    save_auto = js.split("async function saveAutoCenters(changedCb) {", 1)[1].split(
+        "// Reconcile every enabled Auto picker's checkboxes", 1
+    )[0]
+    apply_rebuild = js.split("function applyRebuild(data) {", 1)[1].split(
+        "async function rebuild(mode)", 1
+    )[0]
+
+    call = "renderCoverageIssues(data.warnings, data.coverage?.issues || []);"
+    assert call in save_auto
+    assert call in apply_rebuild
+
+
+def test_rotation_warning_failures_preserve_current_issues_and_append_once():
+    js = _script()
+    assert "function renderCoverageFailure(message) {" in js
+    helper = js.split("function renderCoverageFailure(message) {", 1)[1].split(
+        "function selectedAutoCenters()", 1
+    )[0]
+    save_auto = js.split("async function saveAutoCenters(changedCb) {", 1)[1].split(
+        "// Reconcile every enabled Auto picker's checkboxes", 1
+    )[0]
+    rebuild = js.split("async function rebuild(mode) {", 1)[1].split(
+        "modeBtns.forEach(btn =>", 1
+    )[0]
+
+    assert "const warnings = [...(window.ROTATION_WARNINGS || [])];" in helper
+    assert "if (!warnings.includes(message)) warnings.push(message);" in helper
+    assert "renderCoverageIssues(warnings, window.ROTATION_ISSUES);" in helper
+    assert "renderCoverageFailure(" in save_auto
+    assert rebuild.count("renderCoverageFailure(") == 2
+    assert "renderCoverageIssues([" not in rebuild
 
 
 def test_auto_capacity_turn_off_dialog_is_removed():
     html = _template()
     js = _script()
+    css = _style()
 
     assert 'id="auto-capacity-dialog"' not in html
-    assert "showAutoCapacityDialog" not in js
+    assert "auto-capacity-" not in html
+    for obsolete_js in (
+        "showAutoCapacityDialog",
+        "closeAutoCapacityDialog",
+        "updateCapacityConfirm",
+        "capacityDialogState",
+        "capacityDialog",
+        "capacityForm",
+        "capacityReplacements",
+        "capacityCancel",
+        "capacityConfirm",
+        "required_disable_count",
+        "resp.status === 409",
+    ):
+        assert obsolete_js not in js
+    assert "#auto-capacity" not in css
+    assert ".auto-capacity" not in css
+    assert ".dialog-actions" not in css
 
 
 def test_auto_center_success_requires_server_enabled_centers():
