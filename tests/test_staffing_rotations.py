@@ -707,6 +707,50 @@ def test_auto_center_endpoint_fails_closed_when_minimum_lookup_fails(monkeypatch
     assert saved == []
 
 
+def test_auto_center_endpoint_fails_closed_when_training_effect_read_fails(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch, raise_server_exceptions=False)
+    saved = []
+    invalidated = []
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Green", 3)])
+    monkeypatch.setattr(
+        rotations.staffing,
+        "load_schedule",
+        lambda d: staffing.Schedule(day=d),
+    )
+    monkeypatch.setattr(rotations.staffing_route, "_safe_time_off_entries", lambda d: [])
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_block_effects_for_day",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("blocks unavailable")),
+    )
+    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "min_ops", lambda loc: loc.min_ops)
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_save_enabled_auto_work_centers",
+        lambda names: saved.append(names),
+    )
+    monkeypatch.setattr(
+        rotations._http_cache,
+        "invalidate_today_cache",
+        lambda: invalidated.append("today"),
+    )
+    monkeypatch.setattr(
+        rotations._http_cache,
+        "invalidate_stable_cache",
+        lambda: invalidated.append("stable"),
+    )
+
+    resp = client.post("/api/rotations/auto-work-centers", json={
+        "day": "2026-07-14",
+        "work_centers": ["Repair 1"],
+        "turn_off": [],
+    })
+
+    assert resp.status_code == 503
+    assert saved == []
+    assert invalidated == []
+
+
 def test_rebuild_rejects_unknown_mode(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     resp = client.post("/api/rotations/rebuild", json={"day": "2026-07-14", "mode": "chaos"})

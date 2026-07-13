@@ -270,16 +270,12 @@ def _auto_capacity_for_day(
     """
     enabled = _ordered_work_center_names(enabled_work_centers)
     if block_effects is None:
-        try:
-            block_effects = _block_effects_for_day(
-                d,
-                time_off_entries,
-                assignments=assignments,
-                assignment_sources=assignment_sources,
-            )
-        except Exception:
-            log.exception("Could not read training effects for capacity on %s", d)
-            block_effects = ()
+        block_effects = _block_effects_for_day(
+            d,
+            time_off_entries,
+            assignments=assignments,
+            assignment_sources=assignment_sources,
+        )
     assignments, assignment_sources = _capacity_inputs_with_block_effects(
         assignments, assignment_sources, block_effects, enabled,
     )
