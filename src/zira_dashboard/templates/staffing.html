@@ -158,7 +158,8 @@
           <button type="button" class="save"   id="hours-save" aria-busy="false">Save</button>
         </div>
       </div>
-      <button type="button" id="clear-schedule-btn" class="clear-btn">Reset to defaults</button>
+      <button type="button" id="reset-schedule-btn" class="clear-btn">Reset to defaults</button>
+      <button type="button" id="clear-schedule-btn" class="clear-btn clear-schedule-btn">Clear schedule</button>
       {% if has_snapshot %}
         <div class="view-toggle" role="tablist" aria-label="Draft vs posted view">
           <a href="/staffing?day={{ day }}&amp;view=draft"

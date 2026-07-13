@@ -632,7 +632,12 @@
     border: 1px solid var(--border); border-radius: 6px;
     padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; cursor: pointer;
   }
-  .clear-btn:hover { color: var(--bad); border-color: var(--bad); }
+  .clear-btn:hover { color: var(--fg); border-color: var(--muted); }
+  .clear-schedule-btn:hover {
+    color: var(--bad);
+    border-color: var(--bad);
+    background: color-mix(in srgb, var(--bad) 8%, transparent);
+  }
 
   /* ---------- Recycled rotation controls (mode goal + reasons + warnings) ---------- */
   .rotation-controls {

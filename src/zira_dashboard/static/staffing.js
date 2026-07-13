@@ -47,9 +47,9 @@
   // defaults first, with stored Work Center defaults as the route fallback.
   // These values are not editable from the scheduler.
   const __defaultsByLoc = window.SMART_DEFAULTS_BY_LOC || window.DEFAULTS_BY_LOC;
-  const __clearBtn = document.getElementById('clear-schedule-btn');
-  if (__clearBtn) {
-    __clearBtn.addEventListener('click', () => {
+  const __resetBtn = document.getElementById('reset-schedule-btn');
+  if (__resetBtn) {
+    __resetBtn.addEventListener('click', () => {
       if (__isPublished && !__unlocked) {
         alert("This schedule is Posted. Click Edit first if you need to reset it.");
         return;
@@ -66,6 +66,30 @@
         });
         updateDdSummary(dd);
         __prevSel.set(dd, [...dd.querySelectorAll('.dd-item.selected')].map(i => i.dataset.name));
+      });
+      syncLeftRailWithSchedule();
+      refreshPickerVisibility();
+      kickAutosave();
+    });
+  }
+
+  const __clearBtn = document.getElementById('clear-schedule-btn');
+  if (__clearBtn) {
+    __clearBtn.addEventListener('click', () => {
+      if (__isPublished && !__unlocked) {
+        alert('This schedule is Posted. Click Edit first if you need to clear it.');
+        return;
+      }
+      if (__viewingPosted) return;
+      if (!confirm('Clear every Scheduled cell for this day?\n\n(Time off and notes stay. You can undo this before leaving the page.)')) return;
+      document.querySelectorAll('details.sched-dd').forEach(dd => {
+        dd.querySelectorAll('.dd-item.selected').forEach(item => {
+          const cb = item.querySelector('input[type=checkbox]');
+          if (cb) cb.checked = false;
+          item.classList.remove('selected');
+        });
+        updateDdSummary(dd);
+        __prevSel.set(dd, []);
       });
       syncLeftRailWithSchedule();
       refreshPickerVisibility();
