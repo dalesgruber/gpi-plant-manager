@@ -309,7 +309,7 @@ def _person(name: str, level: int, *, active: bool = True, reserve: bool = False
         name=name,
         active=active,
         reserve=reserve,
-        skills={"Dismantler": level, "Repair": level, "Trim Saw": level},
+        skills={"Dismantle": level, "Repair": level, "Trim Saw": level},
     )
 
 
@@ -663,8 +663,8 @@ def test_training_mode_never_creates_invalid_trim_saw_pair():
 
 def test_optimized_covers_multiple_groups_with_multi_skill_green():
     roster = [
-        staffing.Person(name="Alice", skills={"Repair": 3, "Dismantler": 3}),
-        staffing.Person(name="Bob", skills={"Dismantler": 3}),
+        staffing.Person(name="Alice", skills={"Repair": 3, "Dismantle": 3}),
+        staffing.Person(name="Bob", skills={"Dismantle": 3}),
         staffing.Person(name="Carl", skills={"Repair": 2}),
     ]
     out = suggest_recycled_assignments(
@@ -724,8 +724,8 @@ def test_training_cap_zero_blocks_all_development_placements():
 
 def test_dismantler_group_schedules_end_to_end():
     roster = [
-        staffing.Person(name="Dee", skills={"Dismantler": 3}),
-        staffing.Person(name="Dan", skills={"Dismantler": 2}),
+        staffing.Person(name="Dee", skills={"Dismantle": 3}),
+        staffing.Person(name="Dan", skills={"Dismantle": 2}),
     ]
     history = RecycledHistory(
         center_counts={

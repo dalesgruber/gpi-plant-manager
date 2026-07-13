@@ -73,11 +73,22 @@
               <span class="name-controls">
                 <button type="button" class="rotation-open-btn" data-person="{{ p.name }}" title="Scheduling preferences for {{ p.name }}" aria-label="Scheduling preferences for {{ p.name }}" aria-haspopup="dialog">
                   <svg class="rotation-open-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
-                    <path d="M17 7.5A8.5 8.5 0 1 0 19.5 16"/>
-                    <path d="M17 7.5h-4m4 0v4"/>
-                    <circle cx="12" cy="3.5" r="1.45" fill="currentColor" stroke="none"/>
-                    <circle cx="19.5" cy="15.5" r="1.45" fill="currentColor" stroke="none"/>
-                    <circle cx="6.5" cy="18" r="1.45" fill="currentColor" stroke="none"/>
+                    <circle cx="12" cy="12" r="9" stroke-dasharray="50 6" transform="rotate(-14 12 12)"/>
+                    <polygon points="20 8.7 16 7 18.3 4.7" fill="currentColor" stroke="none"/>
+                    <circle cx="11.5" cy="5.1" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="9" cy="5.6" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="6.9" cy="7" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="5.5" cy="9.2" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="5" cy="11.8" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="5.4" cy="14.4" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="6.6" cy="16.7" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="8.7" cy="18.3" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="11.3" cy="19" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="14" cy="18.7" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="16.3" cy="17.4" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="18" cy="15.3" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="18.9" cy="12.9" r="1" fill="currentColor" stroke="none"/>
+                    <circle cx="18.8" cy="10.3" r="1" fill="currentColor" stroke="none"/>
                   </svg>
                 </button>
                 {% if p.employee_id and odoo_url %}

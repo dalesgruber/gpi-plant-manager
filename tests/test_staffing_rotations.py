@@ -626,10 +626,11 @@ def test_skills_matrix_exposes_scheduling_preferences_and_recycled_training():
     assert "Scheduling Preferences" in html
     assert 'class="rotation-open-btn"' in html
     assert 'aria-label="Scheduling preferences for {{ p.name }}"' in html
-    assert 'd="M17 7.5A8.5 8.5 0 1 0 19.5 16"' in html
-    assert '<circle cx="12" cy="3.5" r="1.45"' in html
-    assert '<circle cx="19.5" cy="15.5" r="1.45"' in html
-    assert '<circle cx="6.5" cy="18" r="1.45"' in html
+    assert '<circle cx="12" cy="12" r="9" stroke-dasharray="50 6" transform="rotate(-14 12 12)"/>' in html
+    assert '<polygon points="20 8.7 16 7 18.3 4.7" fill="currentColor" stroke="none"/>' in html
+    assert '<circle cx="9" cy="5.6" r="1"' in html
+    assert '<circle cx="18.9" cy="12.9" r="1"' in html
+    assert '<circle cx="8.7" cy="18.3" r="1"' in html
     assert "Recycled training" in html
     assert 'id="rotation-pref-grid"' in html
     assert "dataset.rotationPreference" in js
