@@ -1217,6 +1217,8 @@ def suggest_recycled_assignments(
             green_supply,
         )
     )
+    development_limit = max(0, int(training_cap))
+    placed_developments = 0
 
     # Fill optional capacity only at centers whose complete minimum crew was
     # established by the global solver or protected inputs.
@@ -1291,11 +1293,14 @@ def suggest_recycled_assignments(
                     break
             if partner is None:
                 continue  # no safe pairing from this anchor; warned about below
+            partner_level = _group_level(partner, group, resolved_group_required_skills)
+            partner_is_development = mode == "training" and partner_level in (1, 2)
+            if partner_is_development and placed_developments >= development_limit:
+                continue
             reason_code, reason = _optional_reason(
                 mode, level, pref, group, len(centers)
             )
             _place(center, person.name, GENERATED_SOURCE, reason, reason_code)
-            partner_level = _group_level(partner, group, resolved_group_required_skills)
             partner_pref = _preference_for(preferences, partner.name, group)
             partner_code, partner_reason = _optional_reason(
                 mode,
@@ -1312,6 +1317,8 @@ def suggest_recycled_assignments(
                 partner_reason,
                 partner_code,
             )
+            if partner_is_development:
+                placed_developments += 1
             break
 
     # Training mode adds capped development placements: level-1/2 people
@@ -1333,9 +1340,8 @@ def suggest_recycled_assignments(
                 resolved_group_required_skills,
             )
         )
-        placed_developments = 0
         for person, group in development:
-            if placed_developments >= max(0, int(training_cap)):
+            if placed_developments >= development_limit:
                 break
             if person.name in assigned:
                 continue

@@ -1306,6 +1306,71 @@ def test_training_cap_does_not_block_level_three_optional_fill():
     assert set(out.assignments["Repair 1"]) == {"Green A", "Green B"}
 
 
+def test_training_cap_zero_blocks_empty_trim_saw_green_learner_pair():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="training",
+        roster=[
+            staffing.Person("Trim Green", skills={"Trim Saw": 3}),
+            staffing.Person("Trim Learner", skills={"Trim Saw": 1}),
+        ],
+        group_locations={"Trim Saw": ("Trim Saw 1",)},
+        group_required_skills={"Trim Saw": ("Trim Saw",)},
+        center_minimums={"Trim Saw 1": 0},
+        center_capacities={"Trim Saw 1": 2},
+        runnable_centers={"Trim Saw 1"},
+        training_cap=0,
+    )
+
+    assert out.assignments["Trim Saw 1"] == []
+
+
+def test_empty_trim_saw_pair_consumes_shared_training_development_cap():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="training",
+        roster=[
+            staffing.Person("Trim Green", skills={"Trim Saw": 3}),
+            staffing.Person("Trim Learner", skills={"Trim Saw": 1}),
+            staffing.Person("Repair Green", skills={"Repair": 3}),
+            staffing.Person("Repair Learner", skills={"Repair": 1}),
+        ],
+        group_locations={
+            "Trim Saw": ("Trim Saw 1",),
+            "Repair": ("Repair 1",),
+        },
+        group_required_skills={
+            "Trim Saw": ("Trim Saw",),
+            "Repair": ("Repair",),
+        },
+        center_minimums={"Trim Saw 1": 0, "Repair 1": 1},
+        center_capacities={"Trim Saw 1": 2, "Repair 1": 2},
+        runnable_centers={"Trim Saw 1", "Repair 1"},
+        training_cap=1,
+    )
+
+    assert set(out.assignments["Trim Saw 1"]) == {"Trim Green", "Trim Learner"}
+    assert out.assignments["Repair 1"] == ["Repair Green"]
+    assert out.reason_codes["Trim Saw 1"]["Trim Learner"] == "training_development"
+    assert "Repair Learner" not in out.assigned_people
+
+
+def test_training_cap_zero_allows_empty_trim_saw_level_three_pair():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="training",
+        roster=[
+            staffing.Person("Trim Green A", skills={"Trim Saw": 3}),
+            staffing.Person("Trim Green B", skills={"Trim Saw": 3}),
+        ],
+        group_locations={"Trim Saw": ("Trim Saw 1",)},
+        group_required_skills={"Trim Saw": ("Trim Saw",)},
+        center_minimums={"Trim Saw 1": 0},
+        center_capacities={"Trim Saw 1": 2},
+        runnable_centers={"Trim Saw 1"},
+        training_cap=0,
+    )
+
+    assert set(out.assignments["Trim Saw 1"]) == {"Trim Green A", "Trim Green B"}
+
+
 def test_dismantler_group_schedules_end_to_end():
     roster = [
         staffing.Person(name="Dee", skills={"Dismantle": 3}),
