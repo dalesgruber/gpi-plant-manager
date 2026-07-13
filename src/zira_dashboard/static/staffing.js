@@ -54,6 +54,7 @@
         alert("This schedule is Posted. Click Edit first if you need to reset it.");
         return;
       }
+      if (__viewingPosted) return;
       if (!confirm("Reset every Scheduled cell to the page defaults?\n\n(Time off and notes stay. Anyone manually scheduled is replaced with the defaults shown on this page.)")) return;
       document.querySelectorAll('details.sched-dd').forEach(dd => {
         const wanted = new Set(__defaultsByLoc[dd.dataset.loc] || []);

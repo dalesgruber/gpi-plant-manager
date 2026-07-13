@@ -173,6 +173,12 @@ def test_clear_schedule_is_distinct_from_reset_and_uses_existing_autosave_flow()
     html = _template()
     js = _script()
     css = Path("src/zira_dashboard/static/staffing.css").read_text()
+    reset_handler = js.split("const __resetBtn = document.getElementById('reset-schedule-btn');", 1)[1].split(
+        "const __clearBtn = document.getElementById('clear-schedule-btn');", 1
+    )[0]
+    clear_handler = js.split("const __clearBtn = document.getElementById('clear-schedule-btn');", 1)[1].split(
+        "// ---------- Undo / Redo helpers ----------", 1
+    )[0]
 
     assert 'id="reset-schedule-btn" class="clear-btn">Reset to defaults</button>' in html
     assert 'id="clear-schedule-btn" class="clear-btn clear-schedule-btn">Clear schedule</button>' in html
@@ -186,3 +192,11 @@ def test_clear_schedule_is_distinct_from_reset_and_uses_existing_autosave_flow()
     assert "refreshPickerVisibility();" in js
     assert "kickAutosave();" in js
     assert ".clear-schedule-btn:hover" in css
+    assert "if (__viewingPosted) return;" in reset_handler
+    assert reset_handler.index("if (__viewingPosted) return;") < reset_handler.index(
+        'if (!confirm("Reset every Scheduled cell to the page defaults?'
+    )
+    assert "if (__viewingPosted) return;" in clear_handler
+    assert clear_handler.index("if (__viewingPosted) return;") < clear_handler.index(
+        "if (!confirm('Clear every Scheduled cell for this day?"
+    )

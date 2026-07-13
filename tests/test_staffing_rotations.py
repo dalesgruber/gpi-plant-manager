@@ -525,6 +525,45 @@ def test_rebuild_warns_how_many_auto_centers_to_enable_for_unused_people(monkeyp
     assert "Turn on 1 more Auto work center to schedule all 2 available people." in response.json()["warnings"]
 
 
+def test_rebuild_warning_disappears_after_enabling_enough_auto_capacity(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    staffing_route = _stub_recommendation_inputs(monkeypatch)
+    sched = staffing.Schedule(day=TARGET_DAY)
+    roster = [_person("Green One", 3), _person("Green Two", 3), _person("Green Three", 3)]
+    enabled_centers = {"Repair 1"}
+
+    monkeypatch.setattr(staffing_route, "_enabled_auto_work_centers", lambda _d: enabled_centers)
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "max_ops",
+        lambda loc: 1 if loc.name == "Repair 1" else 2,
+    )
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: roster)
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda _d: sched)
+    monkeypatch.setattr(rotations.staffing, "save_schedule", lambda _schedule: None)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+
+    first = client.post("/api/rotations/rebuild", json={"day": "2026-07-14", "mode": "normal"})
+
+    assert first.status_code == 200
+    assert first.json()["warnings"] == [
+        "Turn on 1 more Auto work center to schedule all 2 available people."
+    ]
+
+    # The advisory reports Repair 2 with two open configured slots, but rebuild
+    # scheduling honors each Repair center's static one-person capacity. All
+    # three stations are therefore needed for the three-person roster.
+    enabled_centers.update({"Repair 2", "Repair 3"})
+    second = client.post("/api/rotations/rebuild", json={"day": "2026-07-14", "mode": "normal"})
+
+    assert second.status_code == 200
+    assert not any(
+        warning.startswith("Turn on ")
+        or warning.startswith("Not enough Auto work-center capacity")
+        for warning in second.json()["warnings"]
+    )
+
+
 def test_rebuild_warns_when_auto_center_capacity_is_exhausted(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     staffing_route = _stub_recommendation_inputs(monkeypatch)
