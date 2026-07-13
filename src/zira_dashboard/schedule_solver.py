@@ -338,7 +338,7 @@ def solve_minimum_coverage(
         for option in requirement.crew_options
         for member in option.members
     )
-    if any(edge.level <= 0 for edge in all_edges):
+    if any(edge.level not in {1, 2, 3} for edge in all_edges):
         raise ValueError("candidate and crew member levels must be positive")
 
     best: CoverageResult | None = None
@@ -358,7 +358,10 @@ def solve_minimum_coverage(
             -staffed_coupled,
             sum(item.preference == "never" for item in decisions),
             sum(item.rank_cost for item in decisions),
-            tuple((item.center.lower(), item.person.lower()) for item in decisions),
+            tuple(sorted(
+                (item.center.lower(), item.person.lower())
+                for item in decisions
+            )),
         )
         state = (index, used_people)
         previous_prefix = seen_prefix.get(state)

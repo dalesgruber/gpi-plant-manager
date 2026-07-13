@@ -337,3 +337,68 @@ def test_large_canonical_tie_costs_remain_reachable():
 
     assert len(result.staffed_centers) == 20
     assert result.unresolved_centers == ()
+
+
+def test_coupled_prefix_tie_uses_canonical_center_person_mapping():
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="A Center",
+            group="A",
+            remaining_slots=2,
+            crew_options=tuple(
+                CrewOption(
+                    "A Center",
+                    tuple(edge(person, "A Center") for person in people),
+                )
+                for people in (("A", "B"), ("C", "D"), ("E", "F"))
+            ),
+        ),
+        CenterRequirement(
+            center="Z Center",
+            group="Z",
+            remaining_slots=2,
+            crew_options=tuple(
+                CrewOption(
+                    "Z Center",
+                    tuple(edge(person, "Z Center") for person in people),
+                )
+                for people in (("A", "B"), ("C", "D"))
+            ),
+        ),
+    ))
+
+    assert tuple((item.center, item.person) for item in result.decisions) == (
+        ("A Center", "A"),
+        ("A Center", "B"),
+        ("Z Center", "C"),
+        ("Z Center", "D"),
+    )
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    (
+        CenterRequirement(
+            center="Repair 1",
+            group="Repair",
+            remaining_slots=1,
+            candidates=(edge("Expert", "Repair 1", level=4),),
+        ),
+        CenterRequirement(
+            center="Hand Build #1",
+            group="Hand Build",
+            remaining_slots=2,
+            crew_options=(CrewOption(
+                "Hand Build #1",
+                (
+                    edge("Qualified", "Hand Build #1", level=2),
+                    edge("Expert", "Hand Build #1", level=4),
+                ),
+            ),),
+        ),
+    ),
+    ids=("single", "crew"),
+)
+def test_level_four_edge_is_rejected_at_solver_boundary(requirement):
+    with pytest.raises(ValueError, match="levels must be positive"):
+        solve_minimum_coverage((requirement,))
