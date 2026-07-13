@@ -58,10 +58,11 @@ Pure-logic tests run anywhere; tests that touch Postgres are skipped unless
 The scheduler can auto-build enabled work centers with safe, explainable
 suggestions. Day-to-day manager workflow:
 
-1. **Set preferences.** On the People Matrix, give each person a Dismantler,
-   Repair, and Trim Saw preference — `primary`, `regular`, `occasional`, or
-   `never` (missing means `regular`). Other enabled work centers use skill
-   level and rotation history.
+1. **Set scheduling preferences.** On the People Matrix, open each person's
+   Scheduling Preferences icon. It lists only the qualified grouped and
+   standalone targets; choose `primary`, `regular`, `occasional`, or `never`
+   (missing means `regular`). Those choices influence enabled **Auto** work
+   centers alongside skill level and rotation history.
 2. **Choose the Auto work centers.** On Staffing, each work center has an
    **Auto** checkbox. The first run initializes these from recently used
    schedules; after that, the checked list is saved globally until changed.

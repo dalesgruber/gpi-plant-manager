@@ -1,4 +1,4 @@
-"""JSON APIs for Recycled rotation preferences, training blocks, and rebuilds.
+"""JSON APIs for scheduling preferences, Recycled training blocks, and rebuilds.
 
 Routes:
   POST /api/rotations/preferences      — save one person's group preference
@@ -77,6 +77,19 @@ async def save_rotation_preference(request: Request):
         person_id = _person_id_by_name(person)
         if person_id is None:
             return _error(f"Unknown person: {person}")
+        roster_person = next(
+            (roster_person for roster_person in staffing.load_roster() if roster_person.name == person),
+            None,
+        )
+        target_keys = {
+            target.key for target in staffing.scheduling_preference_targets()
+        }
+        eligible_target_keys = {
+            target.key
+            for target in staffing.eligible_scheduling_preference_targets(roster_person)
+        } if roster_person is not None else set()
+        if group in target_keys and group not in eligible_target_keys:
+            return _error(f"{person} is not qualified for {group}.")
         try:
             saved = rotation_store.save_preference(person_id, group, preference)
         except rotation_store.InvalidRotationPreference as exc:

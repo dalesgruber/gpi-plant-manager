@@ -50,6 +50,10 @@ def test_preference_endpoint_saves_valid(monkeypatch):
         rotations.db, "query",
         lambda sql, params=None: [{"id": 7}] if "FROM people" in sql else [],
     )
+    monkeypatch.setattr(
+        rotations.staffing, "load_roster",
+        lambda: [staffing.Person("Alex", skills={"Repair": 1})],
+    )
 
     def fake_save(person_id, group, preference):
         saved["args"] = (person_id, group, preference)
@@ -70,6 +74,61 @@ def test_preference_endpoint_saves_valid(monkeypatch):
     assert resp.json()["ok"] is True
     assert resp.json()["preference"] == "primary"
     assert saved["args"] == (7, "Repair", "primary")
+
+
+def test_preference_endpoint_rejects_unqualified_target(monkeypatch):
+    from zira_dashboard import rotation_store
+
+    client, rotations = _rotations_client(monkeypatch)
+    monkeypatch.setattr(rotations.db, "query", lambda sql, params=None: [{"id": 7}])
+    monkeypatch.setattr(
+        rotations.staffing, "load_roster",
+        lambda: [staffing.Person("Alex", skills={"Repair": 0})],
+    )
+    monkeypatch.setattr(
+        rotations.rotation_store,
+        "save_preference",
+        lambda person_id, group, preference: rotation_store.RotationPreference(
+            person_id, group, preference
+        ),
+    )
+
+    resp = client.post(
+        "/api/rotations/preferences",
+        json={"person": "Alex", "group": "Repair", "preference": "primary"},
+    )
+
+    assert resp.status_code == 422
+    assert "qualified" in resp.json()["error"]
+
+
+def test_preference_endpoint_preserves_invalid_target_validation(monkeypatch):
+    from zira_dashboard import rotation_store
+
+    client, rotations = _rotations_client(monkeypatch)
+    monkeypatch.setattr(
+        rotations.db, "query",
+        lambda sql, params=None: [{"id": 7}] if "FROM people" in sql else [],
+    )
+    monkeypatch.setattr(
+        rotations.staffing, "load_roster",
+        lambda: [staffing.Person("Alex", skills={"Repair": 1})],
+    )
+
+    def boom(person_id, group, preference):
+        raise rotation_store.InvalidRotationPreference(
+            f"Unknown rotation group: {group!r}"
+        )
+
+    monkeypatch.setattr(rotations.rotation_store, "save_preference", boom)
+
+    resp = client.post(
+        "/api/rotations/preferences",
+        json={"person": "Alex", "group": "Not a target", "preference": "primary"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"] == "Unknown rotation group: 'Not a target'"
 
 
 def test_preference_endpoint_unknown_person_422(monkeypatch):
@@ -93,6 +152,10 @@ def test_preference_endpoint_invalid_preference_422(monkeypatch):
     monkeypatch.setattr(
         rotations.db, "query",
         lambda sql, params=None: [{"id": 7}] if "FROM people" in sql else [],
+    )
+    monkeypatch.setattr(
+        rotations.staffing, "load_roster",
+        lambda: [staffing.Person("Alex", skills={"Repair": 1})],
     )
 
     def boom(person_id, group, preference):
