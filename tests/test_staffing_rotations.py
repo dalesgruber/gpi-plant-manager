@@ -1443,7 +1443,17 @@ def test_recycled_context_surfaces_reasons_warnings_blocks(monkeypatch):
             center="Dismantler 1",
             group="Dismantler",
             code="training_required",
-            message="Dismantler 1 needs training.",
+            message=(
+                "Dismantler 1 could not be staffed. "
+                "Training is required for Dismantler."
+            ),
+            rejections=(
+                schedule_solver.CandidateRejection(
+                    person="Learner",
+                    code="not_qualified",
+                    detail="Needs Dismantler training before assignment.",
+                ),
+            ),
         )
         return rotation_suggestions.RecycledSuggestion(
             assignments={"Repair 1": ["Green"]},
@@ -1473,8 +1483,15 @@ def test_recycled_context_surfaces_reasons_warnings_blocks(monkeypatch):
         "center": "Dismantler 1",
         "group": "Dismantler",
         "code": "training_required",
-        "message": "Dismantler 1 needs training.",
-        "rejections": [],
+        "message": (
+            "Dismantler 1 could not be staffed. "
+            "Training is required for Dismantler."
+        ),
+        "rejections": [{
+            "person": "Learner",
+            "code": "not_qualified",
+            "detail": "Needs Dismantler training before assignment.",
+        }],
     }]
     assert "Trim Saw 1 short" in ctx["rotation_warnings"]
     assert len(ctx["active_training_blocks"]) == 1

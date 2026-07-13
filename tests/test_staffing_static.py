@@ -168,47 +168,37 @@ def test_reset_to_defaults_reconciles_left_rail():
     assert "addBackToCorrectList(name);" in js
 
 
-def test_auto_toggle_removes_only_disabled_center_warnings():
-    js = _script()
-
-    assert "function removeDisabledAutoWarnings()" in js
-    assert "warning.startsWith(center + ' is staffed below its minimum')" in js
-    assert "warning === 'No safe operator pairing available for ' + center + '.'" in js
-    assert "renderWarnings((window.ROTATION_WARNINGS || []).filter" in js
-    assert "removeDisabledAutoWarnings();" in js
-
-
-def test_auto_capacity_dialog_has_replacement_controls():
+def test_rotation_warning_supports_structured_coverage_issues():
     html = _template()
     js = _script()
 
-    assert 'id="auto-capacity-dialog"' in html
-    assert 'aria-labelledby="auto-capacity-title"' in html
-    assert 'id="auto-capacity-replacements"' in html
-    assert "required_disable_count" in js
-    assert "turn_off" in js
-    assert "showAutoCapacityDialog" in js
+    assert 'id="rotation-warnings"' in html
+    assert 'class="coverage-why"' in html
+    assert "rotation_issues" in html
+    assert "renderCoverageIssues" in js
+    assert "ROTATION_ISSUES" in js
 
 
-def test_disabled_auto_warning_filter_keeps_capacity_warning_visible():
+def test_auto_capacity_turn_off_dialog_is_removed():
+    html = _template()
     js = _script()
 
-    assert "Auto centers need " in js
-    assert "warning.startsWith(center + ' could not be staffed to its minimum')" in js
-
-
-def test_auto_capacity_replacement_payload_excludes_selected_turn_off_centers():
-    js = _script()
-
-    assert "const workCenters = [...new Set([requestedCenter, ...selectedAutoCenters()])]\n          .filter(center => !turnOff.includes(center));" in js
+    assert 'id="auto-capacity-dialog"' not in html
+    assert "showAutoCapacityDialog" not in js
 
 
 def test_auto_center_success_requires_server_enabled_centers():
     js = _script()
+    save_auto = js.split("async function saveAutoCenters(changedCb) {", 1)[1].split(
+        "// Reconcile every enabled Auto picker's checkboxes", 1
+    )[0]
 
-    assert js.count("Array.isArray(data.enabled_work_centers)") == 2
+    assert js.count("Array.isArray(data.enabled_work_centers)") == 1
     assert "data.enabled_work_centers || requestedWorkCenters" not in js
     assert "data.enabled_work_centers || workCenters.filter" not in js
+    assert save_auto.index("applyEnabledCenters(data.enabled_work_centers);") < save_auto.index(
+        "renderCoverageIssues(data.warnings, data.coverage?.issues || []);"
+    )
 
 
 def test_clear_schedule_is_distinct_from_reset_and_uses_existing_autosave_flow():
