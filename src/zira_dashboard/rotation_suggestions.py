@@ -487,10 +487,18 @@ def _preference_for(
     return pref if pref in PREFERENCE_POINTS else "regular"
 
 
-def _recycled_level(person: staffing.Person | None, group: str) -> int:
+def _group_level(
+    person: staffing.Person | None,
+    group: str,
+    group_required_skills: dict[str, tuple[str, ...]],
+) -> int:
     if person is None:
         return 0
-    return max(0, min(3, int(person.level(group))))
+    skills = group_required_skills.get(group, (group,))
+    return min(
+        (max(0, min(3, int(person.level(skill)))) for skill in skills),
+        default=0,
+    )
 
 
 def _rotation_fairness(name: str, group: str, history: RecycledHistory) -> int:
@@ -506,6 +514,7 @@ def _candidate_rank_key(
     group: str,
     preferences: dict[str, dict[str, str]] | None,
     history: RecycledHistory,
+    group_required_skills: dict[str, tuple[str, ...]],
     green_supply: dict[str, int] | None = None,
 ) -> tuple:
     """Deterministic candidate ordering; lower sorts first.
@@ -518,7 +527,7 @@ def _candidate_rank_key(
     ranking and adds development placements separately.
     """
     name = person.name
-    level = _recycled_level(person, group)
+    level = _group_level(person, group, group_required_skills)
     pref = _preference_for(preferences, name, group)
     tiebreak = PREFERENCE_POINTS[pref] + _rotation_fairness(name, group, history)
     ranking_mode = "normal" if mode == "training" else mode
@@ -526,7 +535,13 @@ def _candidate_rank_key(
     if ranking_mode == "optimized":
         scarcity = green_supply.get(group, 0) if green_supply and level == 3 else 0
         return (-skill_points, scarcity, -tiebreak, name.lower(), group.lower())
-    return (-(skill_points + tiebreak), -level, name.lower(), group.lower())
+    return (
+        -(skill_points + tiebreak),
+        -PREFERENCE_POINTS[pref],
+        -level,
+        name.lower(),
+        group.lower(),
+    )
 
 
 def _development_rank_key(
@@ -534,9 +549,10 @@ def _development_rank_key(
     group: str,
     preferences: dict[str, dict[str, str]] | None,
     history: RecycledHistory,
+    group_required_skills: dict[str, tuple[str, ...]],
 ) -> tuple:
     name = person.name
-    level = _recycled_level(person, group)
+    level = _group_level(person, group, group_required_skills)
     pref = _preference_for(preferences, name, group)
     tiebreak = PREFERENCE_POINTS[pref] + _rotation_fairness(name, group, history)
     return (-(MODE_SKILL_POINTS["training"][level] + tiebreak), name.lower(), group.lower())
@@ -559,6 +575,7 @@ def suggest_recycled_assignments(
     preferences: dict[str, dict[str, str]] | None = None,
     base_assignments: dict[str, list[str]] | None = None,
     group_locations: dict[str, Sequence[str]] | None = None,
+    group_required_skills: dict[str, tuple[str, ...]] | None = None,
     history: RecycledHistory | None = None,
     locked_assignments: dict[str, Sequence[str]] | None = None,
     block_effects: Sequence = (),
@@ -582,6 +599,10 @@ def suggest_recycled_assignments(
         groups: dict[str, tuple[str, ...]] = _default_group_locations()
     else:
         groups = {str(group): tuple(centers) for group, centers in group_locations.items()}
+    resolved_group_required_skills = {
+        str(group): tuple(skills)
+        for group, skills in (group_required_skills or {}).items()
+    }
     managed_centers = {center for centers in groups.values() for center in centers}
 
     assignments: dict[str, list[str]] = {}
@@ -658,7 +679,7 @@ def suggest_recycled_assignments(
     def _eligible(person: staffing.Person, group: str) -> bool:
         if not person.active or person.reserve:
             return False
-        if _recycled_level(person, group) < 1:
+        if _group_level(person, group, resolved_group_required_skills) < 1:
             return False
         return _preference_for(preferences, person.name, group) != "never"
 
@@ -675,18 +696,26 @@ def suggest_recycled_assignments(
     if mode == "optimized":
         greens_by_group: dict[str, set[str]] = {}
         for person, group in candidate_pairs:
-            if person.name not in assigned and _recycled_level(person, group) == 3:
+            if person.name not in assigned and _group_level(
+                person, group, resolved_group_required_skills
+            ) == 3:
                 greens_by_group.setdefault(group, set()).add(person.name)
         green_supply = {group: len(names) for group, names in greens_by_group.items()}
 
     candidate_pairs.sort(
         key=lambda pair: _candidate_rank_key(
-            mode, pair[0], pair[1], preferences, resolved_history, green_supply
+            mode,
+            pair[0],
+            pair[1],
+            preferences,
+            resolved_history,
+            resolved_group_required_skills,
+            green_supply,
         )
     )
 
     def _level_of(name: str, group: str) -> int:
-        return _recycled_level(by_name.get(name), group)
+        return _group_level(by_name.get(name), group, resolved_group_required_skills)
 
     # 4. Greedy fill: best candidate first, fairest center for that candidate.
     for person, group in candidate_pairs:
@@ -696,7 +725,7 @@ def suggest_recycled_assignments(
         open_centers = [c for c in centers if len(assignments.get(c, [])) < _center_capacity(c)]
         if not open_centers:
             continue
-        level = _recycled_level(person, group)
+        level = _group_level(person, group, resolved_group_required_skills)
         pref = _preference_for(preferences, person.name, group)
         reason = _generated_reason(level, pref, group, len(centers))
         if group != TRIM_SAW_SKILL:
@@ -722,13 +751,16 @@ def suggest_recycled_assignments(
             for other, other_group in candidate_pairs:
                 if other_group != group or other.name == person.name or other.name in assigned:
                     continue
-                if _valid_trim_saw_pair(level, _recycled_level(other, group)):
+                if _valid_trim_saw_pair(
+                    level,
+                    _group_level(other, group, resolved_group_required_skills),
+                ):
                     partner = other
                     break
             if partner is None:
                 continue  # no safe pairing from this anchor; warned about below
             _place(center, person.name, GENERATED_SOURCE, reason)
-            partner_level = _recycled_level(partner, group)
+            partner_level = _group_level(partner, group, resolved_group_required_skills)
             partner_pref = _preference_for(preferences, partner.name, group)
             _place(
                 center,
@@ -744,10 +776,17 @@ def suggest_recycled_assignments(
         development = [
             (person, group)
             for person, group in candidate_pairs
-            if person.name not in assigned and _recycled_level(person, group) in (1, 2)
+            if person.name not in assigned
+            and _group_level(person, group, resolved_group_required_skills) in (1, 2)
         ]
         development.sort(
-            key=lambda pair: _development_rank_key(pair[0], pair[1], preferences, resolved_history)
+            key=lambda pair: _development_rank_key(
+                pair[0],
+                pair[1],
+                preferences,
+                resolved_history,
+                resolved_group_required_skills,
+            )
         )
         placed_developments = 0
         for person, group in development:
@@ -764,7 +803,7 @@ def suggest_recycled_assignments(
                 # Trim Saw is a hard-capacity paired center: development
                 # placements may not overfill it or create an unsafe pair,
                 # unlike single-operator centers where the pairing is the point.
-                level = _recycled_level(person, group)
+                level = _group_level(person, group, resolved_group_required_skills)
                 green_centers = [
                     c
                     for c in green_centers

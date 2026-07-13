@@ -801,6 +801,23 @@ def test_generic_group_locations_can_schedule_new_work_centers():
     assert out.assignments["Junior #1"] == ["Junior Pro"]
 
 
+def test_generic_engine_honors_standalone_preference():
+    roster = [
+        staffing.Person("Primary", skills={"Woodpecker": 2}),
+        staffing.Person("Regular", skills={"Woodpecker": 3}),
+    ]
+    out = suggest_recycled_assignments(
+        day=TARGET_DAY, mode="normal", roster=roster,
+        preferences={"Primary": {"Woodpecker #1": "primary"}},
+        base_assignments={},
+        group_locations={"Woodpecker #1": ("Woodpecker #1",)},
+        group_required_skills={"Woodpecker #1": ("Woodpecker",)},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(),
+    )
+    assert out.assignments["Woodpecker #1"][0] == "Primary"
+    assert "Regular" in out.assignments["Woodpecker #1"]
+
+
 def test_normal_mode_rotates_one_green_through_every_repair_center_over_days():
     """End-to-end fairness (design goal 4): feeding each day's real suggestion
     back through the real history aggregator makes a single green cycle

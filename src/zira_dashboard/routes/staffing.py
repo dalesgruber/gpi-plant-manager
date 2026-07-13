@@ -169,17 +169,18 @@ def _save_enabled_auto_work_centers(names) -> list[str]:
     return enabled
 
 
-def _auto_group_locations(enabled_work_centers) -> dict[str, tuple[str, ...]]:
+def _auto_group_maps(
+    enabled_work_centers,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
     enabled = set(_ordered_work_center_names(enabled_work_centers))
-    grouped: dict[str, list[str]] = {}
-    for loc in staffing.LOCATIONS:
-        if loc.name not in enabled:
-            continue
-        required = staffing.required_skills_for(loc)
-        if len(required) != 1:
-            continue
-        grouped.setdefault(required[0], []).append(loc.name)
-    return {group: tuple(centers) for group, centers in grouped.items()}
+    locations = {}
+    required_skills = {}
+    for target in staffing.scheduling_preference_targets():
+        centers = tuple(center for center in target.centers if center in enabled)
+        if centers:
+            locations[target.key] = centers
+            required_skills[target.key] = target.required_skills
+    return locations, required_skills
 
 
 def _roster_minus_full_day_off(roster, time_off_entries):
@@ -313,7 +314,7 @@ def _recycled_suggestion_for_day(
                 else _enabled_auto_work_centers(d)
             )
         )
-        group_locations = _auto_group_locations(enabled)
+        group_locations, group_required_skills = _auto_group_maps(enabled)
         scoped_locks = {
             wc: list(names or [])
             for wc, names in (locked_assignments or {}).items()
@@ -326,6 +327,7 @@ def _recycled_suggestion_for_day(
             preferences=preferences,
             base_assignments=base_assignments,
             group_locations=group_locations,
+            group_required_skills=group_required_skills,
             history=history,
             locked_assignments=scoped_locks,
             block_effects=block_effects,
@@ -402,7 +404,7 @@ def _recycled_context_for_day(
                 else _enabled_auto_work_centers(d)
             )
         )
-        group_locations = _auto_group_locations(enabled)
+        group_locations, group_required_skills = _auto_group_maps(enabled)
         scoped_locks = {
             wc: list(names or [])
             for wc, names in (locked_assignments or {}).items()
@@ -415,6 +417,7 @@ def _recycled_context_for_day(
             preferences=preferences,
             base_assignments=base_assignments,
             group_locations=group_locations,
+            group_required_skills=group_required_skills,
             history=history,
             locked_assignments=scoped_locks,
             block_effects=block_effects,

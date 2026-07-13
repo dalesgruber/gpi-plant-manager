@@ -629,6 +629,15 @@ def test_recycled_history_prefers_published_snapshot():
 # --------------------------------------------------------------------------- #
 
 
+def test_auto_group_maps_keep_hand_build_centers_under_one_target():
+    from zira_dashboard.routes import staffing as staffing_route
+
+    locations, skills = staffing_route._auto_group_maps({"Hand Build #1", "Hand Build #2"})
+
+    assert locations == {"Hand Build": ("Hand Build #2", "Hand Build #1")}
+    assert skills == {"Hand Build": ("Hand Build",)}
+
+
 def test_smart_defaults_merges_recycled_and_keeps_non_recycled(monkeypatch):
     from zira_dashboard.routes import staffing as staffing_route
     from zira_dashboard import rotation_suggestions
