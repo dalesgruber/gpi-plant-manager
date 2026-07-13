@@ -26,3 +26,10 @@ def test_exceptions_js_has_breakdown_dismiss_handler():
 def test_exceptions_js_refreshes_breakdown_badge():
     js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
     assert "'breakdown'" in js
+
+
+def test_exceptions_js_has_running_late_handler():
+    js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
+    assert "js-running-late-open" in js
+    assert "js-running-late-save" in js
+    assert "/api/late-report/running-late" in js

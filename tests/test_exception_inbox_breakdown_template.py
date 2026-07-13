@@ -29,6 +29,20 @@ def _snapshot():
     }
 
 
+def _late_snapshot():
+    late = {
+        "name": "Jesus Galindo", "label": "Scheduled late", "detail": "12 mins late",
+        "priority": "urgent", "badge": "Needs decision",
+        "row_key": "late:scheduled:7", "item_key": "late:7:2026-07-13",
+        "action": {"type": "late_absence", "emp_id": "7", "name": "Jesus Galindo"},
+    }
+    return {
+        "today": "2026-07-13", "generated_at": "9:00 AM", "total": 1, "urgent_total": 1,
+        "follow_up_total": 0, "source_errors": [], "work_centers": [], "people": [], "sections": [],
+        "queue": [{**late, "section_id": "late", "category_label": "Late / Absence", "tone": "bad"}],
+    }
+
+
 def test_breakdown_header_row_renders_dismiss_button(monkeypatch):
     monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _snapshot)
     client = TestClient(app)
@@ -62,3 +76,12 @@ def test_breakdown_transfer_dropdown_excludes_current_work_center(monkeypatch):
     transfer_select = transfer_select.split("</select>", 1)[0]
     assert '<option value="Repair 3">Repair 3</option>' in transfer_select
     assert '<option value="Dismantler 2">Dismantler 2</option>' not in transfer_select
+
+
+def test_late_absence_row_renders_running_late_controls(monkeypatch):
+    monkeypatch.setattr(exceptions_route.exception_inbox, "build_snapshot", _late_snapshot)
+    response = TestClient(app).get("/exceptions")
+
+    assert "js-running-late-open" in response.text
+    assert "js-running-late-time" in response.text
+    assert "js-running-late-save" in response.text

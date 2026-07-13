@@ -568,6 +568,30 @@
       return;
     }
 
+    if (rowBtn.classList.contains('js-running-late-open')) {
+      row.querySelector('.js-running-late-time').hidden = false;
+      row.querySelector('.js-running-late-save').hidden = false;
+      row.querySelector('.js-running-late-time').focus();
+      return;
+    }
+
+    if (rowBtn.classList.contains('js-running-late-save')) {
+      var expectedTime = row.querySelector('.js-running-late-time').value;
+      if (!empId || !personName || !expectedTime) {
+        failRow(row, expectedTime ? 'Missing employee id.' : 'Choose an expected arrival time.');
+        return;
+      }
+      setBusy(row, true);
+      rowStatus(row, 'Saving expected arrival...', false);
+      postJson('/api/late-report/running-late', {
+        emp_id: empId, name: personName, expected_time: expectedTime
+      }).then(function (resp) {
+        if (resp && resp.ok) resolveRow(row, 'Running late');
+        else failRow(row, (resp && resp.error) || 'Could not save expected arrival.');
+      }).catch(function () { failRow(row, 'Network error.'); });
+      return;
+    }
+
     if (rowBtn.classList.contains('js-snooze')) {
       if (!empId || !personName) {
         failRow(row, 'Missing employee id.');

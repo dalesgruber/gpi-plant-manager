@@ -137,6 +137,35 @@ def test_build_snapshot_aggregates_existing_alert_sources(monkeypatch):
     assert sections["time_off"]["rows"][0]["action"]["request_id"] == 20
 
 
+def test_build_snapshot_maps_running_late_to_muted_follow_up(monkeypatch):
+    monkeypatch.setattr(exception_inbox.plant_day, "today", lambda: date(2026, 7, 13))
+    monkeypatch.setattr(staffing_routes, "assignments_todo_payload", lambda: {"count": 0})
+    monkeypatch.setattr(staffing_routes, "late_report_payload", lambda: {
+        "count": 0, "scheduled_late": [], "unscheduled_late": [],
+        "needs_reason": [], "snoozed": [],
+        "running_late": [{
+            "emp_id": "7", "name": "Jesus Galindo",
+            "until_iso": "2026-07-13T14:15:00+00:00", "expected_label": "9:15 AM",
+        }],
+    })
+    monkeypatch.setattr(missing_wc, "current_rows", lambda: [])
+    monkeypatch.setattr(missed_punch_out, "current_rows", lambda: [])
+    monkeypatch.setattr(machine_breakdown, "current_rows", lambda: [])
+    monkeypatch.setattr(exception_inbox, "_work_center_names", lambda: [])
+    monkeypatch.setattr(exception_inbox, "_pending_time_off", lambda day: (0, []))
+
+    snap = exception_inbox.build_snapshot()
+    late = next(section for section in snap["sections"] if section["id"] == "late")
+
+    assert late["rows"][-1]["label"] == "Running Late"
+    assert late["rows"][-1]["detail"] == "Expected by 9:15 AM"
+    assert late["rows"][-1]["priority"] == "muted"
+    assert late["rows"][-1]["action"] is None
+    assert snap["total"] == 0
+    assert snap["urgent_total"] == 0
+    assert snap["follow_up_total"] == 1
+
+
 def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
     monkeypatch.setattr(exception_inbox.plant_day, "today", lambda: date(2026, 6, 19))
     monkeypatch.setattr(
@@ -151,6 +180,7 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
         "unscheduled_late": [{"emp_id": 2}],
         "needs_reason": [{"emp_id": 3}],
         "snoozed": [{"emp_id": 4}],
+        "running_late": [{"emp_id": 5}],
     })
     monkeypatch.setattr(missing_wc, "current_rows", lambda: [{"attendance_id": 10}])
     monkeypatch.setattr(missed_punch_out, "current_rows", lambda: [{"attendance_id": 11}])
@@ -163,7 +193,7 @@ def test_build_summary_counts_open_urgent_followup_and_time_off(monkeypatch):
     assert summary["generated_at"] == "8:10 AM"
     assert summary["total"] == 11
     assert summary["urgent_total"] == 6
-    assert summary["follow_up_total"] == 1
+    assert summary["follow_up_total"] == 2
     assert summary["source_errors"] == []
     assert summary["sections"] == {
         "assignments": 2,
