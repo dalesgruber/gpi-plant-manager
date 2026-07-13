@@ -7,10 +7,13 @@ odoo_client.clock_out, then resolves the flag.
 """
 from __future__ import annotations
 
+import xmlrpc.client
 from datetime import datetime, time as _time
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+
+from ..shift_config import SITE_TZ
 
 router = APIRouter()
 
@@ -47,9 +50,73 @@ async def missed_punch_out_correct(request: Request):
     return await asyncio.to_thread(_correct_sync, body, actor_upn, actor_name)
 
 
+def _is_missing_odoo_attendance(error: Exception) -> bool:
+    return (
+        isinstance(error, xmlrpc.client.Fault)
+        and "record does not exist or has been deleted" in error.faultString.lower()
+    )
+
+
+def _site_datetime(value):
+    return datetime.fromisoformat(value).astimezone(SITE_TZ) if value else None
+
+
+def _reconcile_deleted_attendance(row: dict):
+    from .. import odoo_client
+
+    try:
+        current = odoo_client.fetch_employee_attendances_for_day(
+            int(row["employee_odoo_id"]),
+            row["check_in"].astimezone(SITE_TZ).date(),
+        )
+    except Exception:
+        return None, None, "Unable to refresh this attendance from Odoo. Verify it in Odoo and try again."
+
+    auto_closed = row["auto_closed_at"].astimezone(SITE_TZ)
+    settled = [_site_datetime(item.get("check_out")) for item in current]
+    settled = [checkout for checkout in settled if checkout and checkout != auto_closed]
+    if settled:
+        return None, max(settled), None
+
+    open_rows = [item for item in current if not item.get("check_out")]
+    if len(open_rows) == 1:
+        return int(open_rows[0]["id"]), None, None
+    if not current:
+        return None, None, "Odoo has no attendance for this employee on that day. Verify it in Odoo, then try again."
+    return None, None, "Odoo has multiple current attendances for this employee on that day. Verify the correct record in Odoo, then try again."
+
+
+def _log_correction(
+    row: dict,
+    attendance_id: int,
+    *,
+    action: str,
+    outcome: str,
+    before_value: str,
+    after_value: str,
+    actor_upn=None,
+    actor_name=None,
+):
+    from .. import inbox_keys, inbox_log
+
+    inbox_log.log_event_safe(
+        item_kind="missed_punch_out",
+        item_key=inbox_keys.missed_punch_out(attendance_id),
+        person_name=row.get("name"),
+        category_label="Missed punch out",
+        action=action,
+        outcome=outcome,
+        before_value=before_value,
+        after_value=after_value,
+        actor_upn=actor_upn,
+        actor_name=actor_name,
+        source="inbox",
+        reversible=False,
+    )
+
+
 def _correct_sync(body: dict, actor_upn=None, actor_name=None):
-    from .. import inbox_keys, inbox_log, missed_punch_out, odoo_client
-    from ..shift_config import SITE_TZ
+    from .. import missed_punch_out, odoo_client
     try:
         att_id = int(body.get("attendance_id"))
     except (TypeError, ValueError):
@@ -75,21 +142,58 @@ def _correct_sync(body: dict, actor_upn=None, actor_name=None):
 
     try:
         odoo_client.clock_out(att_id, corrected, mode="manual")
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    except Exception as error:
+        if not _is_missing_odoo_attendance(error):
+            return JSONResponse(
+                {"ok": False, "error": "Unable to update this attendance in Odoo. Verify it in Odoo and try again."},
+                status_code=500,
+            )
+
+        replacement_id, settled_checkout, reconciliation_error = _reconcile_deleted_attendance(row)
+        if reconciliation_error:
+            return JSONResponse({"ok": False, "error": reconciliation_error}, status_code=409)
+        if settled_checkout:
+            missed_punch_out.correct(att_id, settled_checkout)
+            _log_correction(
+                row,
+                att_id,
+                action="dismiss",
+                outcome="Odoo already resolved this conflict.",
+                before_value=_clock_label(midnight),
+                after_value=_clock_label(settled_checkout),
+                actor_upn=actor_upn,
+                actor_name=actor_name,
+            )
+            return JSONResponse({"ok": True, "message": "Odoo already resolved this conflict."})
+
+        try:
+            odoo_client.clock_out(replacement_id, corrected, mode="manual")
+        except Exception:
+            return JSONResponse(
+                {"ok": False, "error": "Unable to update this attendance in Odoo. Verify it in Odoo and try again."},
+                status_code=500,
+            )
+        missed_punch_out.correct(att_id, corrected)
+        _log_correction(
+            row,
+            att_id,
+            action="correct",
+            outcome="Updated the current Odoo attendance.",
+            before_value=_clock_label(midnight),
+            after_value=_clock_label(corrected),
+            actor_upn=actor_upn,
+            actor_name=actor_name,
+        )
+        return JSONResponse({"ok": True, "message": "Updated the current Odoo attendance."})
     missed_punch_out.correct(att_id, corrected)
-    inbox_log.log_event_safe(
-        item_kind="missed_punch_out",
-        item_key=inbox_keys.missed_punch_out(att_id),
-        person_name=row.get("name"),
-        category_label="Missed punch out",
+    _log_correction(
+        row,
+        att_id,
         action="correct",
         outcome=f"Punch-out corrected to {_clock_label(corrected)}",
         before_value=_clock_label(midnight),
         after_value=_clock_label(corrected),
         actor_upn=actor_upn,
         actor_name=actor_name,
-        source="inbox",
-        reversible=False,
     )
     return JSONResponse({"ok": True})
