@@ -74,6 +74,40 @@ def test_never_is_used_only_when_it_increases_staffed_center_count():
     assert override.reason_code == "preference_override"
 
 
+def test_equal_coverage_prefers_no_never_override_before_rank_or_canonical_name():
+    result = solve_minimum_coverage((CenterRequirement(
+        center="Repair 1",
+        group="Repair",
+        remaining_slots=1,
+        candidates=(
+            edge("A Never", "Repair 1", never=True, rank=0),
+            edge("Z Regular", "Repair 1", rank=100),
+        ),
+    ),))
+
+    assert tuple((item.center, item.person) for item in result.decisions) == (
+        ("Repair 1", "Z Regular"),
+    )
+    assert result.decisions[0].preference == "regular"
+
+
+def test_equal_coverage_and_overrides_prefers_rank_before_canonical_name():
+    result = solve_minimum_coverage((CenterRequirement(
+        center="Repair 1",
+        group="Repair",
+        remaining_slots=1,
+        candidates=(
+            edge("A Higher Cost", "Repair 1", rank=10),
+            edge("Z Lower Cost", "Repair 1", rank=0),
+        ),
+    ),))
+
+    assert tuple((item.center, item.person) for item in result.decisions) == (
+        ("Repair 1", "Z Lower Cost"),
+    )
+    assert result.decisions[0].rank_cost == 0
+
+
 def test_equal_results_are_stable_across_input_order():
     first = CenterRequirement(
         center="Repair 1",

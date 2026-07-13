@@ -185,7 +185,6 @@ def test_actual_plant_minimums_with_coupled_centers_are_under_one_second():
 
 
 @pytest.mark.parametrize("mode", ("optimized", "normal", "training"))
-@pytest.mark.parametrize("reverse_roster", (False, True))
 @pytest.mark.parametrize(
     "enabled",
     (
@@ -194,16 +193,26 @@ def test_actual_plant_minimums_with_coupled_centers_are_under_one_second():
         {"Hand Build #1", "Hand Build #2", "Big Build #1"},
     ),
 )
-def test_solver_invariants_across_modes_roster_orders_and_enabled_centers(
-    mode, reverse_roster, enabled
+def test_solver_is_deterministic_and_preserves_invariants_across_modes_and_enabled_centers(
+    mode, enabled
 ):
-    requirements = _plant_requirements(
-        reverse_roster=reverse_roster,
+    forward_requirements = _plant_requirements(
+        reverse_roster=False,
         enabled=enabled,
         mode=mode,
     )
-    result = solve_minimum_coverage(requirements)
-    _assert_solver_invariants(requirements, result)
+    reversed_requirements = _plant_requirements(
+        reverse_roster=True,
+        enabled=enabled,
+        mode=mode,
+    )
+
+    forward = solve_minimum_coverage(forward_requirements)
+    reversed_result = solve_minimum_coverage(reversed_requirements)
+
+    assert forward == reversed_result
+    _assert_solver_invariants(forward_requirements, forward)
+    _assert_solver_invariants(reversed_requirements, reversed_result)
 
 
 def test_protected_level_zero_trainee_is_preserved_outside_generated_decisions():
