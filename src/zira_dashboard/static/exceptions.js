@@ -754,7 +754,7 @@
         attendance_id: attendanceId,
         time: time,
       }).then(function (resp) {
-        if (resp && resp.ok) resolveRow(row, 'Corrected');
+        if (resp && resp.ok) resolveRow(row, (resp && resp.message) || 'Corrected');
         else failRow(row, (resp && resp.error) || 'Correction failed.');
       }).catch(function () { failRow(row, 'Network error.'); });
       return;

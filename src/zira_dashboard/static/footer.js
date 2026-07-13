@@ -1026,7 +1026,7 @@
           time: input.value,
         }).then(function (res) {
           if (res && res.ok) {
-            finishMpoRow(li, 'Corrected ✓', true, api);
+            finishMpoRow(li, (res && res.message) || 'Corrected ✓', true, api);
           } else {
             finishMpoRow(li, (res && res.error) || 'Error', false, api);
             btn.disabled = false;

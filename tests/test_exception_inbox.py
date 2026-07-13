@@ -821,6 +821,14 @@ def test_exceptions_js_refreshes_shared_badges_after_inline_resolution():
     assert "bumpFocusCount('urgent', delta)" in js
 
 
+def test_missed_punch_clients_show_odoo_reconciliation_message():
+    exceptions_js = (STATIC_DIR / "exceptions.js").read_text()
+    footer_js = (STATIC_DIR / "footer.js").read_text()
+
+    assert "resolveRow(row, (resp && resp.message) || 'Corrected')" in exceptions_js
+    assert "finishMpoRow(li, (res && res.message) || 'Corrected ✓', true, api)" in footer_js
+
+
 def test_exceptions_js_drives_queue_and_archive():
     js = (STATIC_DIR / "exceptions.js").read_text(encoding="utf-8")
 
