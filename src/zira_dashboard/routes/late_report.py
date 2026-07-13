@@ -340,6 +340,20 @@ def _parse_running_late_time(value) -> dt_time | None:
     return _parse_clock_time(value)
 
 
+def _unambiguous_plant_local_datetime(day, selected: dt_time) -> datetime | None:
+    """Return the local datetime only when its wall time has one UTC instant."""
+    naive = datetime.combine(day, selected)
+    candidates: set[datetime] = set()
+    for fold in (0, 1):
+        local = naive.replace(tzinfo=shift_config.SITE_TZ, fold=fold)
+        round_trip = local.astimezone(UTC).astimezone(shift_config.SITE_TZ)
+        if round_trip.replace(tzinfo=None) == naive:
+            candidates.add(local.astimezone(UTC))
+    if len(candidates) != 1:
+        return None
+    return next(iter(candidates)).astimezone(shift_config.SITE_TZ)
+
+
 def _running_late_sync(body: dict) -> JSONResponse:
     """Record a manager-confirmed expected arrival for a late employee."""
     emp_id = str(body.get("emp_id") or "").strip()
@@ -351,7 +365,12 @@ def _running_late_sync(body: dict) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "expected_time must be HH:MM"}, status_code=400)
 
     today = plant_today()
-    expected_local = datetime.combine(today, selected, tzinfo=shift_config.SITE_TZ)
+    expected_local = _unambiguous_plant_local_datetime(today, selected)
+    if expected_local is None:
+        return JSONResponse(
+            {"ok": False, "error": "expected time is ambiguous or does not exist in plant local time"},
+            status_code=400,
+        )
     if expected_local <= plant_now():
         return JSONResponse(
             {"ok": False, "error": "expected time must be later than now"}, status_code=400

@@ -155,3 +155,22 @@ def test_attendance_windows_past_day_fetched_once(monkeypatch):
     assert timeclock_windows.attendance_windows_for_day(d) == {}
     assert timeclock_windows.attendance_windows_for_day(d) == {}
     assert calls["n"] == 1
+
+
+def test_attendance_windows_reports_unavailable_when_odoo_read_fails(monkeypatch):
+    from zira_dashboard import timeclock_windows, odoo_client, attendance
+    timeclock_windows._past_cache.clear()
+    timeclock_windows._today_cache.clear()
+    monkeypatch.setattr(
+        odoo_client,
+        "fetch_attendance_intervals_for_day",
+        lambda day: (_ for _ in ()).throw(RuntimeError("Odoo unavailable")),
+    )
+    monkeypatch.setattr(attendance, "person_id_to_name", lambda: {})
+
+    windows, available = timeclock_windows.attendance_windows_for_day_with_availability(
+        date(2026, 6, 3)
+    )
+
+    assert windows == {}
+    assert available is False

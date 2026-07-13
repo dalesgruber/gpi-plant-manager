@@ -47,6 +47,9 @@ def test_detect_tick_handles_incident_after_final_operator_leaves(monkeypatch):
     monkeypatch.setattr(
         machine_breakdown, "_present_operators_on_wc", lambda wc, day, now=None: []
     )
+    monkeypatch.setattr(
+        machine_breakdown, "_punch_windows_with_availability", lambda day: ({}, True)
+    )
     monkeypatch.setattr(machine_breakdown, "_station_signals", lambda day, now: [])
     monkeypatch.setattr(machine_breakdown, "_shift_bounds", lambda day: (
         _now() - timedelta(hours=6), _now() + timedelta(hours=2)
@@ -62,6 +65,70 @@ def test_detect_tick_handles_incident_after_final_operator_leaves(monkeypatch):
     machine_breakdown.run_detect_tick(day=date(2026, 7, 8), now=_now())
 
     assert handled == [(1, "handled")]
+
+
+def test_detect_tick_preserves_open_incident_when_attendance_is_unavailable(monkeypatch):
+    """A source failure is not evidence that everyone left the machine."""
+    incident = {
+        "id": 1, "wc_name": "Repair 1", "day": date(2026, 7, 8),
+        "detected_stop_utc": _now() - timedelta(minutes=25), "source": "auto",
+    }
+    monkeypatch.setattr(machine_breakdown, "all_open_incidents", lambda day: [incident])
+    # Keep the legacy lookup empty too, so this is red against the previous
+    # implementation, which treated that empty mapping as a genuine departure.
+    monkeypatch.setattr(machine_breakdown, "_punch_windows_for_day", lambda day: {})
+    monkeypatch.setattr(
+        machine_breakdown,
+        "_punch_windows_with_availability",
+        lambda day: ({}, False),
+        raising=False,
+    )
+    monkeypatch.setattr(machine_breakdown, "_station_signals", lambda day, now: [])
+    monkeypatch.setattr(machine_breakdown, "_shift_bounds", lambda day: (
+        _now() - timedelta(hours=6), _now() + timedelta(hours=2)
+    ))
+    from zira_dashboard import shift_config
+    monkeypatch.setattr(shift_config, "in_shift_on", lambda local_dt: True)
+    resolved = []
+    monkeypatch.setattr(
+        machine_breakdown,
+        "resolve_incident",
+        lambda incident_id, resolution, resume_utc=None: resolved.append((incident_id, resolution)),
+    )
+
+    machine_breakdown.run_detect_tick(day=date(2026, 7, 8), now=_now())
+
+    assert resolved == []
+
+
+def test_detect_tick_keeps_existing_incident_when_a_coworker_is_present(monkeypatch):
+    incident = {
+        "id": 1, "wc_name": "Repair 1", "day": date(2026, 7, 8),
+        "detected_stop_utc": _now() - timedelta(minutes=25), "source": "auto",
+    }
+    windows = {"Juan": [("Repair 1", _now() - timedelta(hours=1), None)]}
+    monkeypatch.setattr(machine_breakdown, "all_open_incidents", lambda day: [incident])
+    monkeypatch.setattr(machine_breakdown, "_punch_windows_for_day", lambda day: windows)
+    monkeypatch.setattr(
+        machine_breakdown,
+        "_punch_windows_with_availability",
+        lambda day: (windows, True),
+        raising=False,
+    )
+    monkeypatch.setattr(machine_breakdown, "_cap_departed_operators", lambda *args: None)
+    monkeypatch.setattr(machine_breakdown, "_maybe_auto_resolve", lambda *args: None)
+    monkeypatch.setattr(machine_breakdown, "_station_signals", lambda day, now: [])
+    monkeypatch.setattr(machine_breakdown, "_shift_bounds", lambda day: (
+        _now() - timedelta(hours=6), _now() + timedelta(hours=2)
+    ))
+    from zira_dashboard import shift_config
+    monkeypatch.setattr(shift_config, "in_shift_on", lambda local_dt: True)
+    resolved = []
+    monkeypatch.setattr(machine_breakdown, "resolve_incident", lambda *args: resolved.append(args))
+
+    machine_breakdown.run_detect_tick(day=date(2026, 7, 8), now=_now())
+
+    assert resolved == []
 
 
 def test_station_signals_uses_last_sample_not_padded_active_interval(monkeypatch):

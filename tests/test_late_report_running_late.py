@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from zira_dashboard import shift_config
+from zira_dashboard import late_report, shift_config
 from zira_dashboard.routes import late_report as late_report_routes
 
 
@@ -44,6 +44,52 @@ def test_running_late_saves_utc_time_and_busts_caches(monkeypatch):
         2026, 7, 13, 9, 15, tzinfo=shift_config.SITE_TZ
     ).astimezone(UTC)
     bust.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("day", "expected_time"),
+    [
+        (date(2026, 3, 8), "02:30"),   # spring-forward gap in America/Chicago
+        (date(2026, 11, 1), "01:30"),  # fall-back overlap in America/Chicago
+    ],
+)
+def test_running_late_rejects_non_unique_plant_local_dst_time(monkeypatch, day, expected_time):
+    save = MagicMock()
+    bust = MagicMock()
+    monkeypatch.setattr(late_report_routes, "plant_today", lambda: day)
+    monkeypatch.setattr(
+        late_report_routes, "plant_now",
+        lambda: datetime.combine(day, time(0, 30), tzinfo=shift_config.SITE_TZ),
+    )
+    monkeypatch.setattr(late_report_routes.late_report, "set_expected_arrival", save)
+    monkeypatch.setattr(late_report_routes, "_bust_caches", bust)
+
+    response = late_report_routes._running_late_sync({
+        "emp_id": "7", "name": "Jesus Galindo", "expected_time": expected_time,
+    })
+
+    assert response.status_code == 400
+    assert "ambiguous or does not exist" in json.loads(response.body)["error"]
+    save.assert_not_called()
+    bust.assert_not_called()
+
+
+def test_active_expected_arrivals_runs_bounded_best_effort_cleanup(monkeypatch):
+    day = date(2026, 7, 13)
+    executed = []
+    monkeypatch.setattr(late_report, "_last_expected_arrival_cleanup", 0.0, raising=False)
+    monkeypatch.setattr(late_report.time, "monotonic", lambda: 3601.0)
+    monkeypatch.setattr(
+        late_report.db, "execute", lambda query, params: executed.append((query, params))
+    )
+    monkeypatch.setattr(late_report.db, "query", lambda *args: [])
+
+    assert late_report.active_expected_arrivals(day) == []
+    assert late_report.active_expected_arrivals(day) == []
+
+    assert len(executed) == 1
+    assert "expected_at_utc <= now() OR day < %s" in executed[0][0]
+    assert executed[0][1] == (day,)
 
 
 @pytest.mark.parametrize("expected_time", ["0830", "08:30:45", "08:30+01:00"])

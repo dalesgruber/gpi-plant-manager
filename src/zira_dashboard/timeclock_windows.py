@@ -108,7 +108,9 @@ def _windows_from_intervals(intervals: list[dict]) -> list[tuple[str, datetime, 
     return out
 
 
-def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, datetime | None]]]:
+def attendance_windows_for_day_with_availability(
+    day: date,
+) -> tuple[dict[str, list[tuple[str, datetime, datetime | None]]], bool]:
     """{roster_name: [(wc_name, start_utc, end_utc|None), ...]} built from the
     COMPLETE set of Odoo hr.attendance records for `day` -- the source of truth
     for where each operator was clocked in.
@@ -119,33 +121,33 @@ def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime,
     record, and any mid-shift transfers -- so a scheduled operator's goal spans
     their whole clocked-in day instead of truncating at the auto-lunch split.
 
-    Never raises -- returns {} on any error (Odoo down, etc.), in which case the
-    resolver falls back to the schedule. Errors are NOT cached, so a transient
-    Odoo outage can't poison a past day's entry.
+    Returns ``(windows, available)``. A successful empty read is ``({}, True)``;
+    a source/read failure is ``({}, False)``. Errors are NOT cached, so a
+    transient Odoo outage can't poison a past day's entry.
     """
     try:
         from . import shift_config
         today = datetime.now(shift_config.SITE_TZ).date()
     except Exception:
-        return {}
+        return {}, False
     is_past = day < today
     with _cache_lock:
         if is_past:
             cached = _past_cache.get(day)
             if cached is not None:
                 _past_cache.move_to_end(day)
-                return cached
+                return cached, True
         else:
             hit = _today_cache.get(day)
             if hit is not None and (_time.monotonic() - hit[0]) < _TODAY_TTL_SECONDS:
-                return hit[1]
+                return hit[1], True
     try:
         from . import odoo_client, attendance
         from datetime import datetime as _dt
         intervals = odoo_client.fetch_attendance_intervals_for_day(day)
         id_to_name = attendance.person_id_to_name()
     except Exception:
-        return {}
+        return {}, False
     by_person: dict[str, list[dict]] = {}
     for it in intervals:
         name = id_to_name.get(str(it.get("employee_odoo_id")))
@@ -178,4 +180,10 @@ def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime,
             for k in stale:
                 del _today_cache[k]
             _today_cache[day] = (now_mono, out)
-    return out
+    return out, True
+
+
+def attendance_windows_for_day(day: date) -> dict[str, list[tuple[str, datetime, datetime | None]]]:
+    """Preserve the legacy fail-soft dictionary API for existing callers."""
+    windows, _available = attendance_windows_for_day_with_availability(day)
+    return windows

@@ -22,6 +22,7 @@ DEFAULT_SNOOZE_MINUTES = 30
 # monotonic() of the last expired-snooze cleanup; 0.0 means run on the
 # first report read after boot.
 _last_snooze_cleanup: float = 0.0
+_last_expected_arrival_cleanup: float = 0.0
 
 
 def declare_absent(
@@ -149,6 +150,15 @@ def set_expected_arrival(day, emp_id: str, name: str, expected_at_utc: datetime)
 
 
 def active_expected_arrivals(day) -> list[dict]:
+    """Active expected arrivals, with hourly best-effort stale-row cleanup."""
+    global _last_expected_arrival_cleanup
+    now = time.monotonic()
+    if now - _last_expected_arrival_cleanup >= 3600:
+        _last_expected_arrival_cleanup = now
+        try:
+            cleanup_expired_expected_arrivals(day)
+        except Exception:
+            pass  # cleanup must never break the late-report snapshot read
     return db.query(
         """
         SELECT emp_id, name, expected_at_utc
@@ -183,6 +193,19 @@ def clear_expected_arrival(day, emp_id: str) -> None:
     db.execute(
         "DELETE FROM late_expected_arrivals WHERE day = %s AND emp_id = %s",
         (day, str(emp_id)),
+    )
+
+
+def cleanup_expired_expected_arrivals(today) -> None:
+    """Purge expired and prior-day expected-arrival follow-up rows.
+
+    Expiry already stops a row from suppressing the ordinary late/absence
+    action. This bounded cleanup merely keeps unpunched stale records from
+    accumulating without adding a dedicated worker.
+    """
+    db.execute(
+        "DELETE FROM late_expected_arrivals WHERE expected_at_utc <= now() OR day < %s",
+        (today,),
     )
 
 

@@ -245,17 +245,28 @@ def _punch_windows_for_day(day: date) -> dict:
     return timeclock_windows.attendance_windows_for_day(day)
 
 
+def _punch_windows_with_availability(day: date) -> tuple[dict, bool]:
+    """Attendance windows plus whether their Odoo source was readable."""
+    from . import timeclock_windows
+    return timeclock_windows.attendance_windows_for_day_with_availability(day)
+
+
+def _present_operators_in_windows(wc_name: str, punch_windows: dict, now: datetime) -> list[str]:
+    """Names with an open attendance window at ``wc_name`` in ``punch_windows``."""
+    return sorted({
+        person
+        for person, windows in punch_windows.items()
+        for punched_wc, start, end in windows
+        if punched_wc == wc_name and start <= now and end is None
+    })
+
+
 def _present_operators_on_wc(
     wc_name: str, day: date, now: datetime | None = None
 ) -> list[str]:
     """Names with an open attendance window at this work center at now."""
     now = now or datetime.now(UTC)
-    return sorted({
-        person
-        for person, windows in _punch_windows_for_day(day).items()
-        for punched_wc, start, end in windows
-        if punched_wc == wc_name and start <= now and end is None
-    })
+    return _present_operators_in_windows(wc_name, _punch_windows_for_day(day), now)
 
 
 def _station_signals(day: date, now: datetime) -> list[StationSignal]:
@@ -323,9 +334,15 @@ def run_detect_tick(day: date | None = None, now: datetime | None = None) -> Non
             "machine breakdown: failed to load open incidents", exc_info=True)
         open_incidents = []
 
+    # The legacy dictionary API intentionally represents both source failures
+    # and a genuine empty attendance day as {}. Existing incidents need that
+    # distinction: an outage must not prove every operator has departed.
+    punch_windows, attendance_available = _punch_windows_with_availability(day)
     for incident in open_incidents:
         try:
-            if not _present_operators_on_wc(incident["wc_name"], day, now):
+            if not attendance_available:
+                continue
+            if not _present_operators_in_windows(incident["wc_name"], punch_windows, now):
                 resolve_incident(incident["id"], "handled")
                 continue
             _cap_departed_operators(incident, day, now)
