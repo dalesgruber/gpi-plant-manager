@@ -119,6 +119,9 @@ def scheduling_preference_targets() -> tuple[SchedulingPreferenceTarget, ...]:
     grouped_skills = {
         skill for skill, centers in single_skill_centers.items() if len(centers) > 1
     }
+    # Trim Saw is a Recycled rotation group even though it currently has one
+    # center. Its group key drives the scheduler's pairing and training rules.
+    grouped_skills.add("Trim Saw")
 
     targets = []
     emitted_groups = set()

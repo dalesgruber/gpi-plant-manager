@@ -335,7 +335,7 @@ def _stub_recommendation_inputs(monkeypatch):
     monkeypatch.setattr(staffing_route.rotation_store, "load_preferences_by_name", lambda: {})
     monkeypatch.setattr(
         rotation_suggestions, "_load_recycled_history",
-        lambda d: rotation_suggestions.RecycledHistory(),
+        lambda d, group_locations=None: rotation_suggestions.RecycledHistory(),
     )
     monkeypatch.setattr(staffing_route.rotation_training, "reconcile_blocks", lambda as_of: [])
     monkeypatch.setattr(staffing_route.app_settings, "get_setting", lambda key: ["Repair 1"])
@@ -638,6 +638,66 @@ def test_auto_group_maps_keep_hand_build_centers_under_one_target():
     assert skills == {"Hand Build": ("Hand Build",)}
 
 
+def test_auto_group_maps_keep_trim_saw_pairing_protection():
+    from zira_dashboard import rotation_suggestions
+    from zira_dashboard.routes import staffing as staffing_route
+
+    locations, skills = staffing_route._auto_group_maps({"Trim Saw 1"})
+    out = rotation_suggestions.suggest_recycled_assignments(
+        day=TARGET_DAY,
+        mode="normal",
+        roster=[_person("First Learner", 1, "Trim Saw"), _person("Second Learner", 1, "Trim Saw")],
+        preferences={},
+        base_assignments={},
+        group_locations=locations,
+        group_required_skills=skills,
+        history=rotation_suggestions.RecycledHistory(),
+        locked_assignments={},
+        block_effects=(),
+    )
+
+    assert locations == {"Trim Saw": ("Trim Saw 1",)}
+    assert out.assignments.get("Trim Saw 1", []) == []
+    assert "No safe operator pairing available for Trim Saw 1." in out.warnings
+
+
+def test_staffing_history_counts_hand_build_and_rotates_to_other_center(monkeypatch):
+    from zira_dashboard import db, rotation_suggestions
+    from zira_dashboard.routes import staffing as staffing_route
+
+    monkeypatch.setattr(staffing_route.rotation_store, "load_preferences_by_name", lambda: {})
+    monkeypatch.setattr(staffing_route.rotation_training, "reconcile_blocks", lambda _as_of: [])
+    monkeypatch.setattr(staffing_route.rotation_store, "active_blocks_for_day", lambda _d: [])
+    monkeypatch.setattr(
+        db,
+        "query",
+        lambda _sql, _params=None: [
+            {"assignments": {"Hand Build #1": ["Builder"]}, "published_snapshot": None}
+        ],
+    )
+
+    _preferences, history, _effects, _blocks = staffing_route._gather_recycled_inputs(
+        TARGET_DAY, []
+    )
+    locations, skills = staffing_route._auto_group_maps({"Hand Build #1", "Hand Build #2"})
+    out = rotation_suggestions.suggest_recycled_assignments(
+        day=TARGET_DAY,
+        mode="normal",
+        roster=[staffing.Person("Builder", skills={"Hand Build": 3})],
+        preferences={},
+        base_assignments={},
+        group_locations=locations,
+        group_required_skills=skills,
+        history=history,
+        locked_assignments={},
+        block_effects=(),
+    )
+
+    assert history.group_counts[("Builder", "Hand Build")] == 1
+    assert history.last_center_by_person_group[("Builder", "Hand Build")] == "Hand Build #1"
+    assert out.assignments["Hand Build #2"] == ["Builder"]
+
+
 def test_smart_defaults_merges_recycled_and_keeps_non_recycled(monkeypatch):
     from zira_dashboard.routes import staffing as staffing_route
     from zira_dashboard import rotation_suggestions
@@ -719,7 +779,7 @@ def test_recycled_context_surfaces_reasons_warnings_blocks(monkeypatch):
     monkeypatch.setattr(staffing_route.rotation_store, "load_preferences_by_name", lambda: {})
     monkeypatch.setattr(
         rotation_suggestions, "_load_recycled_history",
-        lambda d: rotation_suggestions.RecycledHistory(),
+        lambda d, group_locations=None: rotation_suggestions.RecycledHistory(),
     )
     monkeypatch.setattr(staffing_route.rotation_training, "reconcile_blocks", lambda as_of: [])
     monkeypatch.setattr(staffing_route.app_settings, "get_setting", lambda key: ["Repair 1"])

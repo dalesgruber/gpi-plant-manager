@@ -408,12 +408,16 @@ def _recycled_history_from_rows(
     )
 
 
-def _load_recycled_history(day: date) -> RecycledHistory:
+def _load_recycled_history(
+    day: date,
+    group_locations: dict[str, Sequence[str]] | None = None,
+) -> RecycledHistory:
     """Load bounded Recycled center/group history for ``day``.
 
     Impure sibling of ``_load_trim_saw_history``: same bounded, testing-day-
-    excluding window and snapshot-preferring convention, but aggregated across
-    all Recycled centers (from ``staffing.LOCATIONS``) instead of Trim Saw only.
+    excluding window and snapshot-preferring convention. Direct callers retain
+    the legacy Recycled-only grouping; the staffing route supplies all Auto
+    scheduling-preference targets so their center fairness is also recorded.
     """
     from . import db
 
@@ -441,7 +445,10 @@ def _load_recycled_history(day: date) -> RecycledHistory:
         "ORDER BY s.day DESC",
         (day, LOOKBACK_SCHEDULE_COUNT),
     )
-    return _recycled_history_from_rows(rows, _default_group_locations())
+    return _recycled_history_from_rows(
+        rows,
+        _default_group_locations() if group_locations is None else group_locations,
+    )
 
 
 def _group_for_center(center: str) -> str | None:

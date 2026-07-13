@@ -183,6 +183,14 @@ def _auto_group_maps(
     return locations, required_skills
 
 
+def _auto_history_group_locations() -> dict[str, tuple[str, ...]]:
+    """Return all canonical Auto groups, including currently disabled centers."""
+    return {
+        target.key: target.centers
+        for target in staffing.scheduling_preference_targets()
+    }
+
+
 def _roster_minus_full_day_off(roster, time_off_entries):
     """Drop people on a full-day absence so the pure engine never seats them.
 
@@ -282,7 +290,10 @@ def _gather_recycled_inputs(d: date, time_off_entries):
     this in try/except so any read failure degrades to the stored defaults.
     """
     preferences = rotation_store.load_preferences_by_name()
-    history = rotation_suggestions._load_recycled_history(d)
+    history = rotation_suggestions._load_recycled_history(
+        d,
+        group_locations=_auto_history_group_locations(),
+    )
     rotation_training.reconcile_blocks(plant_today())
     active_blocks = rotation_store.active_blocks_for_day(d)
     block_effects = []

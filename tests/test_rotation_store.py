@@ -18,6 +18,8 @@ def test_scheduling_preference_targets_group_sibling_centers():
     assert targets["Hand Build"].centers == (
         "Hand Build #2", "Hand Build #1", "Big Build #1",
     )
+    assert targets["Trim Saw"].centers == ("Trim Saw 1",)
+    assert targets["Trim Saw"].required_skills == ("Trim Saw",)
     assert targets["Woodpecker #1"].centers == ("Woodpecker #1",)
     assert targets["Woodpecker #1"].required_skills == ("Woodpecker",)
 
