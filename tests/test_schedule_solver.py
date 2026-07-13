@@ -1,3 +1,5 @@
+import pytest
+
 from zira_dashboard.schedule_solver import (
     CandidateEdge,
     CandidateRejection,
@@ -172,3 +174,166 @@ def test_best_safe_partial_leaves_unresolved_centers_enabled_in_result():
     assert len(result.unresolved_centers) == 1
     assert len(result.decisions) == 1
     assert result.issues[0].code == "insufficient_qualified_headcount"
+
+
+def test_coupled_prefix_pruning_preserves_maximum_center_coverage():
+    four_person = CrewOption(
+        "A Four Person",
+        tuple(edge(person, "A Four Person") for person in ("A", "B", "C", "D")),
+    )
+    first_pair = CrewOption(
+        "B First Pair",
+        tuple(edge(person, "B First Pair") for person in ("A", "B")),
+    )
+    second_pair = CrewOption(
+        "C Second Pair",
+        tuple(edge(person, "C Second Pair") for person in ("C", "D")),
+    )
+
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="A Four Person",
+            group="Four Person",
+            remaining_slots=4,
+            crew_options=(four_person,),
+        ),
+        CenterRequirement(
+            center="B First Pair",
+            group="Pair",
+            remaining_slots=2,
+            crew_options=(first_pair,),
+        ),
+        CenterRequirement(
+            center="C Second Pair",
+            group="Pair",
+            remaining_slots=2,
+            crew_options=(second_pair,),
+        ),
+    ))
+
+    assert result.staffed_centers == ("B First Pair", "C Second Pair")
+    assert {(item.center, item.person) for item in result.decisions} == {
+        ("B First Pair", "A"),
+        ("B First Pair", "B"),
+        ("C Second Pair", "C"),
+        ("C Second Pair", "D"),
+    }
+
+
+def test_protected_person_is_reserved_from_generated_assignments():
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="Manual Safe",
+            group="Manual",
+            remaining_slots=0,
+            protected_people=("Protected",),
+        ),
+        CenterRequirement(
+            center="Repair 1",
+            group="Repair",
+            remaining_slots=1,
+            candidates=(edge("Protected", "Repair 1"),),
+        ),
+    ))
+
+    assert result.decisions == ()
+    assert result.staffed_centers == ("Manual Safe",)
+    assert result.unresolved_centers == ("Repair 1",)
+
+
+def test_crew_option_rejects_member_from_another_center():
+    malformed = CrewOption(
+        "Hand Build #1",
+        (
+            edge("A", "Hand Build #1"),
+            edge("B", "Repair 1"),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="complete, unique, and center-scoped"):
+        solve_minimum_coverage((CenterRequirement(
+            center="Hand Build #1",
+            group="Hand Build",
+            remaining_slots=2,
+            crew_options=(malformed,),
+        ),))
+
+
+def test_level_zero_single_edge_is_rejected_at_solver_boundary():
+    with pytest.raises(ValueError, match="levels must be positive"):
+        solve_minimum_coverage((CenterRequirement(
+            center="Repair 1",
+            group="Repair",
+            remaining_slots=1,
+            candidates=(edge("Trainee", "Repair 1", level=0),),
+            level_zero_people=("Trainee",),
+        ),))
+
+
+def test_level_zero_crew_edge_is_rejected_at_solver_boundary():
+    with pytest.raises(ValueError, match="levels must be positive"):
+        solve_minimum_coverage((CenterRequirement(
+            center="Hand Build #1",
+            group="Hand Build",
+            remaining_slots=2,
+            crew_options=(CrewOption(
+                "Hand Build #1",
+                (
+                    edge("Qualified", "Hand Build #1", level=2),
+                    edge("Trainee", "Hand Build #1", level=0),
+                ),
+            ),),
+            level_zero_people=("Trainee",),
+        ),))
+
+
+def test_equal_cost_single_matching_uses_canonical_center_person_mapping():
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="C1",
+            group="G1",
+            remaining_slots=1,
+            candidates=(edge("A", "C1"), edge("C", "C1")),
+        ),
+        CenterRequirement(
+            center="C2",
+            group="G2",
+            remaining_slots=1,
+            candidates=(edge("A", "C2"), edge("B", "C2")),
+        ),
+        CenterRequirement(
+            center="C3",
+            group="G3",
+            remaining_slots=1,
+            candidates=(edge("A", "C3"), edge("B", "C3")),
+        ),
+    ))
+
+    assert tuple((item.center, item.person) for item in result.decisions) == (
+        ("C1", "C"),
+        ("C2", "A"),
+        ("C3", "B"),
+    )
+
+
+def test_large_canonical_tie_costs_remain_reachable():
+    requirements = tuple(
+        CenterRequirement(
+            center=f"C{index:02}",
+            group="Group",
+            remaining_slots=1,
+            candidates=(CandidateEdge(
+                person=f"P{index:02}",
+                center=f"C{index:02}",
+                level=1,
+                preference="regular",
+                rank_cost=1,
+            ),),
+        )
+        for index in range(20)
+    )
+
+    result = solve_minimum_coverage(requirements)
+
+    assert len(result.staffed_centers) == 20
+    assert result.unresolved_centers == ()

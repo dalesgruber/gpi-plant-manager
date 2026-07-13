@@ -154,26 +154,41 @@ def _match_single_requirements(
         _add_arc(graph, center_node[requirement.center], sink, 1, 0)
 
     ordinary_bound = sum(max(0, edge.rank_cost) for edge in edges) + len(edges) + 1
+    unmatched_digit = len(people)
+    tie_radix = unmatched_digit + 1
+    tie_range = tie_radix ** len(centers) - 1
+    tie_scale = tie_range + 1
+    person_digit = {person: index for index, person in enumerate(people)}
+    center_place = {
+        requirement.center: tie_radix ** (len(centers) - index - 1)
+        for index, requirement in enumerate(centers)
+    }
     chosen_arcs: list[tuple[int, int, CandidateEdge]] = []
     for edge in edges:
-        cost = edge.override_cost * ordinary_bound + max(0, edge.rank_cost)
+        primary_cost = edge.override_cost * ordinary_bound + max(0, edge.rank_cost)
+        tie_cost = (
+            person_digit[edge.person] - unmatched_digit
+        ) * center_place[edge.center]
+        cost = primary_cost * tie_scale + tie_cost
         start = person_node[edge.person]
         arc_index = _add_arc(graph, start, center_node[edge.center], 1, cost)
         chosen_arcs.append((start, arc_index, edge))
 
     node_count = len(graph)
     while True:
-        distance = [10**18] * node_count
+        distance: list[int | None] = [None] * node_count
         previous: list[tuple[int, int] | None] = [None] * node_count
         distance[source] = 0
         for _ in range(node_count - 1):
             changed = False
             for node, arcs in enumerate(graph):
-                if distance[node] == 10**18:
+                if distance[node] is None:
                     continue
                 for arc_index, arc in enumerate(arcs):
                     candidate = distance[node] + arc.cost
-                    if arc.capacity and candidate < distance[arc.to]:
+                    if arc.capacity and (
+                        distance[arc.to] is None or candidate < distance[arc.to]
+                    ):
                         distance[arc.to] = candidate
                         previous[arc.to] = (node, arc_index)
                         changed = True
@@ -308,15 +323,28 @@ def solve_minimum_coverage(
         len(option.members) != requirement.remaining_slots
         or option.center != requirement.center
         or len(set(option.people)) != len(option.people)
+        or any(member.center != requirement.center for member in option.members)
         for requirement in coupled
         for option in requirement.crew_options
     ):
         raise ValueError("crew options must be complete, unique, and center-scoped")
+    all_edges = tuple(
+        edge
+        for requirement in normalized
+        for edge in requirement.candidates
+    ) + tuple(
+        member
+        for requirement in coupled
+        for option in requirement.crew_options
+        for member in option.members
+    )
+    if any(edge.level <= 0 for edge in all_edges):
+        raise ValueError("candidate and crew member levels must be positive")
 
     best: CoverageResult | None = None
     seen_prefix: dict[
         tuple[int, frozenset[str]],
-        tuple[int, int, tuple[tuple[str, str], ...]],
+        tuple[int, int, int, tuple[tuple[str, str], ...]],
     ] = {}
 
     def visit(
@@ -325,7 +353,9 @@ def solve_minimum_coverage(
         decisions: tuple[AssignmentDecision, ...],
     ) -> None:
         nonlocal best
+        staffed_coupled = len({item.center for item in decisions})
         prefix_score = (
+            -staffed_coupled,
             sum(item.preference == "never" for item in decisions),
             sum(item.rank_cost for item in decisions),
             tuple((item.center.lower(), item.person.lower()) for item in decisions),
@@ -335,7 +365,6 @@ def solve_minimum_coverage(
         if previous_prefix is not None and previous_prefix <= prefix_score:
             return
         seen_prefix[state] = prefix_score
-        staffed_coupled = len({item.center for item in decisions})
         optimistic = (
             sum(item.remaining_slots == 0 for item in normalized)
             + staffed_coupled
@@ -371,5 +400,10 @@ def solve_minimum_coverage(
             )
         visit(index + 1, used_people, decisions)
 
-    visit(0, frozenset(), ())
+    reserved_people = frozenset(
+        person
+        for requirement in normalized
+        for person in requirement.protected_people
+    )
+    visit(0, reserved_people, ())
     return best if best is not None else _assemble_result(normalized, ())
