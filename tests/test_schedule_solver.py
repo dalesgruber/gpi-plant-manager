@@ -294,7 +294,7 @@ def test_crew_option_rejects_member_from_another_center():
 
 
 def test_level_zero_single_edge_is_rejected_at_solver_boundary():
-    with pytest.raises(ValueError, match="levels must be positive"):
+    with pytest.raises(ValueError, match="levels must be 1, 2, or 3"):
         solve_minimum_coverage((CenterRequirement(
             center="Repair 1",
             group="Repair",
@@ -305,7 +305,7 @@ def test_level_zero_single_edge_is_rejected_at_solver_boundary():
 
 
 def test_level_zero_crew_edge_is_rejected_at_solver_boundary():
-    with pytest.raises(ValueError, match="levels must be positive"):
+    with pytest.raises(ValueError, match="levels must be 1, 2, or 3"):
         solve_minimum_coverage((CenterRequirement(
             center="Hand Build #1",
             group="Hand Build",
@@ -434,5 +434,5 @@ def test_coupled_prefix_tie_uses_canonical_center_person_mapping():
     ids=("single", "crew"),
 )
 def test_level_four_edge_is_rejected_at_solver_boundary(requirement):
-    with pytest.raises(ValueError, match="levels must be positive"):
+    with pytest.raises(ValueError, match="levels must be 1, 2, or 3"):
         solve_minimum_coverage((requirement,))

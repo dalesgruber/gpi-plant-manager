@@ -343,7 +343,7 @@ def solve_minimum_coverage(
         for member in option.members
     )
     if any(edge.level not in {1, 2, 3} for edge in all_edges):
-        raise ValueError("candidate and crew member levels must be positive")
+        raise ValueError("candidate and crew member levels must be 1, 2, or 3")
 
     best: CoverageResult | None = None
     single_candidate_people = frozenset(

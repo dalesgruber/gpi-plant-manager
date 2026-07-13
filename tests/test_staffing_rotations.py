@@ -528,7 +528,13 @@ def test_rebuild_persists_safe_partial_assignments_and_reports_coverage(monkeypa
     )
     sched = staffing.Schedule(
         day=TARGET_DAY,
+        published=True,
         assignments={"Dismantler 1": ["Stale Generated"]},
+        notes="Keep the daily handoff",
+        wc_notes={"Repair 1": "Keep the work-center handoff"},
+        testing_day=True,
+        published_snapshot={"assignments": {"Repair 1": ["Published Person"]}},
+        custom_hours={"shift_start": "06:30", "shift_end": "15:00"},
         assignment_sources={"Dismantler 1": {"Stale Generated": "generated"}},
     )
 
@@ -568,6 +574,19 @@ def test_rebuild_persists_safe_partial_assignments_and_reports_coverage(monkeypa
     assert saved[-1].assignments == {"Repair 1": ["Qualified"]}
     assert saved[-1].assignment_sources == {
         "Repair 1": {"Qualified": "generated"},
+    }
+    assert saved[-1].published is True
+    assert saved[-1].published_snapshot == {
+        "assignments": {"Repair 1": ["Published Person"]},
+    }
+    assert saved[-1].notes == "Keep the daily handoff"
+    assert saved[-1].wc_notes == {
+        "Repair 1": "Keep the work-center handoff",
+    }
+    assert saved[-1].testing_day is True
+    assert saved[-1].custom_hours == {
+        "shift_start": "06:30",
+        "shift_end": "15:00",
     }
 
 
@@ -913,6 +932,52 @@ def test_auto_work_centers_endpoint_saves_global_setting(monkeypatch):
     }
     assert saved[rotations.staffing_route.AUTO_SCHEDULE_WC_SETTING] == ["Repair 1", "Junior #1"]
     assert invalidated == ["today", "stable"]
+
+
+def test_auto_work_centers_endpoint_removes_non_empty_turn_off_selection(monkeypatch):
+    from zira_dashboard import scheduler_time_off
+
+    client, rotations = _rotations_client(monkeypatch)
+    saved: list[tuple[str, ...]] = []
+    suggested_enabled: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [])
+    monkeypatch.setattr(
+        rotations.staffing,
+        "load_schedule",
+        lambda d: staffing.Schedule(day=d),
+    )
+    monkeypatch.setattr(scheduler_time_off, "time_off_entries_for_day", lambda d: [])
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_recycled_suggestion_for_day",
+        lambda *args, **kwargs: (
+            suggested_enabled.append(tuple(kwargs["enabled_work_centers"]))
+            or rotation_suggestions.RecycledSuggestion({}, {}, {}, ())
+        ),
+    )
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_save_enabled_auto_work_centers",
+        lambda centers: saved.append(tuple(centers)) or list(centers),
+    )
+    monkeypatch.setattr(rotations.staffing_route.work_centers_store, "default_people", lambda _loc: [])
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
+
+    response = client.post(
+        "/api/rotations/auto-work-centers",
+        json={
+            "day": "2026-07-14",
+            "work_centers": ["Repair 1", "Repair 2", "Dismantler 1"],
+            "turn_off": ["Repair 2"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["enabled_work_centers"] == ["Repair 1", "Dismantler 1"]
+    assert suggested_enabled == [("Repair 1", "Dismantler 1")]
+    assert saved == [("Repair 1", "Dismantler 1")]
 
 
 def test_auto_center_selection_is_saved_and_reports_unresolved_coverage(monkeypatch):
