@@ -1,6 +1,8 @@
 from zira_dashboard.schedule_solver import (
     CandidateEdge,
+    CandidateRejection,
     CenterRequirement,
+    CrewOption,
     solve_minimum_coverage,
 )
 
@@ -89,3 +91,84 @@ def test_equal_results_are_stable_across_input_order():
 
     assert forward.decisions == reverse.decisions
     assert len(forward.staffed_centers) == 2
+
+
+def test_multi_person_center_is_either_complete_or_empty():
+    a = edge("A", "Hand Build #1", level=2)
+    b = edge("B", "Hand Build #1", level=2)
+    only_a_elsewhere = edge("A", "Repair 1", level=2)
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="Hand Build #1",
+            group="Hand Build",
+            remaining_slots=2,
+            crew_options=(CrewOption("Hand Build #1", (a, b)),),
+        ),
+        CenterRequirement(
+            center="Repair 1",
+            group="Repair",
+            remaining_slots=1,
+            candidates=(only_a_elsewhere,),
+        ),
+    ))
+
+    assert result.staffed_centers == ("Hand Build #1",)
+    assert {(item.center, item.person) for item in result.decisions} == {
+        ("Hand Build #1", "A"),
+        ("Hand Build #1", "B"),
+    }
+    assert result.unresolved_centers == ("Repair 1",)
+
+
+def test_protected_safe_minimum_needs_no_generated_assignment():
+    result = solve_minimum_coverage((CenterRequirement(
+        center="Repair 1",
+        group="Repair",
+        remaining_slots=0,
+        protected_people=("Manual",),
+    ),))
+
+    assert result.staffed_centers == ("Repair 1",)
+    assert result.decisions == ()
+
+
+def test_level_zero_only_reports_training_required_without_assigning_anyone():
+    result = solve_minimum_coverage((CenterRequirement(
+        center="Dismantler 1",
+        group="Dismantler",
+        remaining_slots=1,
+        level_zero_people=("Potential Trainee",),
+        rejections=(CandidateRejection(
+            person="Potential Trainee",
+            code="level_zero",
+            detail="Skill level is 0; an active training block is required.",
+        ),),
+    ),))
+
+    assert result.decisions == ()
+    assert result.issues[0].code == "training_required"
+    assert result.issues[0].message == (
+        "Dismantler 1 could not be staffed. Training is required for Dismantler."
+    )
+
+
+def test_best_safe_partial_leaves_unresolved_centers_enabled_in_result():
+    result = solve_minimum_coverage((
+        CenterRequirement(
+            center="Repair 1",
+            group="Repair",
+            remaining_slots=1,
+            candidates=(edge("Only Person", "Repair 1"),),
+        ),
+        CenterRequirement(
+            center="Dismantler 1",
+            group="Dismantler",
+            remaining_slots=1,
+            candidates=(edge("Only Person", "Dismantler 1"),),
+        ),
+    ))
+
+    assert len(result.staffed_centers) == 1
+    assert len(result.unresolved_centers) == 1
+    assert len(result.decisions) == 1
+    assert result.issues[0].code == "insufficient_qualified_headcount"

@@ -273,11 +273,103 @@ def _assemble_result(
     )
 
 
+def _result_is_better(candidate: CoverageResult, current: CoverageResult | None) -> bool:
+    if current is None:
+        return True
+    if len(candidate.staffed_centers) != len(current.staffed_centers):
+        return len(candidate.staffed_centers) > len(current.staffed_centers)
+    candidate_overrides = sum(item.preference == "never" for item in candidate.decisions)
+    current_overrides = sum(item.preference == "never" for item in current.decisions)
+    if candidate_overrides != current_overrides:
+        return candidate_overrides < current_overrides
+    candidate_cost = sum(item.rank_cost for item in candidate.decisions)
+    current_cost = sum(item.rank_cost for item in current.decisions)
+    if candidate_cost != current_cost:
+        return candidate_cost < current_cost
+    candidate_key = tuple((item.center.lower(), item.person.lower()) for item in candidate.decisions)
+    current_key = tuple((item.center.lower(), item.person.lower()) for item in current.decisions)
+    return candidate_key < current_key
+
+
+def _crew_decisions(option: CrewOption) -> tuple[AssignmentDecision, ...]:
+    return tuple(_decision(member) for member in option.members)
+
+
 def solve_minimum_coverage(
     requirements: Sequence[CenterRequirement],
 ) -> CoverageResult:
     normalized = tuple(sorted(requirements, key=lambda item: item.center.lower()))
     singles = tuple(item for item in normalized if item.remaining_slots == 1)
-    if any(item.remaining_slots > 1 for item in normalized):
-        raise ValueError("multi-person requirements need complete crew options")
-    return _assemble_result(normalized, _match_single_requirements(singles))
+    coupled = tuple(sorted(
+        (item for item in normalized if item.remaining_slots > 1),
+        key=lambda item: (len(item.crew_options), item.center.lower()),
+    ))
+    if any(
+        len(option.members) != requirement.remaining_slots
+        or option.center != requirement.center
+        or len(set(option.people)) != len(option.people)
+        for requirement in coupled
+        for option in requirement.crew_options
+    ):
+        raise ValueError("crew options must be complete, unique, and center-scoped")
+
+    best: CoverageResult | None = None
+    seen_prefix: dict[
+        tuple[int, frozenset[str]],
+        tuple[int, int, tuple[tuple[str, str], ...]],
+    ] = {}
+
+    def visit(
+        index: int,
+        used_people: frozenset[str],
+        decisions: tuple[AssignmentDecision, ...],
+    ) -> None:
+        nonlocal best
+        prefix_score = (
+            sum(item.preference == "never" for item in decisions),
+            sum(item.rank_cost for item in decisions),
+            tuple((item.center.lower(), item.person.lower()) for item in decisions),
+        )
+        state = (index, used_people)
+        previous_prefix = seen_prefix.get(state)
+        if previous_prefix is not None and previous_prefix <= prefix_score:
+            return
+        seen_prefix[state] = prefix_score
+        staffed_coupled = len({item.center for item in decisions})
+        optimistic = (
+            sum(item.remaining_slots == 0 for item in normalized)
+            + staffed_coupled
+            + (len(coupled) - index)
+            + len(singles)
+        )
+        if best is not None and optimistic < len(best.staffed_centers):
+            return
+        if index == len(coupled):
+            matched = _match_single_requirements(singles, used_people)
+            candidate = _assemble_result(normalized, decisions + matched)
+            if _result_is_better(candidate, best):
+                best = candidate
+            return
+
+        requirement = coupled[index]
+        ordered_options = sorted(
+            requirement.crew_options,
+            key=lambda option: (
+                sum(member.preference == "never" for member in option.members),
+                sum(member.rank_cost for member in option.members),
+                tuple(name.lower() for name in option.people),
+            ),
+        )
+        for option in ordered_options:
+            option_people = frozenset(option.people)
+            if option_people & used_people:
+                continue
+            visit(
+                index + 1,
+                used_people | option_people,
+                decisions + _crew_decisions(option),
+            )
+        visit(index + 1, used_people, decisions)
+
+    visit(0, frozenset(), ())
+    return best if best is not None else _assemble_result(normalized, ())
