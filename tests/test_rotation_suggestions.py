@@ -698,7 +698,7 @@ def test_normal_mode_rests_person_with_heavy_recent_group_history():
     assert out.assignments["Repair 1"] == ["Beatriz"]
 
 
-def test_minimum_coverage_uses_stable_center_order_before_optional_rotation():
+def test_minimum_coverage_uses_solver_canonical_center_order():
     history = RecycledHistory(
         center_counts={("Jordan", "Repair 1"): 2, ("Jordan", "Repair 2"): 1},
         last_center_by_person_group={("Jordan", "Repair"): "Repair 2"},
@@ -804,6 +804,71 @@ def test_global_minimum_moves_cross_trained_jose_and_backfills_repair():
     assert out.assignments["Dismantler 1"] == ["Jose Luis"]
     assert out.assignments["Repair 2"] == ["Domingo Recinos"]
     assert out.issues == ()
+
+
+def test_equal_minimum_candidates_use_solver_canonical_name_order():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14),
+        mode="normal",
+        roster=[
+            staffing.Person(name="Bob", skills={"Repair": 2}),
+            staffing.Person(name="Ann", skills={"Repair": 2}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 1},
+        runnable_centers={"Repair 1"},
+    )
+
+    assert out.assignments["Repair 1"] == ["Ann"]
+
+
+def test_empty_assignment_keys_follow_canonical_group_center_order():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14),
+        mode="normal",
+        roster=[],
+        group_locations={
+            "First Group": ("Center Z", "Center A"),
+            "Second Group": ("Center M",),
+        },
+        group_required_skills={
+            "First Group": ("First Skill",),
+            "Second Group": ("Second Skill",),
+        },
+        runnable_centers={center for center in ("Center M", "Center A", "Center Z")},
+    )
+
+    assert list(out.assignments) == ["Center Z", "Center A", "Center M"]
+
+
+def test_staffed_center_reports_invalid_protected_assignment():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14),
+        mode="normal",
+        roster=[
+            staffing.Person(name="Protected Zero", skills={"Repair": 0}),
+            staffing.Person(name="Qualified", skills={"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        locked_assignments={"Repair 1": ("Protected Zero",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+    )
+
+    assert out.assignments["Repair 1"] == ["Protected Zero", "Qualified"]
+    assert out.staffed_centers == ("Repair 1",)
+    issue = next(
+        item for item in out.issues
+        if item.code == "protected_assignment_unqualified"
+    )
+    assert issue.center == "Repair 1"
+    assert issue.rejections[0].person == "Protected Zero"
+    assert "does not safely count toward minimum coverage" in issue.rejections[0].detail
+    assert issue.message in out.warnings
 
 
 def test_level_zero_only_alerts_that_training_is_required():
@@ -1109,12 +1174,11 @@ def test_dismantler_group_schedules_end_to_end():
         },
         history=history, locked_assignments={}, block_effects=(),
     )
-    # Minimum coverage uses the configured center order before optional
-    # center-rotation fill; the strongest operator covers its first center.
-    assert out.assignments["Dismantler 4"] == ["Dee"]
-    assert out.assignments["Dismantler 3"] == ["Dan"]
-    assert out.reasons["Dismantler 4"]["Dee"] == "Assigned to meet minimum coverage."
-    assert out.reasons["Dismantler 3"]["Dan"] == "Assigned to meet minimum coverage."
+    # Equal-cost center mappings use the pure solver's canonical final tie.
+    assert out.assignments["Dismantler 2"] == ["Dee"]
+    assert out.assignments["Dismantler 1"] == ["Dan"]
+    assert out.reasons["Dismantler 2"]["Dee"] == "Assigned to meet minimum coverage."
+    assert out.reasons["Dismantler 1"]["Dan"] == "Assigned to meet minimum coverage."
     assert set(out.people_for_group("Dismantler")) == {"Dee", "Dan"}
 
 

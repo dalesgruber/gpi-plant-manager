@@ -596,12 +596,10 @@ def _minimum_eligible(
 def _minimum_rank_cost(
     person: staffing.Person,
     group: str,
-    center: str,
     mode: str,
     preferences: dict[str, dict[str, str]],
     history: RecycledHistory,
     group_required_skills: Mapping[str, tuple[str, ...]],
-    center_order: Mapping[str, int],
 ) -> int:
     level = _group_level(person, group, group_required_skills)
     mode_key = _candidate_rank_key(
@@ -612,14 +610,10 @@ def _minimum_rank_cost(
         history,
         group_required_skills,
     )
-    stable_center = center_order.get(center, 1_000_000)
-    stable_name = sum(ord(char) for char in person.name.lower())
     mode_cost = 10_000 + int(mode_key[0])
     return (
         (3 - level) * 1_000_000_000_000
         + mode_cost * 1_000_000
-        + stable_center * 10_000
-        + stable_name
     )
 
 
@@ -682,6 +676,63 @@ def _coverage_rejections(
     return tuple(rejected)
 
 
+def _protected_assignment_issues(
+    *,
+    roster: Sequence[staffing.Person],
+    groups: Mapping[str, Sequence[str]],
+    required_skills: Mapping[str, tuple[str, ...]],
+    assignments: Mapping[str, Sequence[str]],
+    sources: Mapping[str, Mapping[str, str]],
+    allowed_centers: Collection[str],
+    block_trainees_by_center: Mapping[str, Collection[str]],
+) -> tuple[schedule_solver.CoverageIssue, ...]:
+    by_name = {person.name: person for person in roster}
+    issues = []
+    for group, centers in groups.items():
+        required = required_skills.get(group, (group,))
+        for center in centers:
+            if center not in allowed_centers:
+                continue
+            trainees = set(block_trainees_by_center.get(center, ()))
+            rejections = []
+            for name in assignments.get(center, ()):
+                if name in trainees or name not in sources.get(center, {}):
+                    continue
+                person = by_name.get(name)
+                if person is None:
+                    reason = "is unavailable in the active roster"
+                elif not person.active:
+                    reason = "is inactive"
+                elif person.reserve:
+                    reason = "is in Reserves"
+                elif any(skill not in person.skills for skill in required):
+                    reason = "is missing a required skill"
+                elif _group_level(person, group, dict(required_skills)) < 1:
+                    reason = "has skill level 0"
+                else:
+                    continue
+                rejections.append(schedule_solver.CandidateRejection(
+                    person=name,
+                    code="protected_assignment_unqualified",
+                    detail=(
+                        f"Protected assignment {reason} and does not safely count "
+                        "toward minimum coverage."
+                    ),
+                ))
+            if rejections:
+                issues.append(schedule_solver.CoverageIssue(
+                    center=center,
+                    group=group,
+                    code="protected_assignment_unqualified",
+                    message=(
+                        f"{center} has a protected assignment that does not safely "
+                        "count toward minimum coverage."
+                    ),
+                    rejections=tuple(rejections),
+                ))
+    return tuple(issues)
+
+
 def _coverage_requirements(
     *,
     mode: str,
@@ -699,10 +750,6 @@ def _coverage_requirements(
     block_trainees_by_center: Mapping[str, Collection[str]],
 ) -> tuple[schedule_solver.CenterRequirement, ...]:
     by_name = {person.name: person for person in roster}
-    center_order = {
-        center: index
-        for index, center in enumerate(center for values in groups.values() for center in values)
-    }
     requirements = []
     for group, centers in groups.items():
         for center in centers:
@@ -757,12 +804,10 @@ def _coverage_requirements(
                     rank_cost=_minimum_rank_cost(
                         person,
                         group,
-                        center,
                         mode,
                         preferences,
                         history,
                         required_skills,
-                        center_order,
                     ),
                 )
                 for person in sorted(available_people, key=lambda item: item.name.lower())
@@ -1025,14 +1070,24 @@ def suggest_recycled_assignments(
         capacity_for=_effective_capacity,
         block_trainees_by_center=block_trainees_by_center,
     )
+    protected_issues = _protected_assignment_issues(
+        roster=roster,
+        groups=groups,
+        required_skills=resolved_group_required_skills,
+        assignments=assignments,
+        sources=sources,
+        allowed_centers=allowed_centers,
+        block_trainees_by_center=block_trainees_by_center,
+    )
     coverage = schedule_solver.solve_minimum_coverage(requirements)
+    issues = protected_issues + coverage.issues
     reason_codes: dict[str, dict[str, str]] = {}
     for decision in coverage.decisions:
         _place(decision.center, decision.person, GENERATED_SOURCE, decision.reason)
         reason_codes.setdefault(decision.center, {})[decision.person] = decision.reason_code
 
     warnings.extend(
-        issue.message for issue in coverage.issues if issue.message not in warnings
+        issue.message for issue in issues if issue.message not in warnings
     )
     for issue in coverage.issues:
         if issue.group == TRIM_SAW_SKILL and issue.code == "no_safe_pair":
@@ -1195,8 +1250,10 @@ def suggest_recycled_assignments(
         for person in roster
         if person.active and not person.reserve
     }
-    for center in allowed_centers:
-        assignments.setdefault(center, [])
+    for centers in groups.values():
+        for center in centers:
+            if center in allowed_centers:
+                assignments.setdefault(center, [])
     return RecycledSuggestion(
         assignments=assignments,
         sources=sources,
@@ -1206,6 +1263,6 @@ def suggest_recycled_assignments(
         reason_codes=reason_codes,
         staffed_centers=coverage.staffed_centers,
         unresolved_centers=coverage.unresolved_centers,
-        issues=coverage.issues,
+        issues=issues,
         unused_people=tuple(sorted(eligible_people - generated_people - assigned, key=str.lower)),
     )
