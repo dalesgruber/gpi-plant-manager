@@ -322,6 +322,99 @@ class _BlockEffect:
     warnings: tuple = ()
 
 
+def test_engine_leaves_two_person_center_empty_when_only_one_qualified_person_exists():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[staffing.Person(name="Only Builder", skills={"Hand Build": 3})],
+        group_locations={"Hand Build": ("Hand Build #2",)},
+        group_required_skills={"Hand Build": ("Hand Build",)},
+        center_minimums={"Hand Build #2": 2},
+        runnable_centers={"Hand Build #2"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(),
+    )
+
+    assert out.assignments.get("Hand Build #2", []) == []
+    assert "Hand Build #2 could not be staffed to its minimum of 2 operators." in out.warnings
+
+
+def test_engine_fills_each_minimum_before_optional_capacity():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="A", skills={"Hand Build": 3}),
+            staffing.Person(name="B", skills={"Hand Build": 3}),
+            staffing.Person(name="C", skills={"Hand Build": 3}),
+        ],
+        group_locations={"Hand Build": ("Hand Build #1", "Hand Build #2")},
+        group_required_skills={"Hand Build": ("Hand Build",)},
+        center_minimums={"Hand Build #1": 2, "Hand Build #2": 1},
+        runnable_centers={"Hand Build #1", "Hand Build #2"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(),
+    )
+
+    assert len(out.assignments["Hand Build #1"]) == 2
+    assert len(out.assignments["Hand Build #2"]) == 1
+
+
+def test_engine_generates_only_for_runnable_centers():
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="A", skills={"Hand Build": 3}),
+            staffing.Person(name="B", skills={"Hand Build": 3}),
+        ],
+        group_locations={"Hand Build": ("Hand Build #1", "Hand Build #2")},
+        group_required_skills={"Hand Build": ("Hand Build",)},
+        center_minimums={"Hand Build #1": 1, "Hand Build #2": 1},
+        runnable_centers={"Hand Build #2"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(),
+    )
+
+    assert out.assignments.get("Hand Build #1", []) == []
+    assert out.assignments["Hand Build #2"] == ["A", "B"]
+
+
+def test_training_block_trainee_requires_a_level_three_partner_to_run():
+    effect = _BlockEffect(
+        locked_people={"Repair": ["Trainee"]},
+        temporary_extra_people={},
+        warnings=(),
+    )
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="Trainee", skills={"Repair": 0}),
+            staffing.Person(name="Green", skills={"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(effect,),
+    )
+
+    assert set(out.assignments["Repair 1"]) == {"Trainee", "Green"}
+
+
+def test_training_block_keeps_trainee_without_a_level_three_partner():
+    effect = _BlockEffect(locked_people={"Repair": ["Trainee"]})
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="Trainee", skills={"Repair": 0}),
+            staffing.Person(name="Not Green", skills={"Repair": 2}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(effect,),
+    )
+
+    assert out.assignments["Repair 1"] == ["Trainee"]
+    assert "Repair 1 could not be staffed to its minimum of 2 operators." in out.warnings
+
+
 def test_normal_mode_uses_primary_preference_before_regular():
     out = suggest_recycled_assignments(
         day=date(2026, 7, 14), mode="normal", roster=[_person("Primary", 3), _person("Regular", 3)],
@@ -781,7 +874,7 @@ def test_generated_assignments_carry_reasons():
     assert reasons["Primary Two"] == "primary Repair operator"
 
 
-def test_generic_group_locations_can_schedule_new_work_centers():
+def test_generic_group_locations_keep_an_under_minimum_hand_build_crew_empty():
     roster = [
         staffing.Person(name="Hand Builder", skills={"Hand Build": 3}),
         staffing.Person(name="Junior Pro", skills={"Junior": 3}),
@@ -797,7 +890,8 @@ def test_generic_group_locations_can_schedule_new_work_centers():
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
 
-    assert out.assignments["Hand Build #1"] == ["Hand Builder"]
+    assert out.assignments["Hand Build #1"] == []
+    assert "Hand Build #1 could not be staffed to its minimum of 2 operators." in out.warnings
     assert out.assignments["Junior #1"] == ["Junior Pro"]
 
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from itertools import combinations
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 
 from . import staffing
 
@@ -587,6 +587,8 @@ def suggest_recycled_assignments(
     locked_assignments: dict[str, Sequence[str]] | None = None,
     block_effects: Sequence = (),
     training_cap: int = 2,
+    center_minimums: Mapping[str, int] | None = None,
+    runnable_centers: Collection[str] | None = None,
 ) -> RecycledSuggestion:
     """Suggest safe Recycled assignments for the Dismantler/Repair/Trim Saw groups.
 
@@ -612,6 +614,22 @@ def suggest_recycled_assignments(
     }
     managed_centers = {center for centers in groups.values() for center in centers}
 
+    def _effective_minimum(center: str) -> int:
+        if center_minimums is not None and center in center_minimums:
+            return max(0, int(center_minimums[center]))
+        return _center_min_ops(center)
+
+    # Supplying a minimum for a generic test/custom center makes that minimum
+    # schedulable even when no persisted Location record supplies its capacity.
+    def _effective_capacity(center: str) -> int:
+        return max(_center_capacity(center), _effective_minimum(center))
+
+    allowed_centers = (
+        managed_centers
+        if runnable_centers is None
+        else managed_centers & set(runnable_centers)
+    )
+
     assignments: dict[str, list[str]] = {}
     for center, names in (base_assignments or {}).items():
         if center in managed_centers:
@@ -631,6 +649,56 @@ def suggest_recycled_assignments(
             reasons.setdefault(center, {})[name] = reason
         assigned.add(name)
 
+    def _remove_generated(
+        center: str,
+        *,
+        keep: Collection[str] = (),
+        predicate=None,
+    ) -> None:
+        preserved = set(keep)
+        retained: list[str] = []
+        removed: list[str] = []
+        for name in assignments.get(center, []):
+            is_generated = sources.get(center, {}).get(name) == GENERATED_SOURCE
+            if (
+                is_generated
+                and name not in preserved
+                and (predicate is None or predicate(name))
+            ):
+                removed.append(name)
+                sources.get(center, {}).pop(name, None)
+                reasons.get(center, {}).pop(name, None)
+            else:
+                retained.append(name)
+        assignments[center] = retained
+        for name in removed:
+            if not any(name in names for names in assignments.values()):
+                assigned.discard(name)
+
+    def _center_priority(center: str) -> tuple[int, int, str]:
+        deficit = max(0, _effective_minimum(center) - len(assignments.get(center, [])))
+        return (0 if deficit else 1, -deficit, center.lower())
+
+    def _choose_prioritized_center(name: str, group: str, centers: Sequence[str]) -> str:
+        ordered = sorted(centers, key=_center_priority)
+        # Center name makes priority deterministic, but must not displace the
+        # existing per-person rotation fairness when deficits are otherwise tied.
+        best_priority = _center_priority(ordered[0])[:2]
+        prioritized = [
+            center for center in ordered if _center_priority(center)[:2] == best_priority
+        ]
+        return choose_center(name, group, prioritized, resolved_history)
+
+    def _eligible(person: staffing.Person, group: str) -> bool:
+        if not person.active or person.reserve:
+            return False
+        if _group_level(person, group, resolved_group_required_skills) < 1:
+            return False
+        return _preference_for(preferences, person.name, group) != "never"
+
+    def _level_of(name: str, group: str) -> int:
+        return _group_level(by_name.get(name), group, resolved_group_required_skills)
+
     # 1. Manual locks survive rebuilds untouched.
     for center, names in (locked_assignments or {}).items():
         for name in names or []:
@@ -643,6 +711,8 @@ def suggest_recycled_assignments(
     # normal operator slot; temporary extras (the day-one trainer) pair into
     # the same center and may exceed ordinary staffing. Block people are exempt
     # from the level-0 exclusion and the daily training cap.
+    protected_block_people: set[str] = set()
+    block_centers: set[tuple[str, str]] = set()
     for effect in block_effects or ():
         warnings.extend(str(w) for w in (getattr(effect, "warnings", None) or ()))
         block_center_by_group: dict[str, str] = {}
@@ -654,7 +724,7 @@ def suggest_recycled_assignments(
                 warnings.append(f"Training block for {group} has no schedulable work centers.")
 
         for group, names in (getattr(effect, "locked_people", None) or {}).items():
-            centers = groups.get(group)
+            centers = [center for center in groups.get(group, ()) if center in allowed_centers]
             if not centers:
                 _warn_missing_group(group)
                 continue
@@ -663,13 +733,15 @@ def suggest_recycled_assignments(
                 if not name.strip() or name in assigned:
                     continue
                 open_centers = [
-                    c for c in centers if len(assignments.get(c, [])) < _center_capacity(c)
+                    c for c in centers if len(assignments.get(c, [])) < _effective_capacity(c)
                 ]
-                center = choose_center(name, group, open_centers or list(centers), resolved_history)
+                center = _choose_prioritized_center(name, group, open_centers or centers)
                 _place(center, name, GENERATED_SOURCE, "training block")
+                protected_block_people.add(name)
+                block_centers.add((group, center))
                 block_center_by_group[group] = center
         for group, names in (getattr(effect, "temporary_extra_people", None) or {}).items():
-            centers = groups.get(group)
+            centers = [center for center in groups.get(group, ()) if center in allowed_centers]
             if not centers:
                 _warn_missing_group(group)
                 continue
@@ -677,18 +749,61 @@ def suggest_recycled_assignments(
                 name = str(name)
                 if not name.strip() or name in assigned:
                     continue
-                center = block_center_by_group.get(group) or choose_center(
-                    name, group, list(centers), resolved_history
+                center = block_center_by_group.get(group) or _choose_prioritized_center(
+                    name, group, centers
                 )
                 _place(center, name, GENERATED_SOURCE, "training pair")
 
-    # 3. Rank every eligible (person, group) combination for the day's mode.
-    def _eligible(person: staffing.Person, group: str) -> bool:
-        if not person.active or person.reserve:
-            return False
-        if _group_level(person, group, resolved_group_required_skills) < 1:
-            return False
-        return _preference_for(preferences, person.name, group) != "never"
+    # 3. A locked trainee makes their center a mandatory deficit. Before any
+    # ordinary placement can spend a green elsewhere, pair the trainee with a
+    # qualified level-3 operator when its effective minimum requires one.
+    # Centers that cannot obtain such coverage reject optional partial crews.
+    block_centers_without_green: set[str] = set()
+    for group, center in sorted(block_centers):
+        needs_partner = len(assignments.get(center, [])) < _effective_minimum(center)
+        has_green_partner = any(
+            name not in protected_block_people and _level_of(name, group) == 3
+            for name in assignments.get(center, [])
+        )
+        if needs_partner and not has_green_partner:
+            green_candidates = [
+                person
+                for person in roster
+                if person.name not in assigned
+                and _eligible(person, group)
+                and _group_level(person, group, resolved_group_required_skills) == 3
+                and (
+                    group != TRIM_SAW_SKILL
+                    or all(
+                        _valid_trim_saw_pair(
+                            3, _group_level(occupant, group, resolved_group_required_skills)
+                        )
+                        for occupant in assignments.get(center, [])
+                    )
+                )
+            ]
+            if not green_candidates:
+                block_centers_without_green.add(center)
+                _remove_generated(
+                    center,
+                    keep=protected_block_people,
+                    predicate=lambda name: _level_of(name, group) != 3,
+                )
+            else:
+                partner = min(
+                    green_candidates,
+                    key=lambda person: _candidate_rank_key(
+                        mode,
+                        person,
+                        group,
+                        preferences,
+                        resolved_history,
+                        resolved_group_required_skills,
+                    ),
+                )
+                _place(center, partner.name, GENERATED_SOURCE)
+
+    # 4. Rank every eligible (person, group) combination for the day's mode.
 
     candidate_pairs = [
         (person, group)
@@ -721,22 +836,26 @@ def suggest_recycled_assignments(
         )
     )
 
-    def _level_of(name: str, group: str) -> int:
-        return _group_level(by_name.get(name), group, resolved_group_required_skills)
-
-    # 4. Greedy fill: best candidate first, fairest center for that candidate.
+    # 5. Greedy fill: best candidate first, but satisfy remaining center
+    # minimums before consuming optional capacity.
     for person, group in candidate_pairs:
         if person.name in assigned:
             continue
         centers = groups[group]
-        open_centers = [c for c in centers if len(assignments.get(c, [])) < _center_capacity(c)]
+        open_centers = [
+            c
+            for c in centers
+            if c in allowed_centers
+            and c not in block_centers_without_green
+            and len(assignments.get(c, [])) < _effective_capacity(c)
+        ]
         if not open_centers:
             continue
         level = _group_level(person, group, resolved_group_required_skills)
         pref = _preference_for(preferences, person.name, group)
         reason = _generated_reason(level, pref, group, len(centers))
         if group != TRIM_SAW_SKILL:
-            center = choose_center(person.name, group, open_centers, resolved_history)
+            center = _choose_prioritized_center(person.name, group, open_centers)
             _place(center, person.name, GENERATED_SOURCE, reason)
             continue
         # Trim Saw keeps its pairing guarantee: never generate an unsafe pair.
@@ -744,7 +863,7 @@ def suggest_recycled_assignments(
         # center does not discard them while another center could seat them.
         remaining = list(open_centers)
         while remaining:
-            center = choose_center(person.name, group, remaining, resolved_history)
+            center = _choose_prioritized_center(person.name, group, remaining)
             remaining.remove(center)
             occupants = assignments.get(center, [])
             if occupants:
@@ -777,7 +896,7 @@ def suggest_recycled_assignments(
             )
             break
 
-    # 5. Training mode adds capped development placements: level-1/2 people
+    # 6. Training mode adds capped development placements: level-1/2 people
     # paired into a center that already has a level-3 operator.
     if mode == "training":
         development = [
@@ -804,6 +923,8 @@ def suggest_recycled_assignments(
             green_centers = [
                 c
                 for c in groups[group]
+                if c in allowed_centers
+                and c not in block_centers_without_green
                 if any(_level_of(name, group) == 3 for name in assignments.get(c, []))
             ]
             if group == TRIM_SAW_SKILL:
@@ -814,7 +935,7 @@ def suggest_recycled_assignments(
                 green_centers = [
                     c
                     for c in green_centers
-                    if len(assignments.get(c, [])) < _center_capacity(c)
+                    if len(assignments.get(c, [])) < _effective_capacity(c)
                     and all(
                         _valid_trim_saw_pair(level, _level_of(name, group))
                         for name in assignments.get(c, [])
@@ -822,24 +943,32 @@ def suggest_recycled_assignments(
                 ]
             if not green_centers:
                 continue
-            center = choose_center(person.name, group, green_centers, resolved_history)
+            center = _choose_prioritized_center(person.name, group, green_centers)
             _place(center, person.name, GENERATED_SOURCE, "training pair")
             placed_developments += 1
 
-    # 6. Unresolvable coverage becomes a warning, never an unsafe assignment.
+    # 7. Remove generated partial crews that do not meet the effective minimum.
+    # Manual names and protected training-block trainees remain for the planner
+    # to resolve explicitly; ordinary generated assignments do not survive.
     for group, centers in groups.items():
         for center in centers:
-            staffed = len(assignments.get(center, []))
-            min_ops = _center_min_ops(center)
-            if staffed >= min_ops:
+            if center not in allowed_centers:
                 continue
-            if staffed:
-                warnings.append(f"{center} is staffed below its minimum of {min_ops} operators.")
-            elif group == TRIM_SAW_SKILL and any(
+            minimum = _effective_minimum(center)
+            if len(assignments.get(center, [])) < minimum:
+                _remove_generated(center, keep=protected_block_people)
+            if len(assignments.get(center, [])) >= minimum:
+                continue
+            minimum_warning = f"{center} could not be staffed to its minimum of {minimum} operators."
+            if minimum_warning not in warnings:
+                warnings.append(minimum_warning)
+            if group == TRIM_SAW_SKILL and any(
                 pair_group == group and person.name not in assigned
                 for person, pair_group in candidate_pairs
             ):
-                warnings.append(f"No safe operator pairing available for {center}.")
+                pairing_warning = f"No safe operator pairing available for {center}."
+                if pairing_warning not in warnings:
+                    warnings.append(pairing_warning)
 
     return RecycledSuggestion(
         assignments=assignments,
