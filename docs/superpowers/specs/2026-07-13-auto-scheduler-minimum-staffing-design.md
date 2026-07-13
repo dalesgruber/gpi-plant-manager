@@ -32,6 +32,9 @@ goal to generate assignments. Saturdays remain completely manual.
   manually committed elsewhere, or otherwise already scheduled.
 - Safety rules such as skill qualification, Trim Saw pairing, center capacity,
   training-block protections, and one-person-per-center remain in force.
+- An active training block keeps its trainee at the assigned work center. When
+  that center needs additional people to meet its minimum, automation must add
+  a level-3 qualified partner; it must not leave the trainee working alone.
 
 ### Insufficient staffing
 
@@ -113,6 +116,9 @@ The Staffing script will:
 - A center that cannot safely meet its minimum because qualifications or
   pairing requirements are unavailable remains empty and is reported as
   unschedulable; the scheduler does not bypass safety rules to fill it.
+- If a training-block trainee cannot be paired with a level-3 operator to meet
+  the center minimum, the trainee remains protected but the day is reported as
+  unschedulable rather than treating the trainee as a runnable crew.
 
 ## Verification
 
@@ -122,6 +128,7 @@ Add focused tests for:
 - prioritizing minimum coverage before filling optional capacity;
 - effective, settings-backed minimum values;
 - absent, reserve, inactive, and manually assigned people reducing capacity;
+- an active trainee requiring a level-3 partner to meet the center minimum;
 - shortage counts and the calculated number of centers to disable;
 - rejected over-capacity enable requests and accepted replacement selections;
 - blank weekday schedules remaining empty until a goal is clicked;

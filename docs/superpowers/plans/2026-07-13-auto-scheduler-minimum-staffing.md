@@ -15,6 +15,7 @@
 - Auto-generated assignments never leave a work center below its effective min_ops; preserve all manual assignments.
 - Availability excludes inactive, reserve, full-day-absent, manually committed, and already scheduled people.
 - Preserve qualification, capacity, Trim Saw pairing, training-block, rotation-history, and one-person-per-center guarantees.
+- An active training-block trainee stays at the center and requires a level-3 qualified partner whenever that is needed to meet the center minimum.
 - Settings-backed min_ops values are authoritative over static Location.min_ops values.
 - The server must reject over-capacity Auto selections even if the client is stale or bypassed.
 - Run focused tests with ZIRA_API_KEY=test .venv/bin/python -m pytest -q.
@@ -231,6 +232,28 @@ def test_engine_fills_each_minimum_before_optional_capacity():
 
     assert len(out.assignments["Hand Build #1"]) == 2
     assert len(out.assignments["Hand Build #2"]) == 1
+
+
+def test_training_block_trainee_requires_a_level_three_partner_to_run():
+    effect = _BlockEffect(
+        locked_people={"Repair": ["Trainee"]},
+        temporary_extra_people={},
+        warnings=(),
+    )
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="Trainee", skills={"Repair": 0}),
+            staffing.Person(name="Green", skills={"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=(effect,),
+    )
+
+    assert set(out.assignments["Repair 1"]) == {"Trainee", "Green"}
 ~~~
 
 - [ ] **Step 2: Run the engine tests to verify RED**
@@ -280,7 +303,9 @@ def _center_priority(center: str) -> tuple[int, int, str]:
     return (0 if deficit else 1, -deficit, center.lower())
 ~~~
 
-Sort open centers with that priority before applying existing choose_center fairness. After normal and training placement, remove only GENERATED_SOURCE names from every allowed center whose final count remains below _effective_minimum(center). Keep manual names untouched. Emit this exact warning:
+Sort open centers with that priority before applying existing choose_center fairness. For every training-block lock, treat its selected center as a mandatory deficit. When the center needs another person to reach its effective minimum, select a level-3 candidate qualified for that block's group before ordinary optional placements. If no such level-3 candidate exists, keep the protected trainee placement, remove any other generated non-green partial crew for that center, and emit the minimum-staffing warning.
+
+After normal and training placement, remove only GENERATED_SOURCE names from every allowed center whose final count remains below _effective_minimum(center). Keep manual names and protected trainees untouched. Emit this exact warning:
 
 ~~~python
 f"{center} could not be staffed to its minimum of {minimum} operators."
@@ -424,7 +449,7 @@ def _auto_capacity_for_day(
     )
 ~~~
 
-Extend _recycled_suggestion_for_day and all callers with assignment_sources. Calculate the capacity from base assignments plus assignment sources. Pass the effective map and feasible centers to the engine:
+Extend _recycled_suggestion_for_day and all callers with assignment_sources. Gather active block effects before calculating capacity. Treat each locked trainee as already occupying one center minimum slot and exclude that trainee from automatically available headcount. Calculate the capacity from base assignments, assignment sources, and block effects. Pass the effective map, feasible centers, and block effects to the engine:
 
 ~~~python
 capacity = _auto_capacity_for_day(
