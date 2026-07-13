@@ -455,6 +455,55 @@ def test_training_block_needs_green_partner_even_with_manual_level_two_lock():
     assert "Repair 1 could not be staffed to its minimum of 2 operators." in out.warnings
 
 
+def test_two_training_block_trainees_still_require_a_green_partner():
+    effects = (
+        _BlockEffect(locked_people={"Repair": ["Trainee A"]}),
+        _BlockEffect(locked_people={"Repair": ["Trainee B"]}),
+    )
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="Trainee A", skills={"Repair": 0}),
+            staffing.Person(name="Trainee B", skills={"Repair": 0}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=effects,
+    )
+
+    assert set(out.assignments["Repair 1"]) == {"Trainee A", "Trainee B"}
+    assert "Repair 1 could not be staffed to its minimum of 2 operators." in out.warnings
+
+
+def test_training_block_reserves_green_before_ordinary_placement():
+    effects = (
+        _BlockEffect(locked_people={"Repair": ["Trainee A"]}),
+        _BlockEffect(locked_people={"Repair": ["Trainee B"]}),
+    )
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14), mode="normal",
+        roster=[
+            staffing.Person(name="Trainee A", skills={"Repair": 0}),
+            staffing.Person(name="Trainee B", skills={"Repair": 0}),
+            staffing.Person(name="Green", skills={"Repair": 3, "Dismantle": 3}),
+            staffing.Person(name="Dismantler Backup", skills={"Dismantle": 3}),
+        ],
+        group_locations={
+            "Repair": ("Repair 1",),
+            "Dismantler": ("Dismantler 1",),
+        },
+        group_required_skills={"Repair": ("Repair",), "Dismantler": ("Dismantle",)},
+        center_minimums={"Repair 1": 2, "Dismantler 1": 1},
+        runnable_centers={"Repair 1", "Dismantler 1"},
+        history=RecycledHistory(), locked_assignments={}, block_effects=effects,
+    )
+
+    assert "Green" in out.assignments["Repair 1"]
+    assert "Green" not in out.assignments.get("Dismantler 1", [])
+
+
 def test_normal_mode_uses_primary_preference_before_regular():
     out = suggest_recycled_assignments(
         day=date(2026, 7, 14), mode="normal", roster=[_person("Primary", 3), _person("Regular", 3)],

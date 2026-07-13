@@ -761,7 +761,9 @@ def suggest_recycled_assignments(
         protected_trainees = {
             name for name in assignments.get(center, []) if name in protected_block_people
         }
-        needs_partner = len(protected_trainees) < _effective_minimum(center)
+        # A protected trainee requires an actual level-3 coworker, not merely
+        # enough other trainees or manual locks to reach the numeric minimum.
+        needs_partner = bool(protected_trainees)
         has_green_partner = any(
             name not in protected_block_people and _level_of(name, group) == 3
             for name in assignments.get(center, [])
