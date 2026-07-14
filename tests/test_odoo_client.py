@@ -5,6 +5,9 @@ from zira_dashboard import odoo_client
 
 
 def test_authenticate_raises_when_env_vars_missing(monkeypatch):
+    # authenticate() returns _uid_cache before it validates config, so a prior
+    # test that authenticated successfully would otherwise mask this check.
+    odoo_client._reset_cache_for_tests()
     for k in ("ODOO_URL", "ODOO_DB", "ODOO_LOGIN", "ODOO_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     with pytest.raises(odoo_client.OdooConfigError):
