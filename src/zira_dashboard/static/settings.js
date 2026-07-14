@@ -414,7 +414,8 @@
     });
   }, true);
 
-  // Auto-close at max + under-min warning on close.
+  // Auto-close at max. Partial default crews are allowed: a work center's
+  // minimum applies when staffing a day, not when saving its defaults.
   document.querySelectorAll('details.default-people-picker').forEach(picker => {
     picker.addEventListener('change', (e) => {
       if (!e.target.matches('.dd-item input[type=checkbox]')) return;
@@ -422,21 +423,6 @@
       const max = parseInt(picker.dataset.max, 10);
       const checked = picker.querySelectorAll('.dd-item input[type=checkbox]:checked').length;
       if (max && checked === max) picker.open = false;
-    });
-    picker.addEventListener('toggle', () => {
-      if (picker.open) return;
-      const min = parseInt(picker.dataset.min, 10) || 0;
-      const checked = picker.querySelectorAll('.dd-item input[type=checkbox]:checked').length;
-      if (min >= 2 && checked > 0 && checked < min) {
-        const loc = picker.dataset.loc;
-        showPopup({
-          title: loc + ' · Fewer than min',
-          msg: loc + ' needs at least ' + min + ' operators but only ' + checked + ' default(s) are set. New days will start understaffed at this WC.',
-          overrideLabel: 'OK',
-          cancelLabel: 'Re-open picker',
-          onCancel: () => { picker.open = true; },
-        });
-      }
     });
   });
 
