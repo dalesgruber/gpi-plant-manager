@@ -311,6 +311,15 @@ async def _tick_time_off_backfill():
     await asyncio.to_thread(time_off_local_backfill.run_once)
 
 
+async def _tick_automated_skills():
+    """Once per plant day, after the shift ends, recalculate Repair/Dismantle
+    levels from L30 production and sync eligible changes to Odoo.
+    run_daily_if_due self-throttles via a persisted marker, so the short
+    interval just gives it a prompt chance to fire soon after shift end."""
+    from . import automated_skills
+    await asyncio.to_thread(automated_skills.run_daily_if_due, datetime.now(UTC))
+
+
 # (name, tick coroutine, interval seconds). `name` is used only in the
 # "warmer tick failed" log line. Intervals are unchanged from the original
 # per-loop functions this registry replaced.
@@ -334,6 +343,7 @@ _WARMERS = [
     ("calendar conflicts", _tick_calendar_conflicts, 21600),
     ("time-off local backfill", _tick_time_off_backfill, 3600),
     ("page-usage flush", _tick_page_usage, 60),
+    ("automated skills", _tick_automated_skills, 300),
 ]
 
 
