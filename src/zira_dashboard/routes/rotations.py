@@ -235,6 +235,8 @@ def _block_to_dict(block) -> dict:
         "id": block.id,
         "trainee": block.trainee_name,
         "trainer": block.trainer_name,
+        "work_center": block.work_center,
+        "skill_ids": list(block.skill_ids),
         "group": block.skill,
         "skill": block.skill,
         "start_day": block.start_day.isoformat(),
@@ -294,12 +296,12 @@ async def create_training_block(request: Request):
         return _error("Invalid JSON body.", 400)
     trainee = str(body.get("trainee") or "").strip()
     trainer = str(body.get("trainer") or "").strip()
-    group = str(body.get("group") or "").strip()
+    work_center = str(body.get("work_center") or "").strip()
     start_day_raw = str(body.get("start_day") or "").strip()
     workdays = body.get("workdays")
 
-    if not trainee or not trainer or not group:
-        return _error("trainee, trainer, and group are required.")
+    if not trainee or not trainer or not work_center:
+        return _error("trainee, trainer, and work center are required.")
     try:
         start_day = date.fromisoformat(start_day_raw)
     except ValueError:
@@ -314,18 +316,11 @@ async def create_training_block(request: Request):
         trainer_id = _person_id_by_name(trainer)
         if trainer_id is None:
             return _error(f"Unknown person: {trainer}")
-        # Resolve the scheduling-group key to its source matrix/Odoo skill
-        # (Dismantler is named Dismantle in Odoo) before creating the block.
-        skill_name = staffing.skill_name_for_scheduling_group(group)
-        skill_rows = db.query("SELECT id FROM skills WHERE name = %s", (skill_name,))
-        if not skill_rows:
-            return _error(f"Unknown group: {group}")
-        skill_id = int(skill_rows[0]["id"])
         try:
             block = rotation_store.create_block(
                 trainee_id=trainee_id,
                 trainer_id=trainer_id,
-                skill_id=skill_id,
+                work_center=work_center,
                 start_day=start_day,
                 planned_attended_days=workdays,
             )

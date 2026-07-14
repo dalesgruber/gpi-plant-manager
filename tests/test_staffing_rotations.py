@@ -188,8 +188,8 @@ def _training_block_query(monkeypatch, rotations, *, trainee_level: int, trainer
         if "FROM people" in sql:
             name = params[0]
             return [{"id": 100 + len(name)}]  # deterministic, positive
-        if sql.strip().startswith("SELECT id FROM skills"):
-            return [{"id": 9}]
+        if "SELECT id, name FROM skills" in sql:
+            return [{"id": 9, "name": "Repair"}]
         if "FROM skills WHERE id" in sql:
             return [{"name": "Repair"}]
         if "trainee_level" in sql:
@@ -200,6 +200,66 @@ def _training_block_query(monkeypatch, rotations, *, trainee_level: int, trainer
     monkeypatch.setattr(rotations.rotation_store.db, "query", fake_query)
     monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
+
+
+def protocol_block(work_center: str):
+    from zira_dashboard import rotation_store
+
+    return rotation_store.TrainingBlock(
+        id=42,
+        trainee_name="Alex",
+        trainer_name="Green",
+        skill="Repair",
+        start_day=TARGET_DAY,
+        planned_attended_days=5,
+        status="active",
+        trainee_id=1,
+        skill_id=9,
+        work_center=work_center,
+        skill_ids=(9,),
+    )
+
+
+def test_training_protocol_endpoint_creates_exact_center_block(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    monkeypatch.setattr(
+        rotations.db,
+        "query",
+        lambda sql, params=None: [{"id": 1}] if "FROM people" in sql else [],
+    )
+    monkeypatch.setattr(
+        rotations.rotation_store,
+        "create_block",
+        lambda **kw: protocol_block("Repair 2"),
+    )
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
+
+    resp = client.post("/api/rotations/training-blocks", json={
+        "trainee": "Alex", "trainer": "Green", "work_center": "Repair 2",
+        "start_day": "2026-07-14", "workdays": 5,
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["block"]["work_center"] == "Repair 2"
+    assert resp.json()["block"]["skill_ids"] == [9]
+
+
+def test_training_protocol_endpoint_rejects_unknown_work_center(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    monkeypatch.setattr(
+        rotations.db,
+        "query",
+        lambda sql, params=None: [{"id": 1}] if "FROM people" in sql else [],
+    )
+
+    resp = client.post("/api/rotations/training-blocks", json={
+        "trainee": "Alex", "trainer": "Green", "work_center": "Nope",
+        "start_day": "2026-07-14", "workdays": 5,
+    })
+
+    assert resp.status_code == 422
+    assert "work center" in resp.json()["error"].lower()
 
 
 def test_training_block_endpoint_rejects_invalid_trainer(monkeypatch):
@@ -216,7 +276,7 @@ def test_training_block_endpoint_rejects_invalid_trainer(monkeypatch):
         json={
             "trainee": "Alex",
             "trainer": "Not Green",
-            "group": "Repair",
+            "work_center": "Repair 1",
             "start_day": "2026-07-14",
             "workdays": 5,
         },
@@ -228,31 +288,26 @@ def test_training_block_endpoint_rejects_invalid_trainer(monkeypatch):
 
 
 def test_training_block_endpoint_success(monkeypatch):
-    from zira_dashboard import rotation_store
-
     client, rotations = _rotations_client(monkeypatch)
     monkeypatch.setattr(
         rotations.db, "query",
         lambda sql, params=None: (
-            [{"id": 1}] if "FROM people" in sql
-            else [{"id": 9}] if sql.strip().startswith("SELECT id FROM skills")
-            else []
+            [{"id": 1}] if "FROM people" in sql else []
         ),
     )
     monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
 
-    block = rotation_store.TrainingBlock(
-        id=42, trainee_name="Alex", trainer_name="Green", skill="Repair",
-        start_day=TARGET_DAY, planned_attended_days=5, status="active",
-        trainee_id=1, skill_id=9,
+    monkeypatch.setattr(
+        rotations.rotation_store,
+        "create_block",
+        lambda **kw: protocol_block("Repair 1"),
     )
-    monkeypatch.setattr(rotations.rotation_store, "create_block", lambda **kw: block)
 
     resp = client.post(
         "/api/rotations/training-blocks",
         json={
-            "trainee": "Alex", "trainer": "Green", "group": "Repair",
+            "trainee": "Alex", "trainer": "Green", "work_center": "Repair 1",
             "start_day": "2026-07-14", "workdays": 5,
         },
     )
@@ -261,7 +316,8 @@ def test_training_block_endpoint_success(monkeypatch):
     body = resp.json()
     assert body["ok"] is True
     assert body["block"]["id"] == 42
-    assert body["block"]["group"] == "Repair"
+    assert body["block"]["work_center"] == "Repair 1"
+    assert body["block"]["skill_ids"] == [9]
     assert body["block"]["trainer"] == "Green"
 
 
@@ -272,7 +328,7 @@ def test_training_block_endpoint_unknown_person_422(monkeypatch):
     resp = client.post(
         "/api/rotations/training-blocks",
         json={
-            "trainee": "Ghost", "trainer": "Green", "group": "Repair",
+            "trainee": "Ghost", "trainer": "Green", "work_center": "Repair 1",
             "start_day": "2026-07-14", "workdays": 5,
         },
     )
@@ -280,35 +336,12 @@ def test_training_block_endpoint_unknown_person_422(monkeypatch):
     assert "Ghost" in resp.json()["error"]
 
 
-def test_training_block_endpoint_unknown_group_422(monkeypatch):
-    client, rotations = _rotations_client(monkeypatch)
-
-    def fake_query(sql, params=None):
-        if "FROM people" in sql:
-            return [{"id": 1}]
-        if sql.strip().startswith("SELECT id FROM skills"):
-            return []  # unknown skill/group
-        return []
-
-    monkeypatch.setattr(rotations.db, "query", fake_query)
-
-    resp = client.post(
-        "/api/rotations/training-blocks",
-        json={
-            "trainee": "Alex", "trainer": "Green", "group": "Nope",
-            "start_day": "2026-07-14", "workdays": 5,
-        },
-    )
-    assert resp.status_code == 422
-    assert "Nope" in resp.json()["error"]
-
-
 def test_training_block_endpoint_bad_date_422(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     resp = client.post(
         "/api/rotations/training-blocks",
         json={
-            "trainee": "Alex", "trainer": "Green", "group": "Repair",
+            "trainee": "Alex", "trainer": "Green", "work_center": "Repair 1",
             "start_day": "not-a-date", "workdays": 5,
         },
     )
@@ -322,7 +355,7 @@ def test_training_block_endpoint_bad_workdays_422(monkeypatch, workdays):
     resp = client.post(
         "/api/rotations/training-blocks",
         json={
-            "trainee": "Alex", "trainer": "Green", "group": "Repair",
+            "trainee": "Alex", "trainer": "Green", "work_center": "Repair 1",
             "start_day": "2026-07-14", "workdays": workdays,
         },
     )
