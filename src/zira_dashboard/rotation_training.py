@@ -145,6 +145,32 @@ def _is_attended(day_record) -> bool:
     return status == "attended"
 
 
+def _reservation_was_applied(block, day: date, first_day: date) -> bool:
+    """Whether the persisted schedule retained this protocol reservation.
+
+    Exact-center protocol attendance is earned only by the generated
+    reservation. This makes a manual conflict, a full center, or a disabled
+    center (which leaves no generated reservation) a non-attended conflict
+    rather than silently consuming a training day. Legacy group blocks have no
+    exact target to inspect, so retain their established attendance behavior.
+    """
+    work_center = getattr(block, "work_center", None)
+    if not work_center:
+        return True
+    try:
+        schedule = staffing.load_schedule(day)
+        assigned = set(getattr(schedule, "assignments", {}).get(work_center, ()))
+        sources = getattr(schedule, "assignment_sources", {}).get(work_center, {})
+    except Exception:  # noqa: BLE001 - unknown reservation must not count
+        log.exception("Could not read training reservation for %s", day)
+        return False
+
+    required = {block.trainee_name}
+    if day == first_day:
+        required.add(block.trainer_name)
+    return all(name in assigned and sources.get(name) == "generated" for name in required)
+
+
 def _record_elapsed_day_outcomes(block, as_of: date) -> None:
     """Persist the scheduler-owned outcome for each elapsed protocol workday.
 
@@ -161,6 +187,7 @@ def _record_elapsed_day_outcomes(block, as_of: date) -> None:
     attended = sum(1 for record in existing.values() if _is_attended(record))
     cursor = start_day
     work_weekdays = schedule_store.current().work_weekdays
+    first_day: date | None = None
     while cursor < as_of and attended < block.planned_attended_days:
         if cursor.weekday() in work_weekdays:
             record = existing.get(cursor)
@@ -172,7 +199,19 @@ def _record_elapsed_day_outcomes(block, as_of: date) -> None:
                 except Exception:  # noqa: BLE001 - unknown attendance must not become attended
                     log.exception("Could not resolve training absence for %s", cursor)
                     return
-                status = "absent" if trainee_name in absent_names else "attended"
+                if trainee_name in absent_names:
+                    status = "absent"
+                else:
+                    # Match ``planned_block_days``: the day-one pair moves to
+                    # the first non-absent workday, while a conflicting
+                    # attempted reservation remains that day's conflict.
+                    if first_day is None:
+                        first_day = cursor
+                    status = (
+                        "attended"
+                        if _reservation_was_applied(block, cursor, first_day)
+                        else "conflict"
+                    )
                 rotation_store.record_attended_day(block.id, cursor, status)
                 attended += int(status == "attended")
         cursor += timedelta(days=1)
@@ -193,6 +232,16 @@ def reconcile_blocks(as_of: date) -> list[int]:
     no longer returns it, so a block is never promoted twice.
     """
     promoted: list[int] = []
+    # A promotion already succeeded for these durable claims. Retrying only
+    # the final DB write avoids repeating the external skill-level mutation.
+    for block in rotation_store.completing_blocks():
+        try:
+            rotation_store.mark_completed(block.id)
+        except Exception:  # noqa: BLE001 - retain completing for the next retry
+            log.exception("Training block %s finalization failed; leaving completing to retry", block.id)
+            continue
+        promoted.append(block.id)
+
     for block in rotation_store.active_blocks():
         if getattr(block, "status", "active") != "active":
             continue
@@ -215,6 +264,10 @@ def reconcile_blocks(as_of: date) -> list[int]:
             )
             rotation_store.release_completion_claim(block.id)
             continue
-        rotation_store.mark_completed(block.id)
+        try:
+            rotation_store.mark_completed(block.id)
+        except Exception:  # noqa: BLE001 - promotion happened; retry finalization only
+            log.exception("Training block %s finalization failed; leaving completing to retry", block.id)
+            continue
         promoted.append(block.id)
     return promoted

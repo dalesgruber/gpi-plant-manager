@@ -221,8 +221,8 @@ def active_blocks_for_day(day: date) -> list[TrainingBlock]:
     return [_block_from_row(row) for row in rows]
 
 
-def active_blocks() -> list[TrainingBlock]:
-    """Return every active block, regardless of start day, deterministically."""
+def _blocks_with_status(status: str) -> list[TrainingBlock]:
+    """Return every block in ``status``, regardless of start day."""
     rows = db.query(
         "SELECT b.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
         "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id, b.work_center, b.skill_ids "
@@ -230,10 +230,21 @@ def active_blocks() -> list[TrainingBlock]:
         "JOIN people trainee ON trainee.id = b.trainee_id "
         "JOIN people trainer ON trainer.id = b.trainer_id "
         "JOIN skills skill ON skill.id = b.skill_id "
-        "WHERE b.status = 'active' "
-        "ORDER BY b.start_day, b.id"
+        "WHERE b.status = %s "
+        "ORDER BY b.start_day, b.id",
+        (status,),
     )
     return [_block_from_row(row) for row in rows]
+
+
+def active_blocks() -> list[TrainingBlock]:
+    """Return every active block, regardless of start day, deterministically."""
+    return _blocks_with_status("active")
+
+
+def completing_blocks() -> list[TrainingBlock]:
+    """Return claims whose promotion succeeded but finalization must retry."""
+    return _blocks_with_status("completing")
 
 
 def resolved_days(block_id: int) -> list[TrainingBlockDay]:

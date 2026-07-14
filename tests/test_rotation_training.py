@@ -23,6 +23,7 @@ def _default_work_week(monkeypatch):
     # this with a thread-safe claim model.
     monkeypatch.setattr(rotation_training.rotation_store, "claim_completion", lambda _id: True)
     monkeypatch.setattr(rotation_training.rotation_store, "release_completion_claim", lambda _id: None)
+    monkeypatch.setattr(rotation_training.rotation_store, "completing_blocks", lambda: [])
 
 
 def _block(
@@ -411,6 +412,124 @@ def test_reconcile_records_elapsed_attendance_and_absences_before_completion(mon
     ]
     assert promoted == [(17, 9, 1)]
     assert completed == [42]
+
+
+@pytest.mark.parametrize(
+    "assignments,sources",
+    [
+        ({"Repair 1": ["Learner", "Trainer"]}, {"Repair 1": {"Learner": "manual", "Trainer": "generated"}}),
+        ({"Repair 1": ["Occupier"]}, {"Repair 1": {"Occupier": "generated"}}),
+        ({}, {}),
+    ],
+    ids=("manual-conflict", "full-center", "disabled-center"),
+)
+def test_reconcile_does_not_count_day_without_applied_protocol_reservation(
+    monkeypatch, assignments, sources
+):
+    """A protocol day is attended only when its generated reservation survived."""
+    from zira_dashboard import rotation_training
+
+    block = SimpleNamespace(
+        id=42,
+        trainee_id=17,
+        trainee_name="Learner",
+        trainer_name="Trainer",
+        skill_id=9,
+        planned_attended_days=1,
+        start_day=date(2026, 7, 14),
+        work_center="Repair 1",
+        status="active",
+    )
+    rows = []
+    promoted = []
+
+    monkeypatch.setattr(rotation_training.rotation_store, "active_blocks", lambda: [block])
+    monkeypatch.setattr(rotation_training.rotation_store, "resolved_days", lambda _id: list(rows))
+    monkeypatch.setattr(
+        rotation_training.rotation_store,
+        "record_attended_day",
+        lambda _id, day, status: rows.append(SimpleNamespace(day=day, status=status)),
+    )
+    monkeypatch.setattr(rotation_training.scheduler_time_off, "full_day_off_names", lambda _day: set())
+    monkeypatch.setattr(
+        rotation_training.staffing,
+        "load_schedule",
+        lambda _day: SimpleNamespace(assignments=assignments, assignment_sources=sources),
+    )
+    monkeypatch.setattr(rotation_training.skill_levels, "set_person_skill_level", lambda *a: promoted.append(a))
+
+    assert rotation_training.reconcile_blocks(date(2026, 7, 15)) == []
+    assert [(row.day, row.status) for row in rows] == [(date(2026, 7, 14), "conflict")]
+    assert promoted == []
+
+
+def test_reconcile_counts_a_generated_protocol_reservation(monkeypatch):
+    from zira_dashboard import rotation_training
+
+    block = SimpleNamespace(
+        id=42,
+        trainee_id=17,
+        trainee_name="Learner",
+        trainer_name="Trainer",
+        skill_id=9,
+        planned_attended_days=1,
+        start_day=date(2026, 7, 14),
+        work_center="Repair 1",
+        status="active",
+    )
+    rows, promoted, completed = [], [], []
+
+    monkeypatch.setattr(rotation_training.rotation_store, "active_blocks", lambda: [block])
+    monkeypatch.setattr(rotation_training.rotation_store, "resolved_days", lambda _id: list(rows))
+    monkeypatch.setattr(
+        rotation_training.rotation_store,
+        "record_attended_day",
+        lambda _id, day, status: rows.append(SimpleNamespace(day=day, status=status)),
+    )
+    monkeypatch.setattr(rotation_training.scheduler_time_off, "full_day_off_names", lambda _day: set())
+    monkeypatch.setattr(
+        rotation_training.staffing,
+        "load_schedule",
+        lambda _day: SimpleNamespace(
+            assignments={"Repair 1": ["Learner", "Trainer"]},
+            assignment_sources={"Repair 1": {"Learner": "generated", "Trainer": "generated"}},
+        ),
+    )
+    monkeypatch.setattr(rotation_training.rotation_store, "mark_completed", completed.append)
+    monkeypatch.setattr(rotation_training.skill_levels, "set_person_skill_level", lambda *a: promoted.append(a))
+
+    assert rotation_training.reconcile_blocks(date(2026, 7, 15)) == [42]
+    assert [(row.day, row.status) for row in rows] == [(date(2026, 7, 14), "attended")]
+    assert promoted == [(17, 9, 1)]
+    assert completed == [42]
+
+
+def test_reconcile_retries_completing_finalization_without_repromoting(monkeypatch):
+    """A failed final status write remains completing and is safely retried."""
+    from zira_dashboard import rotation_training
+
+    block = SimpleNamespace(id=42, status="completing")
+    attempts = []
+    state = {"failed": False}
+
+    def finalize(block_id):
+        attempts.append(block_id)
+        if not state["failed"]:
+            state["failed"] = True
+            raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(rotation_training.rotation_store, "active_blocks", lambda: [])
+    monkeypatch.setattr(rotation_training.rotation_store, "completing_blocks", lambda: [block])
+    monkeypatch.setattr(rotation_training.rotation_store, "mark_completed", finalize)
+    monkeypatch.setattr(
+        rotation_training.skill_levels,
+        "set_person_skill_level",
+        lambda *args: pytest.fail("a completing block must not be promoted again"),
+    )
+
+    assert rotation_training.reconcile_blocks(date(2026, 7, 21)) == []
+    assert rotation_training.reconcile_blocks(date(2026, 7, 21)) == [42]
+    assert attempts == [42, 42]
 
 
 def test_concurrent_reconciles_claim_completion_before_promoting(monkeypatch):
