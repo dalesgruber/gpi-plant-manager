@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from threading import Barrier, Lock, Thread
 from types import SimpleNamespace
 
 import pytest
@@ -17,6 +18,11 @@ def _default_work_week(monkeypatch):
         "current",
         lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
     )
+    # Unit tests below exercise reconciliation behavior independently of the
+    # database-backed completion claim. Dedicated concurrency tests replace
+    # this with a thread-safe claim model.
+    monkeypatch.setattr(rotation_training.rotation_store, "claim_completion", lambda _id: True)
+    monkeypatch.setattr(rotation_training.rotation_store, "release_completion_claim", lambda _id: None)
 
 
 def _block(
@@ -357,6 +363,95 @@ def test_reconcile_does_not_promote_before_enough_attended_days(monkeypatch):
 
     assert rotation_training.reconcile_blocks(date(2026, 7, 21)) == []
     assert calls == []
+
+
+def test_reconcile_records_elapsed_attendance_and_absences_before_completion(monkeypatch):
+    """The scheduler records each elapsed workday, extending for an absence."""
+    from zira_dashboard import rotation_training
+
+    block = SimpleNamespace(
+        id=42,
+        trainee_id=17,
+        trainee_name="Learner",
+        skill_id=9,
+        planned_attended_days=3,
+        start_day=date(2026, 7, 14),
+        status="active",
+    )
+    rows = []
+    promoted = []
+    completed = []
+
+    def record(block_id, day, status="attended"):
+        assert block_id == 42
+        rows[:] = [row for row in rows if row.day != day]
+        rows.append(SimpleNamespace(day=day, status=status))
+
+    monkeypatch.setattr(rotation_training.rotation_store, "active_blocks", lambda: [block])
+    monkeypatch.setattr(rotation_training.rotation_store, "resolved_days", lambda _id: list(rows))
+    monkeypatch.setattr(rotation_training.rotation_store, "record_attended_day", record)
+    monkeypatch.setattr(
+        rotation_training.scheduler_time_off,
+        "full_day_off_names",
+        lambda day: {"Learner"} if day == date(2026, 7, 15) else set(),
+    )
+    monkeypatch.setattr(rotation_training.rotation_store, "mark_completed", completed.append)
+    monkeypatch.setattr(
+        rotation_training.skill_levels,
+        "set_person_skill_level",
+        lambda *args: promoted.append(args),
+    )
+
+    assert rotation_training.reconcile_blocks(date(2026, 7, 18)) == [42]
+    assert [(row.day, row.status) for row in rows] == [
+        (date(2026, 7, 14), "attended"),
+        (date(2026, 7, 15), "absent"),
+        (date(2026, 7, 16), "attended"),
+        (date(2026, 7, 17), "attended"),
+    ]
+    assert promoted == [(17, 9, 1)]
+    assert completed == [42]
+
+
+def test_concurrent_reconciles_claim_completion_before_promoting(monkeypatch):
+    """Only the reconciler that atomically claims the block may promote it."""
+    from zira_dashboard import rotation_training
+
+    block = SimpleNamespace(
+        id=42, trainee_id=17, skill_id=9, planned_attended_days=1, status="active"
+    )
+    claim_lock = Lock()
+    claimed = False
+    start = Barrier(2)
+    promoted = []
+
+    def claim(_block_id):
+        nonlocal claimed
+        with claim_lock:
+            if claimed:
+                return False
+            claimed = True
+            return True
+
+    monkeypatch.setattr(rotation_training.rotation_store, "active_blocks", lambda: [block])
+    monkeypatch.setattr(rotation_training.rotation_store, "resolved_days", lambda _id: [_attended()])
+    monkeypatch.setattr(rotation_training.rotation_store, "claim_completion", claim)
+    monkeypatch.setattr(rotation_training.rotation_store, "mark_completed", lambda _id: None)
+    monkeypatch.setattr(rotation_training.skill_levels, "set_person_skill_level", lambda *args: promoted.append(args))
+
+    results = []
+    def reconcile():
+        start.wait()
+        results.append(rotation_training.reconcile_blocks(date(2026, 7, 21)))
+
+    threads = [Thread(target=reconcile), Thread(target=reconcile)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(results) == [[], [42]]
+    assert promoted == [(17, 9, 1)]
 
 
 def test_record_then_reconcile_is_the_single_completion_owner(monkeypatch):

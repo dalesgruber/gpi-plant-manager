@@ -25,7 +25,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from . import rotation_store, schedule_store, skill_levels, staffing
+from . import rotation_store, schedule_store, scheduler_time_off, skill_levels, staffing
 
 log = logging.getLogger(__name__)
 
@@ -145,13 +145,47 @@ def _is_attended(day_record) -> bool:
     return status == "attended"
 
 
+def _record_elapsed_day_outcomes(block, as_of: date) -> None:
+    """Persist the scheduler-owned outcome for each elapsed protocol workday.
+
+    ``as_of`` itself is still in progress, so only earlier workdays are
+    recorded. Existing outcomes are immutable: they may have been resolved by
+    an operator and must not be overwritten by a later scheduler tick.
+    """
+    start_day = getattr(block, "start_day", None)
+    trainee_name = getattr(block, "trainee_name", None)
+    if not isinstance(start_day, date) or not trainee_name:
+        return
+
+    existing = {record.day: record for record in rotation_store.resolved_days(block.id)}
+    attended = sum(1 for record in existing.values() if _is_attended(record))
+    cursor = start_day
+    work_weekdays = schedule_store.current().work_weekdays
+    while cursor < as_of and attended < block.planned_attended_days:
+        if cursor.weekday() in work_weekdays:
+            record = existing.get(cursor)
+            if record is not None:
+                attended += int(_is_attended(record))
+            else:
+                try:
+                    absent_names = scheduler_time_off.full_day_off_names(cursor)
+                except Exception:  # noqa: BLE001 - unknown attendance must not become attended
+                    log.exception("Could not resolve training absence for %s", cursor)
+                    return
+                status = "absent" if trainee_name in absent_names else "attended"
+                rotation_store.record_attended_day(block.id, cursor, status)
+                attended += int(status == "attended")
+        cursor += timedelta(days=1)
+
+
 def reconcile_blocks(as_of: date) -> list[int]:
     """Promote trainees whose blocks have reached their requested attended days.
 
     ``as_of`` is the current plant day; it frames the reconciliation and is part
-    of the stable interface (callers pass ``plant_today()``). Promotion itself
-    is decided by the count of ``attended`` days already recorded for the block,
-    so recording of individual days stays the caller's responsibility.
+    of the stable interface (callers pass ``plant_today()``). Reconciliation is
+    also the scheduler's owner of elapsed-day recording: past workdays become
+    attended or absent from the scheduler attendance source before progress is
+    counted.
 
     For each still-active block with at least ``planned_attended_days`` attended
     days, this calls the shared skill writer for level 1, marks the block
@@ -162,8 +196,11 @@ def reconcile_blocks(as_of: date) -> list[int]:
     for block in rotation_store.active_blocks():
         if getattr(block, "status", "active") != "active":
             continue
+        _record_elapsed_day_outcomes(block, as_of)
         attended = sum(1 for d in rotation_store.resolved_days(block.id) if _is_attended(d))
         if attended < block.planned_attended_days:
+            continue
+        if not rotation_store.claim_completion(block.id):
             continue
         skill_ids = tuple(getattr(block, "skill_ids", ()) or (block.skill_id,))
         try:
@@ -176,6 +213,7 @@ def reconcile_blocks(as_of: date) -> list[int]:
                 "Training block %s promotion failed; leaving active to retry",
                 getattr(block, "id", "?"),
             )
+            rotation_store.release_completion_claim(block.id)
             continue
         rotation_store.mark_completed(block.id)
         promoted.append(block.id)

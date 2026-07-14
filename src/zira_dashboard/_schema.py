@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS rotation_training_blocks (
   skill_id INTEGER NOT NULL REFERENCES skills(id),
   start_day DATE NOT NULL,
   planned_attended_days SMALLINT NOT NULL CHECK (planned_attended_days > 0),
-  status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'completed', 'ended')),
+  status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'completing', 'completed', 'ended')),
   completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -215,6 +215,14 @@ CREATE TABLE IF NOT EXISTS rotation_training_blocks (
 ALTER TABLE rotation_training_blocks ADD COLUMN IF NOT EXISTS work_center TEXT;
 ALTER TABLE rotation_training_blocks ADD COLUMN IF NOT EXISTS skill_ids INTEGER[];
 UPDATE rotation_training_blocks SET skill_ids = ARRAY[skill_id] WHERE skill_ids IS NULL;
+-- A durable completion claim prevents concurrent reconciliation requests from
+-- both sending the external level-promotion write. Rebuild the original
+-- unnamed-by-us CHECK as an idempotent migration for existing databases.
+ALTER TABLE rotation_training_blocks
+  DROP CONSTRAINT IF EXISTS rotation_training_blocks_status_check;
+ALTER TABLE rotation_training_blocks
+  ADD CONSTRAINT rotation_training_blocks_status_check
+  CHECK (status IN ('active', 'paused', 'completing', 'completed', 'ended'));
 
 CREATE TABLE IF NOT EXISTS rotation_training_block_days (
   block_id BIGINT NOT NULL REFERENCES rotation_training_blocks(id) ON DELETE CASCADE,

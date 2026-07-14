@@ -10,7 +10,7 @@ from . import db, staffing
 
 ROTATION_GROUPS = ("Dismantler", "Repair", "Trim Saw")
 PREFERENCES = ("primary", "regular", "occasional", "never")
-_BLOCK_STATUSES = ("active", "paused", "completed", "ended")
+_BLOCK_STATUSES = ("active", "paused", "completing", "completed", "ended")
 _BLOCK_DAY_STATUSES = ("attended", "absent", "conflict")
 
 
@@ -253,11 +253,35 @@ def resolved_days(block_id: int) -> list[TrainingBlockDay]:
 
 
 def mark_completed(block_id: int) -> None:
-    """Mark an active block completed; a no-op once it is no longer active."""
+    """Finalize a claimed block; keep direct active completion backward-compatible."""
     db.execute(
         "UPDATE rotation_training_blocks "
         "SET status = 'completed', completed_at = now() "
-        "WHERE id = %s AND status = 'active'",
+        "WHERE id = %s AND status IN ('active', 'completing')",
+        (block_id,),
+    )
+
+
+def claim_completion(block_id: int) -> bool:
+    """Atomically reserve an eligible block's external promotion exactly once.
+
+    The claim commits before the Odoo-backed skill writer runs, so a second
+    worker sees ``completing`` rather than ``active`` and cannot duplicate the
+    external side effect.
+    """
+    rows = db.query(
+        "UPDATE rotation_training_blocks SET status = 'completing' "
+        "WHERE id = %s AND status = 'active' RETURNING id",
+        (block_id,),
+    )
+    return bool(rows)
+
+
+def release_completion_claim(block_id: int) -> None:
+    """Return a failed promotion claim to active so a later tick can retry."""
+    db.execute(
+        "UPDATE rotation_training_blocks SET status = 'active' "
+        "WHERE id = %s AND status = 'completing'",
         (block_id,),
     )
 
