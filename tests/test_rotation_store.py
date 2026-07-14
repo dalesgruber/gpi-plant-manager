@@ -90,68 +90,118 @@ def test_training_block_rejects_non_green_trainer():
         rotation_store.validate_block(level=0, trainer_level=2, workdays=5)
 
 
-@pytest.mark.parametrize("target", ["Woodpecker", "Master Recycler"])
-def test_training_block_rejects_non_recycled_target_before_persisting(monkeypatch, target):
+def fake_valid_protocol_query(sql, params=None):
+    if "FROM skills" in sql:
+        return [{"id": 9, "name": "Repair"}]
+    if "trainee_level" in sql:
+        return [{"trainee_level": 0, "trainer_level": 3}]
+    if "INSERT INTO rotation_training_blocks" in sql:
+        return [{
+            "id": 9,
+            "trainee_name": "Jordan",
+            "trainer_name": "Taylor",
+            "skill": "Repair",
+            "start_day": date(2026, 7, 14),
+            "planned_attended_days": 5,
+            "status": "active",
+            "work_center": "Repair 1",
+            "skill_ids": [9],
+        }]
+    raise AssertionError(f"Unexpected query: {sql}")
+
+
+def fake_multi_skill_levels(trainee_levels, trainer_levels):
+    def fake_query(sql, params=None):
+        if "FROM skills" in sql:
+            return [
+                {"id": 10, "name": "Loading"},
+                {"id": 11, "name": "CPUs/VDOs"},
+                {"id": 12, "name": "Trailer Jockeying"},
+            ]
+        if "trainee_level" in sql:
+            skill_id = params[1]
+            index = (10, 11, 12).index(skill_id)
+            return [{
+                "trainee_level": trainee_levels[index],
+                "trainer_level": trainer_levels[index],
+            }]
+        raise AssertionError("Training block insert must not run for invalid levels")
+    return fake_query
+
+
+def test_training_block_persists_exact_center_and_skill_ids(monkeypatch):
     from zira_dashboard import rotation_store
 
-    queries = []
+    monkeypatch.setattr(rotation_store.db, "query", fake_valid_protocol_query)
 
-    def fake_query(sql, params=None):
-        queries.append((sql, params))
-        if "FROM skills" in sql:
-            return [{"name": target}]
-        raise AssertionError("Training block insert must not run for an invalid target")
+    block = rotation_store.create_block(
+        trainee_id=1,
+        trainer_id=2,
+        work_center="Repair 1",
+        start_day=date(2026, 7, 14),
+        planned_attended_days=5,
+    )
 
-    monkeypatch.setattr(rotation_store.db, "query", fake_query)
+    assert block.work_center == "Repair 1"
+    assert block.skill_ids == (9,)
 
-    with pytest.raises(rotation_store.InvalidTrainingBlock, match="Recycled"):
+
+def test_training_block_rejects_trainer_below_three_for_any_target_skill(monkeypatch):
+    from zira_dashboard import rotation_store
+
+    monkeypatch.setattr(
+        rotation_store.db, "query", fake_multi_skill_levels((0, 0, 0), (3, 2, 3))
+    )
+
+    with pytest.raises(rotation_store.InvalidTrainingBlock, match="level 3"):
         rotation_store.create_block(
             trainee_id=1,
             trainer_id=2,
-            skill_id=3,
+            work_center="Loading/Jockeying",
             start_day=date(2026, 7, 14),
             planned_attended_days=5,
         )
 
-    assert len(queries) == 1
 
-
-@pytest.mark.parametrize("target", ["Dismantler", "Repair", "Trim Saw"])
-def test_training_block_accepts_each_recycled_target(monkeypatch, target):
+def test_training_block_resolves_dismantler_to_its_odoo_skill(monkeypatch):
     from zira_dashboard import rotation_store
 
-    calls = []
-
     def fake_query(sql, params=None):
-        calls.append((sql, params))
         if "FROM skills" in sql:
-            return [{"name": target}]
+            assert params == (["Dismantle"],)
+            return [{"id": 4, "name": "Dismantle"}]
         if "trainee_level" in sql:
             return [{"trainee_level": 0, "trainer_level": 3}]
         if "INSERT INTO rotation_training_blocks" in sql:
             return [{
-                "id": 9,
-                "trainee_name": "Jordan",
-                "trainer_name": "Taylor",
-                "skill": target,
-                "start_day": date(2026, 7, 14),
-                "planned_attended_days": 5,
-                "status": "active",
+                "id": 10, "trainee_name": "Jordan", "trainer_name": "Taylor",
+                "skill": "Dismantle", "start_day": date(2026, 7, 14),
+                "planned_attended_days": 5, "status": "active",
+                "work_center": "Dismantler 1", "skill_ids": [4],
             }]
         raise AssertionError(f"Unexpected query: {sql}")
 
     monkeypatch.setattr(rotation_store.db, "query", fake_query)
 
     block = rotation_store.create_block(
-        trainee_id=1,
-        trainer_id=2,
-        skill_id=3,
-        start_day=date(2026, 7, 14),
-        planned_attended_days=5,
+        trainee_id=1, trainer_id=2, work_center="Dismantler 1",
+        start_day=date(2026, 7, 14), planned_attended_days=5,
     )
 
-    assert block.skill == target
-    assert len(calls) == 3
+    assert block.skill_ids == (4,)
+
+
+def test_legacy_training_block_hydrates_without_center_and_with_one_skill():
+    from zira_dashboard import rotation_store
+
+    block = rotation_store._block_from_row({
+        "id": 1, "trainee_name": "Jordan", "trainer_name": "Taylor",
+        "skill": "Repair", "start_day": date(2026, 7, 14),
+        "planned_attended_days": 5, "status": "active", "skill_id": 9,
+    })
+
+    assert block.work_center is None
+    assert block.skill_ids == (9,)
 
 
 def test_schedule_metadata_round_trips(monkeypatch):

@@ -42,6 +42,8 @@ class TrainingBlock:
     # populated from the joins below so reconciliation can promote by local id.
     trainee_id: int = 0
     skill_id: int = 0
+    work_center: str | None = None
+    skill_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -117,16 +119,22 @@ def validate_block(*, level: int, trainer_level: int, workdays: int) -> None:
         raise InvalidTrainingBlock("Training block must contain at least one attended workday.")
 
 
-def _validate_training_target(skill_id: int) -> str:
-    """Return an allowed recycled target skill or reject it before any write."""
-    rows = db.query("SELECT name FROM skills WHERE id = %s", (skill_id,))
-    skill_name = rows[0].get("name") if rows else None
-    if staffing.scheduling_group_for_skill(skill_name) not in ROTATION_GROUPS:
-        allowed = ", ".join(ROTATION_GROUPS)
+def _skill_ids_for(required_skills: tuple[str, ...]) -> tuple[int, ...]:
+    """Resolve each configured protocol skill while preserving its order."""
+    required_skills = tuple(
+        staffing.skill_name_for_scheduling_group(skill) for skill in required_skills
+    )
+    rows = db.query(
+        "SELECT id, name FROM skills WHERE name = ANY(%s)",
+        (list(required_skills),),
+    )
+    ids_by_name = {row["name"]: int(row["id"]) for row in rows}
+    missing = [skill for skill in required_skills if skill not in ids_by_name]
+    if missing:
         raise InvalidTrainingBlock(
-            f"Training blocks require a Recycled skill: {allowed}."
+            f"Could not resolve configured training skill: {missing[0]}."
         )
-    return skill_name
+    return tuple(ids_by_name[skill] for skill in required_skills)
 
 
 def _block_from_row(row: dict) -> TrainingBlock:
@@ -143,6 +151,8 @@ def _block_from_row(row: dict) -> TrainingBlock:
         status=row["status"],
         trainee_id=int(row.get("trainee_id") or 0),
         skill_id=int(row.get("skill_id") or 0),
+        work_center=row.get("work_center"),
+        skill_ids=tuple(row.get("skill_ids") or (int(row.get("skill_id") or 0),)),
     )
 
 
@@ -150,41 +160,45 @@ def create_block(
     *,
     trainee_id: int,
     trainer_id: int,
-    skill_id: int,
+    work_center: str,
     start_day: date,
     planned_attended_days: int,
 ) -> TrainingBlock:
-    """Create an active block after reading and validating both skill levels."""
-    _validate_training_target(skill_id)
-    levels = db.query(
-        "SELECT "
-        "  COALESCE((SELECT level FROM person_skills WHERE person_id = %s AND skill_id = %s), 0) "
-        "    AS trainee_level, "
-        "  COALESCE((SELECT level FROM person_skills WHERE person_id = %s AND skill_id = %s), 0) "
-        "    AS trainer_level",
-        (trainee_id, skill_id, trainer_id, skill_id),
-    )
-    if not levels:
-        raise InvalidTrainingBlock("Could not determine training skill levels.")
-    validate_block(
-        level=int(levels[0]["trainee_level"]),
-        trainer_level=int(levels[0]["trainer_level"]),
-        workdays=planned_attended_days,
-    )
+    """Create an active block for one exact configured work center."""
+    location = staffing.location_by_name(work_center)
+    if location is None:
+        raise InvalidTrainingBlock(f"Unknown work center: {work_center!r}.")
+    skill_ids = _skill_ids_for(staffing.required_skills_for(location))
+    for skill_id in skill_ids:
+        levels = db.query(
+            "SELECT "
+            "  COALESCE((SELECT level FROM person_skills WHERE person_id = %s AND skill_id = %s), 0) "
+            "    AS trainee_level, "
+            "  COALESCE((SELECT level FROM person_skills WHERE person_id = %s AND skill_id = %s), 0) "
+            "    AS trainer_level",
+            (trainee_id, skill_id, trainer_id, skill_id),
+        )
+        if not levels:
+            raise InvalidTrainingBlock("Could not determine training skill levels.")
+        validate_block(
+            level=int(levels[0]["trainee_level"]),
+            trainer_level=int(levels[0]["trainer_level"]),
+            workdays=planned_attended_days,
+        )
     rows = db.query(
         "WITH inserted AS ("
         "  INSERT INTO rotation_training_blocks "
-        "    (trainee_id, trainer_id, skill_id, start_day, planned_attended_days, status) "
-        "  VALUES (%s, %s, %s, %s, %s, 'active') "
-        "  RETURNING id, trainee_id, trainer_id, skill_id, start_day, planned_attended_days, status"
+        "    (trainee_id, trainer_id, skill_id, work_center, skill_ids, start_day, planned_attended_days, status) "
+        "  VALUES (%s, %s, %s, %s, %s, %s, %s, 'active') "
+        "  RETURNING id, trainee_id, trainer_id, skill_id, work_center, skill_ids, start_day, planned_attended_days, status"
         ") "
         "SELECT i.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
-        "  i.start_day, i.planned_attended_days, i.status, i.trainee_id, i.skill_id "
+        "  i.start_day, i.planned_attended_days, i.status, i.trainee_id, i.skill_id, i.work_center, i.skill_ids "
         "FROM inserted i "
         "JOIN people trainee ON trainee.id = i.trainee_id "
         "JOIN people trainer ON trainer.id = i.trainer_id "
         "JOIN skills skill ON skill.id = i.skill_id",
-        (trainee_id, trainer_id, skill_id, start_day, planned_attended_days),
+        (trainee_id, trainer_id, skill_ids[0], work_center, list(skill_ids), start_day, planned_attended_days),
     )
     if not rows:
         raise InvalidTrainingBlock("Could not create training block.")
@@ -195,7 +209,7 @@ def active_blocks_for_day(day: date) -> list[TrainingBlock]:
     """Return blocks that are active on or after their configured start day."""
     rows = db.query(
         "SELECT b.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
-        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id "
+        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id, b.work_center, b.skill_ids "
         "FROM rotation_training_blocks b "
         "JOIN people trainee ON trainee.id = b.trainee_id "
         "JOIN people trainer ON trainer.id = b.trainer_id "
@@ -211,7 +225,7 @@ def active_blocks() -> list[TrainingBlock]:
     """Return every active block, regardless of start day, deterministically."""
     rows = db.query(
         "SELECT b.id, trainee.name AS trainee_name, trainer.name AS trainer_name, skill.name AS skill, "
-        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id "
+        "  b.start_day, b.planned_attended_days, b.status, b.trainee_id, b.skill_id, b.work_center, b.skill_ids "
         "FROM rotation_training_blocks b "
         "JOIN people trainee ON trainee.id = b.trainee_id "
         "JOIN people trainer ON trainer.id = b.trainer_id "

@@ -212,6 +212,10 @@ CREATE TABLE IF NOT EXISTS rotation_training_blocks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE rotation_training_blocks ADD COLUMN IF NOT EXISTS work_center TEXT;
+ALTER TABLE rotation_training_blocks ADD COLUMN IF NOT EXISTS skill_ids INTEGER[];
+UPDATE rotation_training_blocks SET skill_ids = ARRAY[skill_id] WHERE skill_ids IS NULL;
+
 CREATE TABLE IF NOT EXISTS rotation_training_block_days (
   block_id BIGINT NOT NULL REFERENCES rotation_training_blocks(id) ON DELETE CASCADE,
   day DATE NOT NULL,

@@ -121,6 +121,11 @@ def required_skills_for(loc: Location) -> tuple[str, ...]:
     return loc.required_skills if loc.required_skills else (loc.skill,)
 
 
+def location_by_name(name: str) -> Location | None:
+    """Return the configured work center with this exact display name."""
+    return next((loc for loc in LOCATIONS if loc.name == name), None)
+
+
 @dataclass(frozen=True)
 class SchedulingPreferenceTarget:
     key: str
