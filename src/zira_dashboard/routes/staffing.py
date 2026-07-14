@@ -132,6 +132,19 @@ def _effective_minimum(loc) -> int:
     return work_centers_store.min_ops(loc)
 
 
+def _publish_shortages(assignments: dict[str, list[str]]) -> list[str]:
+    """Return each configured work center whose submitted crew is below minimum."""
+    shortages = []
+    for loc in staffing.LOCATIONS:
+        minimum = _effective_minimum(loc)
+        count = len(assignments.get(loc.name, []))
+        if count < minimum:
+            shortages.append(
+                f"{loc.name} requires {minimum} operators — currently {count}."
+            )
+    return shortages
+
+
 def _configured_center_capacities(
     centers, *, strict: bool = False,
 ) -> dict[str, int | None]:
@@ -1009,7 +1022,6 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
     # no longer collects time-off entries via form fields, so we ignore any
     # `loc____time_off` values that a stale tab might still be posting.
 
-    override = (form.get("override") or "").strip() == "1"
     notes = (form.get("notes") or "").strip()[:2000]
     wc_notes: dict[str, str] = {}
     for loc in staffing.LOCATIONS:
@@ -1018,18 +1030,7 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             wc_notes[loc.name] = v
     testing_day = (form.get("testing_day") or "").strip() in ("1", "on", "true")
 
-    # Publish-only block: only when action=publish, not overridden, and any min-≥2 work center is partially staffed.
-    publish_block: list[str] = []
-    if action == "publish" and not override:
-        for loc in staffing.LOCATIONS:
-            min_required = work_centers_store.min_ops(loc)
-            if min_required < 2:
-                continue
-            count = len(assignments.get(loc.name, []))
-            if 0 < count < min_required:
-                publish_block.append(
-                    f"{loc.name} requires {min_required} operators — currently {count}."
-                )
+    publish_block = _publish_shortages(assignments) if action == "publish" else []
 
     existing = staffing.load_schedule(d)
 
@@ -1085,9 +1086,8 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             return JSONResponse({"ok": True, "published": True, "discarded": True})
         return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
-    # Determine published state. If publish is blocked, save as draft with existing published state.
     if publish_block:
-        published = existing.published
+        published = False
     elif action == "publish":
         published = True
     elif action == "unpublish":
@@ -1095,14 +1095,14 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
     else:
         published = existing.published
 
-    # If the existing day was posted and we're now saving an edit (not publishing),
-    # capture a one-time snapshot of the posted version so the user can toggle back.
     published_snapshot = existing.published_snapshot
-    if action == "publish" and not publish_block:
-        # Re-publish clears any prior snapshot.
-        published_snapshot = None
-    elif existing.published and action != "publish" and published_snapshot is None:
-        # First edit of a posted day: snapshot before overwriting, flip to draft.
+    if action == "publish":
+        if publish_block:
+            if existing.published:
+                published_snapshot = staffing.snapshot_of(existing)
+        else:
+            published_snapshot = None
+    elif existing.published and published_snapshot is None:
         published_snapshot = staffing.snapshot_of(existing)
         published = False
 
@@ -1138,8 +1138,17 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
     # Bust the today response cache so the next GET sees fresh data.
     _http_cache.invalidate_today_cache()
 
-    # Auto-save (fetch with ?auto=1) → JSON, no redirect.
-    if auto or (request.headers.get("accept") or "").startswith("application/json"):
+    wants_json = auto or (request.headers.get("accept") or "").startswith("application/json")
+    if publish_block and wants_json:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Publish blocked — staff every work center to its minimum.",
+                "publish_block_reasons": publish_block,
+            },
+            status_code=409,
+        )
+    if wants_json:
         return JSONResponse({"ok": True, "published": published, "testing_day": testing_day})
 
     # If publish was blocked, bounce back to the same day with a flag so the UI can show the alert.
