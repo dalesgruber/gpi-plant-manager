@@ -1414,7 +1414,11 @@ def suggest_recycled_assignments(
         if coupled and remaining_capacity:
             options = []
             minimum_generated = max(remaining_minimum, int(needs_green_partner))
-            for size in range(max(1, minimum_generated), remaining_capacity + 1):
+            maximum_generated = min(
+                remaining_capacity,
+                len(edges_by_center.get(center, ())),
+            )
+            for size in range(max(1, minimum_generated), maximum_generated + 1):
                 for crew in combinations(edges_by_center.get(center, ()), size):
                     if _coverage_crew_is_safe(
                         group=group,

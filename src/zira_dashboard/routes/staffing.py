@@ -8,7 +8,6 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from datetime import date, datetime, timedelta, UTC
 
 from fastapi import APIRouter, Query, Request
@@ -16,7 +15,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import _http_cache, app_settings, attendance, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
-from ..auto_schedule_capacity import analyze_auto_expansion
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
 from ..staffing_attendance import _late_emp_ids, _safe_attendance, _safe_time_off_entries
@@ -264,29 +262,56 @@ def _protected_locks(
     *,
     allowed_centers=None,
     strict_default_reads: bool = False,
+    include_saved_defaults: bool = True,
 ):
     """Manual locks plus saved default people, optionally scoped by WC name."""
     allowed = set(allowed_centers) if allowed_centers is not None else None
     locks = _manual_locks_from_sources(assignment_sources, assignments)
-    for loc in staffing.LOCATIONS:
-        if allowed is not None and loc.name not in allowed:
-            continue
-        try:
-            defaults = work_centers_store.default_people(loc)
-        except Exception:
-            if strict_default_reads:
-                raise
-            defaults = []
-        if not defaults:
-            continue
-        existing = locks.setdefault(loc.name, [])
-        for name in defaults:
-            clean = str(name or "").strip()
-            if clean and clean not in existing:
-                existing.append(clean)
+    if include_saved_defaults:
+        for loc in staffing.LOCATIONS:
+            if allowed is not None and loc.name not in allowed:
+                continue
+            try:
+                defaults = work_centers_store.default_people(loc)
+            except Exception:
+                if strict_default_reads:
+                    raise
+                defaults = []
+            if not defaults:
+                continue
+            existing = locks.setdefault(loc.name, [])
+            for name in defaults:
+                clean = str(name or "").strip()
+                if clean and clean not in existing:
+                    existing.append(clean)
     if allowed is not None:
         locks = {wc: names for wc, names in locks.items() if wc in allowed}
     return locks
+
+
+def _default_inputs(strict: bool = False):
+    """Load exact defaults, group defaults, and user-group membership once."""
+    try:
+        exact = {
+            loc.name: tuple(work_centers_store.default_people(loc))
+            for loc in staffing.LOCATIONS
+        }
+        groups = {
+            name: tuple(people)
+            for name, people in work_centers_store.group_defaults_map().items()
+        }
+        members = {
+            name: tuple(
+                loc.name for loc in work_centers_store.members("group", name)
+            )
+            for name in groups
+        }
+        return exact, groups, members
+    except Exception:
+        if strict:
+            raise
+        log.exception("Could not load automatic-scheduling defaults")
+        return {}, {}, {}
 
 
 def _absence_by_day_for_block(block, d: date):
@@ -341,7 +366,14 @@ def _block_effects_for_day(d: date, time_off_entries, *, assignments=None, assig
     return effects
 
 
-def _gather_recycled_inputs(d: date, time_off_entries, *, assignments=None, assignment_sources=None):
+def _gather_recycled_inputs(
+    d: date,
+    time_off_entries,
+    *,
+    assignments=None,
+    assignment_sources=None,
+    user_group_centers=None,
+):
     """Reconcile completed blocks, then read the pure engine's inputs.
 
     Returns ``(preferences, history, block_effects, active_blocks)``. Impure —
@@ -358,6 +390,7 @@ def _gather_recycled_inputs(d: date, time_off_entries, *, assignments=None, assi
     history = rotation_suggestions._load_recycled_history(
         d,
         group_locations=_auto_history_group_locations(),
+        user_group_centers=user_group_centers,
     )
     rotation_training.reconcile_blocks(plant_today())
     active_blocks = rotation_store.active_blocks_for_day(d)
@@ -380,159 +413,11 @@ def _gather_recycled_inputs(d: date, time_off_entries, *, assignments=None, assi
     return preferences, history, block_effects, active_blocks
 
 
-def _append_auto_expansion_warning(
-    *,
-    suggestion,
-    day,
-    mode,
-    available_roster,
-    preferences,
-    history,
-    block_effects,
-    enabled_work_centers,
-    base_assignments,
-    assignment_sources,
-):
-    """Append an expansion hint only when a counterfactual engine run proves it.
-
-    The same pure scheduling engine must place every currently available Auto
-    candidate with the proof centers enabled. This deliberately withholds
-    advice when coverage, qualification, preference, pairing, or training
-    constraints are also limiting the roster.
-    """
-    if suggestion.issues:
-        return suggestion
-    try:
-        enabled = set(_ordered_work_center_names(enabled_work_centers))
-        locks = _protected_locks(assignment_sources, base_assignments, allowed_centers=None)
-        locked_names = {name for names in locks.values() for name in names}
-        assigned_outside_auto = {
-            str(name).strip()
-            for center, names in (base_assignments or {}).items()
-            if center not in enabled
-            for name in (names or [])
-            if str(name or "").strip()
-        }
-        block_people = {
-            str(name).strip()
-            for effect in block_effects or ()
-            for people in (
-                getattr(effect, "locked_people", {}) or {},
-                getattr(effect, "temporary_extra_people", {}) or {},
-            )
-            for names in people.values()
-            for name in names or ()
-            if str(name or "").strip()
-        }
-        candidate_names = {
-            person.name
-            for person in available_roster
-            if person.active
-            and not person.reserve
-            and person.name not in locked_names
-            and person.name not in assigned_outside_auto
-            and person.name not in block_people
-        }
-        generated_people = {
-            name
-            for sources in suggestion.sources.values()
-            for name, source in sources.items()
-            if source == rotation_suggestions.GENERATED_SOURCE
-        }
-        unassigned_people = len(candidate_names - generated_people)
-        if not unassigned_people:
-            return suggestion
-
-        open_slots_by_center = {}
-        disabled_centers = []
-        schedulable = {
-            center
-            for centers in _auto_history_group_locations().values()
-            for center in centers
-        }
-        for loc in staffing.LOCATIONS:
-            if loc.name in enabled or loc.name not in schedulable:
-                continue
-            maximum = work_centers_store.max_ops(loc)
-            if maximum is None:
-                maximum = unassigned_people
-            occupied = set(base_assignments.get(loc.name, [])) | set(locks.get(loc.name, []))
-            open_slots_by_center[loc.name] = max(0, int(maximum) - len(occupied))
-            disabled_centers.append(loc.name)
-
-        expansion = analyze_auto_expansion(
-            unassigned_people=unassigned_people,
-            disabled_centers=disabled_centers,
-            open_slots_by_center=open_slots_by_center,
-            center_order=_location_order(),
-        )
-        if expansion.centers_to_enable is None:
-            return suggestion
-
-        proof_centers = enabled | set(expansion.usable_centers[:expansion.centers_to_enable])
-        proof_locations, proof_skills = _auto_group_maps(proof_centers)
-        proof_minimums = {
-            loc.name: _effective_minimum(loc)
-            for loc in staffing.LOCATIONS if loc.name in proof_centers
-        }
-        proof_capacities = {
-            loc.name: work_centers_store.max_ops(loc)
-            for loc in staffing.LOCATIONS if loc.name in proof_centers
-        }
-        proof = rotation_suggestions.suggest_recycled_assignments(
-            day=day,
-            mode=mode,
-            roster=available_roster,
-            preferences=preferences,
-            base_assignments=base_assignments,
-            group_locations=proof_locations,
-            group_required_skills=proof_skills,
-            history=history,
-            locked_assignments={
-                center: list(names or [])
-                for center, names in locks.items() if center in proof_centers
-            },
-            block_effects=block_effects,
-            training_cap=_RECYCLED_TRAINING_CAP,
-            center_minimums=proof_minimums,
-            center_capacities=proof_capacities,
-            runnable_centers=proof_centers,
-        )
-        proof_generated = {
-            name
-            for sources in proof.sources.values()
-            for name, source in sources.items()
-            if source == rotation_suggestions.GENERATED_SOURCE
-        }
-        proof_overrides = {
-            name
-            for reason_codes in proof.reason_codes.values()
-            for name, reason_code in reason_codes.items()
-            if reason_code == "preference_override"
-        }
-        if (
-            proof.issues
-            or not candidate_names.issubset(proof_generated)
-            or candidate_names & proof_overrides
-        ):
-            return suggestion
-
-        noun = "center" if expansion.centers_to_enable == 1 else "centers"
-        people = "person" if unassigned_people == 1 else "people"
-        warning = (
-            f"Turn on {expansion.centers_to_enable} more Auto work {noun} "
-            f"to schedule all {unassigned_people} available {people}."
-        )
-        return replace(suggestion, warnings=tuple(suggestion.warnings) + (warning,))
-    except Exception:
-        log.exception("Could not calculate Auto expansion advisory; omitting it")
-        return suggestion
-
-
 def _recycled_suggestion_for_day(
     d: date, roster, mode: str, base_assignments, locked_assignments, time_off_entries,
     enabled_work_centers=None, assignment_sources=None,
     center_minimums=None, center_capacities=None,
+    exact_defaults=None, group_defaults=None, user_group_centers=None,
 ):
     """Compute the pure Recycled suggestion for ``d``, or ``None`` on any failure.
 
@@ -541,11 +426,14 @@ def _recycled_suggestion_for_day(
     scheduler always has a stored-defaults fallback (see ``_smart_defaults_for_day``).
     """
     try:
+        if exact_defaults is None or group_defaults is None or user_group_centers is None:
+            exact_defaults, group_defaults, user_group_centers = _default_inputs()
         preferences, history, block_effects, _blocks = _gather_recycled_inputs(
             d,
             time_off_entries,
             assignments=base_assignments,
             assignment_sources=assignment_sources,
+            user_group_centers=user_group_centers,
         )
         available = _roster_minus_full_day_off(roster, time_off_entries)
         enabled = set(
@@ -585,18 +473,9 @@ def _recycled_suggestion_for_day(
             center_minimums=resolved_minimums,
             center_capacities=resolved_capacities,
             runnable_centers=enabled,
-        )
-        suggestion = _append_auto_expansion_warning(
-            suggestion=suggestion,
-            day=d,
-            mode=mode,
-            available_roster=available,
-            preferences=preferences,
-            history=history,
-            block_effects=block_effects,
-            enabled_work_centers=enabled,
-            base_assignments=base_assignments,
-            assignment_sources=assignment_sources,
+            exact_defaults=exact_defaults,
+            group_defaults=group_defaults,
+            user_group_centers=user_group_centers,
         )
         return suggestion
     except Exception:
@@ -661,11 +540,13 @@ def _recycled_context_for_day(
         "active_training_blocks": [],
     }
     try:
+        exact_defaults, group_defaults, user_group_centers = _default_inputs()
         preferences, history, block_effects, active_blocks = _gather_recycled_inputs(
             d,
             time_off_entries,
             assignments=base_assignments,
             assignment_sources=assignment_sources,
+            user_group_centers=user_group_centers,
         )
         available = _roster_minus_full_day_off(roster, time_off_entries)
         enabled = set(
@@ -701,26 +582,19 @@ def _recycled_context_for_day(
             center_minimums=center_minimums,
             center_capacities=center_capacities,
             runnable_centers=enabled,
+            exact_defaults=exact_defaults,
+            group_defaults=group_defaults,
+            user_group_centers=user_group_centers,
         )
-        if d.weekday() != 5:
-            suggestion = _append_auto_expansion_warning(
-                suggestion=suggestion,
-                day=d,
-                mode=mode,
-                available_roster=available,
-                preferences=preferences,
-                history=history,
-                block_effects=block_effects,
-                enabled_work_centers=enabled,
-                base_assignments=base_assignments,
-                assignment_sources=assignment_sources,
-            )
         ctx["rotation_reasons"] = {wc: dict(r) for wc, r in suggestion.reasons.items()}
         ctx["rotation_reason_codes"] = {
             wc: dict(values) for wc, values in suggestion.reason_codes.items()
         }
         ctx["rotation_warnings"] = list(suggestion.warnings)
-        ctx["rotation_issues"] = [issue.to_dict() for issue in suggestion.issues]
+        ctx["rotation_issues"] = [
+            issue.to_dict()
+            for issue in (*suggestion.issues, *suggestion.placement_issues)
+        ]
         ctx["active_training_blocks"] = _training_blocks_context(active_blocks, d)
     except Exception:
         log.exception("Recycled context failed for %s; degrading to empty defaults", d)
