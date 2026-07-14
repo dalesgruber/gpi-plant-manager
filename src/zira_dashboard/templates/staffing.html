@@ -43,13 +43,9 @@
   <ul>
     {% for r in publish_block_reasons %}<li>{{ r }}</li>{% endfor %}
   </ul>
-  <div style="margin-top:0.4rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-    <span style="font-size:0.8rem;color:var(--muted)">Fix by scheduling the minimum, or override below:</span>
-    <button type="submit" name="action" value="publish" form="staffing-form" formnovalidate
-            onclick="document.getElementById('publish-override').value='1'"
-            class="override-btn publish-submit" aria-busy="false">Override &amp; Publish</button>
-    <input type="hidden" name="override" id="publish-override" value="0" form="staffing-form">
-  </div>
+  <p style="margin:0.4rem 0 0;font-size:0.8rem;color:var(--muted)">
+    Schedule every work center to its configured minimum, then publish again.
+  </p>
 </div>
 {% endif %}
 <div class="layout">

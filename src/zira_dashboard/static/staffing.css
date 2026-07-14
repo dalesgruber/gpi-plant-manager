@@ -721,16 +721,6 @@
   }
   .save-block strong { font-weight: 700; }
   .save-block ul { margin: 0.3rem 0 0 1.2rem; padding: 0; }
-  .override-btn {
-    background: var(--warn); color: white;
-    border: 1px solid var(--warn);
-    border-radius: 6px;
-    padding: 0.35rem 0.8rem;
-    font: inherit; font-size: 0.85rem; font-weight: 700;
-    cursor: pointer;
-  }
-  .override-btn:hover { filter: brightness(1.08); }
-
   /* Daily notes */
   .day-notes { margin-top: 0; }
   .day-notes .notes-label { display: block; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.25rem; }

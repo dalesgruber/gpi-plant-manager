@@ -212,9 +212,9 @@ def build_staffing_bays(roster, sched, time_off_entries, publish_blocked):
     if publish_blocked:
         for bay in bays:
             for r in bay["rows"]:
-                if r["hc_status"] == "under" and r["min_ops"] >= 2:
+                if len(r["assigned"]) < r["min_ops"]:
                     publish_block_reasons.append(
-                        f"{r['loc'].name} requires {r['min_ops']} operators — currently {len(r['present_assigned'])}."
+                        f"{r['loc'].name} requires {r['min_ops']} operators — currently {len(r['assigned'])}."
                     )
 
     # Per-WC default operators (set in Settings → Work Centers). Exposed as a

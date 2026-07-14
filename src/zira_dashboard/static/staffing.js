@@ -1341,8 +1341,9 @@
         body: fd,
         headers: { 'Accept': 'application/json' },
       });
-      if (pubRes.status >= 400) {
-        throw new Error('Publish failed: HTTP ' + pubRes.status);
+      if (!pubRes.ok) {
+        const data = await pubRes.json().catch(() => ({}));
+        throw new Error(data.error || ('Publish failed: HTTP ' + pubRes.status));
       }
 
       // Step 2: post the resulting PDF to Slack.
