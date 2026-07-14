@@ -36,7 +36,7 @@ def test_save_preserves_the_other_group(monkeypatch):
 
     store.save("Dismantler", store.BucketSettings(92, 82, 72))
 
-    assert saved[store.CONFIG_KEY] == {
+    assert saved[store.BUCKET_SETTINGS_NAME] == {
         "Repair": {"level_3_min": 91.0, "level_2_min": 81.0, "level_1_min": 71.0},
         "Dismantler": {"level_3_min": 92.0, "level_2_min": 82.0, "level_1_min": 72.0},
     }
