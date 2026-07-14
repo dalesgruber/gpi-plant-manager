@@ -26,6 +26,7 @@ from .. import (
     _http_cache,
     db,
     rotation_store,
+    rotation_suggestions,
     schedule_solver,
     scheduler_time_off,
     staffing,
@@ -455,6 +456,47 @@ def _build_assignment_sources(existing_sources, suggestion) -> dict[str, dict[st
     return new_sources
 
 
+def _defaults_only_assignments(
+    *, roster, full_day_off_names, exact_defaults, group_defaults,
+    user_group_centers, enabled_centers, history,
+) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
+    available = {
+        person.name for person in roster
+        if person.active and not person.reserve and person.name not in full_day_off_names
+    }
+    assignments: dict[str, list[str]] = {}
+    sources: dict[str, dict[str, str]] = {}
+    assigned: set[str] = set()
+
+    def place(center: str, name: str) -> None:
+        if not center or name not in available or name in assigned:
+            return
+        assignments.setdefault(center, []).append(name)
+        sources.setdefault(center, {})[name] = "default"
+        assigned.add(name)
+
+    for center, names in exact_defaults.items():
+        for raw_name in names:
+            place(str(center).strip(), str(raw_name).strip())
+
+    enabled = set(enabled_centers)
+    for group, names in group_defaults.items():
+        candidates = tuple(
+            center for center in user_group_centers.get(group, ())
+            if center in enabled
+        )
+        for raw_name in names:
+            name = str(raw_name).strip()
+            if candidates and name in available and name not in assigned:
+                place(
+                    rotation_suggestions.choose_center(
+                        name, str(group), candidates, history
+                    ),
+                    name,
+                )
+    return assignments, sources
+
+
 @router.post("/api/rotations/rebuild")
 async def rebuild_rotation(request: Request):
     body = await _json_body(request)
@@ -486,6 +528,57 @@ async def rebuild_rotation(request: Request):
             enabled_centers = staffing_route._ordered_work_center_names(
                 staffing_route._enabled_auto_work_centers(d)
             )
+            if reset_to_defaults:
+                absent = rotation_suggestions._full_day_time_off_names(time_off)
+                history = rotation_suggestions._load_recycled_history(
+                    d,
+                    group_locations=staffing_route._auto_history_group_locations(),
+                    user_group_centers=user_group_centers,
+                )
+                assignments, sources = _defaults_only_assignments(
+                    roster=roster,
+                    full_day_off_names=absent,
+                    exact_defaults=exact_defaults,
+                    group_defaults=group_defaults,
+                    user_group_centers=user_group_centers,
+                    enabled_centers=enabled_centers,
+                    history=history,
+                )
+                staffing.save_schedule(staffing.Schedule(
+                    day=d,
+                    published=sched.published,
+                    assignments=assignments,
+                    notes=sched.notes,
+                    wc_notes=dict(sched.wc_notes),
+                    testing_day=sched.testing_day,
+                    published_snapshot=sched.published_snapshot,
+                    custom_hours=sched.custom_hours,
+                    rotation_mode=sched.rotation_mode,
+                    assignment_sources=sources,
+                ))
+                _http_cache.invalidate_today_cache()
+                return JSONResponse({
+                    "ok": True,
+                    "applied": True,
+                    "assignments": assignments,
+                    "sources": sources,
+                    "reasons": {},
+                    "warnings": [],
+                    "unplaced": [],
+                    "coverage": {
+                        "staffed_centers": [],
+                        "unresolved_centers": [],
+                        "issues": [],
+                    },
+                    "enabled_work_centers": enabled_centers,
+                    "placement": {
+                        "available_people": [],
+                        "placed_people": [],
+                        "unplaced_people": [],
+                        "defaults": {},
+                        "issues": [],
+                    },
+                })
             manual_locks = staffing_route._protected_locks(
                 sched.assignment_sources,
                 sched.assignments,
