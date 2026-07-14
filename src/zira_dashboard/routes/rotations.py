@@ -458,7 +458,7 @@ def _build_assignment_sources(existing_sources, suggestion) -> dict[str, dict[st
 
 def _defaults_only_assignments(
     *, roster, full_day_off_names, exact_defaults, group_defaults,
-    user_group_centers, enabled_centers, history,
+    user_group_centers, enabled_centers, center_capacities, history,
 ) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
     available = {
         person.name for person in roster
@@ -481,19 +481,19 @@ def _defaults_only_assignments(
 
     enabled = set(enabled_centers)
     for group, names in group_defaults.items():
-        candidates = tuple(
-            center for center in user_group_centers.get(group, ())
-            if center in enabled
-        )
+        group_centers = tuple(center for center in user_group_centers.get(group, ()) if center in enabled)
         for raw_name in names:
             name = str(raw_name).strip()
-            if candidates and name in available and name not in assigned:
-                place(
-                    rotation_suggestions.choose_center(
-                        name, str(group), candidates, history
-                    ),
-                    name,
-                )
+            available_centers = tuple(
+                center for center in group_centers
+                if center_capacities.get(center) is None
+                or len(assignments.get(center, ())) < center_capacities[center]
+            )
+            if not available_centers or name not in available or name in assigned:
+                continue
+            least_load = min(len(assignments.get(center, ())) for center in available_centers)
+            tied_centers = tuple(center for center in available_centers if len(assignments.get(center, ())) == least_load)
+            place(rotation_suggestions.choose_center(name, str(group), tied_centers, history), name)
     return assignments, sources
 
 
@@ -528,6 +528,10 @@ async def rebuild_rotation(request: Request):
             enabled_centers = staffing_route._ordered_work_center_names(
                 staffing_route._enabled_auto_work_centers(d)
             )
+            center_capacities = staffing_route._configured_center_capacities(
+                enabled_centers,
+                strict=True,
+            )
             if reset_to_defaults:
                 absent = rotation_suggestions._full_day_time_off_names(time_off)
                 history = rotation_suggestions._load_recycled_history(
@@ -542,6 +546,7 @@ async def rebuild_rotation(request: Request):
                     group_defaults=group_defaults,
                     user_group_centers=user_group_centers,
                     enabled_centers=enabled_centers,
+                    center_capacities=center_capacities,
                     history=history,
                 )
                 staffing.save_schedule(staffing.Schedule(
@@ -592,10 +597,6 @@ async def rebuild_rotation(request: Request):
                 loc.name: staffing_route._effective_minimum(loc)
                 for loc in staffing.LOCATIONS if loc.name in enabled_centers
             }
-            center_capacities = staffing_route._configured_center_capacities(
-                enabled_centers,
-                strict=True,
-            )
             group_locations, group_required_skills = staffing_route._auto_group_maps(
                 enabled_centers
             )

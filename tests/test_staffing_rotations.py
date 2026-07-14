@@ -669,6 +669,47 @@ def test_reset_to_defaults_replaces_assignments_and_never_runs_auto_solver(monke
     assert response.json()["placement"]["issues"] == []
 
 
+def test_reset_to_defaults_spreads_group_people_across_enabled_auto_centers(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    staffing_route = _stub_recommendation_inputs(monkeypatch)
+    saved = []
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda _day: staffing.Schedule(day=TARGET_DAY))
+    monkeypatch.setattr(rotations.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Ana", 1), _person("Bob", 1), _person("Cara", 1)])
+    monkeypatch.setattr(rotations.scheduler_time_off, "time_off_entries_for_day", lambda _day: [])
+    monkeypatch.setattr(staffing_route, "_enabled_auto_work_centers", lambda _day: {"Repair 1", "Repair 2", "Repair 3"})
+    monkeypatch.setattr(staffing_route, "_default_inputs", lambda strict=False: ({}, {"Repair": ("Ana", "Bob", "Cara")}, {"Repair": ("Repair 1", "Repair 2", "Repair 3")}))
+    monkeypatch.setattr(staffing_route, "_configured_center_capacities", lambda centers, strict=False: {center: 1 for center in centers})
+    monkeypatch.setattr(rotations.rotation_suggestions, "_load_recycled_history", lambda *_args, **_kwargs: rotation_suggestions.RecycledHistory())
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+
+    response = client.post("/api/rotations/rebuild", json={"day": TARGET_DAY.isoformat(), "mode": "normal", "reset_to_defaults": True})
+
+    assert response.status_code == 200
+    assert saved[0].assignments == {"Repair 1": ["Ana"], "Repair 2": ["Bob"], "Repair 3": ["Cara"]}
+
+
+def test_reset_to_defaults_counts_exact_defaults_and_skips_full_group_centers(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    staffing_route = _stub_recommendation_inputs(monkeypatch)
+    saved = []
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda _day: staffing.Schedule(day=TARGET_DAY))
+    monkeypatch.setattr(rotations.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [_person("Pinned", 1), _person("Ana", 1), _person("Bob", 1)])
+    monkeypatch.setattr(rotations.scheduler_time_off, "time_off_entries_for_day", lambda _day: [])
+    monkeypatch.setattr(staffing_route, "_enabled_auto_work_centers", lambda _day: {"Repair 1", "Repair 2"})
+    monkeypatch.setattr(staffing_route, "_default_inputs", lambda strict=False: ({"Repair 1": ("Pinned",)}, {"Repair": ("Ana", "Bob")}, {"Repair": ("Repair 1", "Repair 2")}))
+    monkeypatch.setattr(staffing_route, "_configured_center_capacities", lambda centers, strict=False: {"Repair 1": 1, "Repair 2": 1})
+    monkeypatch.setattr(rotations.rotation_suggestions, "_load_recycled_history", lambda *_args, **_kwargs: rotation_suggestions.RecycledHistory())
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+
+    response = client.post("/api/rotations/rebuild", json={"day": TARGET_DAY.isoformat(), "mode": "normal", "reset_to_defaults": True})
+
+    assert response.status_code == 200
+    assert saved[0].assignments == {"Repair 1": ["Pinned"], "Repair 2": ["Ana"]}
+    assert "Bob" not in {name for names in saved[0].assignments.values() for name in names}
+
+
 def test_reset_to_defaults_skips_group_default_without_enabled_member(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     staffing_route = _stub_recommendation_inputs(monkeypatch)
