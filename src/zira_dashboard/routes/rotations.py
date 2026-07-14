@@ -25,7 +25,6 @@ from fastapi.responses import JSONResponse
 from .. import (
     _http_cache,
     db,
-    rotation_suggestions,
     rotation_store,
     schedule_solver,
     scheduler_time_off,
@@ -456,46 +455,6 @@ def _build_assignment_sources(existing_sources, suggestion) -> dict[str, dict[st
     return new_sources
 
 
-def _defaults_only_assignments(
-    *,
-    roster,
-    full_day_off_names,
-    exact_defaults,
-    group_defaults,
-    user_group_centers,
-    history,
-) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
-    available = {
-        person.name
-        for person in roster
-        if person.active and not person.reserve and person.name not in full_day_off_names
-    }
-    assignments, sources, assigned = {}, {}, set()
-
-    def place(center, name):
-        if name not in available or name in assigned:
-            return
-        assignments.setdefault(center, []).append(name)
-        sources.setdefault(center, {})[name] = "default"
-        assigned.add(name)
-
-    for center, names in exact_defaults.items():
-        for raw_name in names:
-            place(str(center), str(raw_name).strip())
-    for group, names in group_defaults.items():
-        centers = tuple(sorted(set(user_group_centers.get(group, ())), key=str.lower))
-        for raw_name in names:
-            name = str(raw_name).strip()
-            if centers and name in available and name not in assigned:
-                place(
-                    rotation_suggestions.choose_center(
-                        name, str(group), centers, history
-                    ),
-                    name,
-                )
-    return assignments, sources
-
-
 @router.post("/api/rotations/rebuild")
 async def rebuild_rotation(request: Request):
     body = await _json_body(request)
@@ -524,57 +483,6 @@ async def rebuild_rotation(request: Request):
             exact_defaults, group_defaults, user_group_centers = (
                 staffing_route._default_inputs(strict=True)
             )
-            if reset_to_defaults:
-                time_off_for_roster = [
-                    entry
-                    if isinstance(entry, Mapping)
-                    else {
-                        "name": entry.person_name,
-                        "hours": None if entry.is_full_day else 0,
-                    }
-                    for entry in time_off
-                ]
-                available_roster = staffing_route._roster_minus_full_day_off(
-                    roster, time_off_for_roster
-                )
-                full_day_off_names = {
-                    person.name for person in roster
-                } - {person.name for person in available_roster}
-                history = rotation_suggestions._load_recycled_history(
-                    d,
-                    group_locations=staffing_route._auto_history_group_locations(),
-                    user_group_centers=user_group_centers,
-                )
-                new_assignments, new_sources = _defaults_only_assignments(
-                    roster=roster,
-                    full_day_off_names=full_day_off_names,
-                    exact_defaults=exact_defaults,
-                    group_defaults=group_defaults,
-                    user_group_centers=user_group_centers,
-                    history=history,
-                )
-                staffing.save_schedule(staffing.Schedule(
-                    day=d,
-                    published=sched.published,
-                    assignments=new_assignments,
-                    notes=sched.notes,
-                    wc_notes=dict(sched.wc_notes),
-                    testing_day=sched.testing_day,
-                    published_snapshot=sched.published_snapshot,
-                    custom_hours=sched.custom_hours,
-                    rotation_mode=sched.rotation_mode,
-                    assignment_sources=new_sources,
-                ))
-                _http_cache.invalidate_today_cache()
-                return JSONResponse({
-                    "ok": True,
-                    "assignments": new_assignments,
-                    "sources": new_sources,
-                    "reasons": {},
-                    "warnings": [],
-                    "coverage": {},
-                    "placement": {},
-                })
             enabled_centers = staffing_route._ordered_work_center_names(
                 staffing_route._enabled_auto_work_centers(d)
             )
@@ -585,6 +493,8 @@ async def rebuild_rotation(request: Request):
                 strict_default_reads=True,
                 include_saved_defaults=False,
             )
+            if reset_to_defaults:
+                manual_locks = {}
             center_minimums = {
                 loc.name: staffing_route._effective_minimum(loc)
                 for loc in staffing.LOCATIONS if loc.name in enabled_centers
