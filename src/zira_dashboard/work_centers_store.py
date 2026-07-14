@@ -9,6 +9,8 @@ need to migrate. All functions are pure pass-throughs to SQL.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from .shift_config import TARGET_PER_DAY, productive_minutes_per_day
 from .staffing import (
     LOADING_JOCKEYING_REQUIRED_SKILLS,
@@ -24,6 +26,70 @@ GROUP_KINDS = ("group", "department")
 # the first time. After sync, the live list comes from the DB via
 # `synced_departments()`.
 DEPARTMENTS_FALLBACK: tuple[str, ...] = ("New", "Recycled", "Transportation")
+
+
+class InvalidDefaultTargets(ValueError):
+    """Raised when a person is assigned to more than one default target."""
+
+    def __init__(self, conflicts: dict[str, tuple[str, ...]]):
+        self.conflicts = conflicts
+        rendered = "; ".join(
+            f"{person}: {', '.join(targets)}"
+            for person, targets in sorted(
+                conflicts.items(), key=lambda item: item[0].lower()
+            )
+        )
+        super().__init__(f"Each person may have only one default target. {rendered}")
+
+
+def _clean_names(values: Sequence[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for value in values or ():
+        name = str(value or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            cleaned.append(name)
+    return tuple(cleaned)
+
+
+def _target_index(
+    exact_by_center: Mapping[str, Sequence[str]],
+    group_by_name: Mapping[str, Sequence[str]],
+) -> dict[str, list[str]]:
+    targets: dict[str, list[str]] = {}
+    for center, names in exact_by_center.items():
+        for person in names:
+            targets.setdefault(person, []).append(f"work_center:{center}")
+    for group, names in group_by_name.items():
+        for person in names:
+            targets.setdefault(person, []).append(f"group:{group}")
+    return targets
+
+
+def _normalize_default_targets(
+    *,
+    exact_by_center: Mapping[str, Sequence[str]] | None,
+    group_by_name: Mapping[str, Sequence[str]] | None,
+) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    exact = {
+        str(center).strip(): _clean_names(names)
+        for center, names in (exact_by_center or {}).items()
+        if str(center).strip()
+    }
+    groups = {
+        str(group).strip(): _clean_names(names)
+        for group, names in (group_by_name or {}).items()
+        if str(group).strip()
+    }
+    conflicts = {
+        person: tuple(sorted(person_targets, key=str.lower))
+        for person, person_targets in _target_index(exact, groups).items()
+        if len(person_targets) > 1
+    }
+    if conflicts:
+        raise InvalidDefaultTargets(conflicts)
+    return exact, groups
 
 
 def synced_departments() -> list[str]:
@@ -183,6 +249,93 @@ def department(loc: Location) -> str:         return effective(loc)["department"
 def default_people(loc: Location) -> list[str]: return list(effective(loc)["default_people"])
 
 
+def _exact_defaults_map() -> dict[str, list[str]]:
+    from . import db
+
+    rows = db.query(
+        "SELECT wc.name AS wc_name, pe.name AS person_name "
+        "FROM work_center_default_people wcdp "
+        "JOIN work_centers wc ON wc.id = wcdp.wc_id "
+        "JOIN people pe ON pe.id = wcdp.person_id "
+        "ORDER BY lower(wc.name), wcdp.sort_order, lower(pe.name)"
+    )
+    result: dict[str, list[str]] = {}
+    for row in rows:
+        result.setdefault(row["wc_name"], []).append(row["person_name"])
+    return result
+
+
+def group_default_people(group_name: str) -> list[str]:
+    from . import db
+
+    rows = db.query(
+        "SELECT pe.name FROM group_default_people gdp "
+        "JOIN people pe ON pe.id = gdp.person_id "
+        "WHERE gdp.group_name = %s "
+        "ORDER BY gdp.sort_order, lower(pe.name)",
+        (group_name,),
+    )
+    return [row["name"] for row in rows]
+
+
+def group_defaults_map() -> dict[str, list[str]]:
+    from . import db
+
+    rows = db.query(
+        "SELECT gdp.group_name, pe.name FROM group_default_people gdp "
+        "JOIN people pe ON pe.id = gdp.person_id "
+        "ORDER BY lower(gdp.group_name), gdp.sort_order, lower(pe.name)"
+    )
+    result: dict[str, list[str]] = {}
+    for row in rows:
+        result.setdefault(row["group_name"], []).append(row["name"])
+    return result
+
+
+def default_target_conflicts() -> dict[str, tuple[str, ...]]:
+    targets = _target_index(_exact_defaults_map(), group_defaults_map())
+    return {
+        person: tuple(sorted(person_targets, key=str.lower))
+        for person, person_targets in targets.items()
+        if len(person_targets) > 1
+    }
+
+
+def replace_default_targets(
+    *,
+    exact_by_center: Mapping[str, Sequence[str]],
+    group_by_name: Mapping[str, Sequence[str]],
+) -> None:
+    """Atomically replace all exact and group defaults after validation."""
+    exact, groups_by_name = _normalize_default_targets(
+        exact_by_center=exact_by_center,
+        group_by_name=group_by_name,
+    )
+    from . import db
+
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM work_center_default_people")
+        cur.execute("DELETE FROM group_default_people")
+        for center, names in exact.items():
+            for sort_order, person in enumerate(names):
+                cur.execute(
+                    "INSERT INTO work_center_default_people "
+                    "(wc_id, person_id, sort_order) "
+                    "SELECT wc.id, pe.id, %s FROM work_centers wc, people pe "
+                    "WHERE wc.name = %s AND pe.name = %s",
+                    (sort_order, center, person),
+                )
+        for group, names in groups_by_name.items():
+            for sort_order, person in enumerate(names):
+                cur.execute(
+                    "INSERT INTO group_default_people "
+                    "(group_name, person_id, sort_order) "
+                    "SELECT %s, pe.id, %s FROM people pe WHERE pe.name = %s",
+                    (group, sort_order, person),
+                )
+    _invalidate_caches()
+
+
 def goal_per_hour(loc: Location) -> float:
     hrs = productive_minutes_per_day() / 60.0
     return (goal_per_day(loc) / hrs) if hrs else 0.0
@@ -270,6 +423,16 @@ def save_one(loc: Location, updates: dict) -> dict:
     default_people lists. Only fields present in `updates` are touched."""
     from . import db
 
+    normalized_defaults: tuple[str, ...] | None = None
+    if "default_people" in updates and isinstance(updates["default_people"], list):
+        exact = _exact_defaults_map()
+        exact[loc.name] = updates["default_people"]
+        normalized_exact, _ = _normalize_default_targets(
+            exact_by_center=exact,
+            group_by_name=group_defaults_map(),
+        )
+        normalized_defaults = normalized_exact[loc.name]
+
     # Whitelist + coerce updates.
     direct: dict = {}  # column → new value
     if "goal_per_day" in updates:
@@ -336,20 +499,18 @@ def save_one(loc: Location, updates: dict) -> dict:
                     (loc.name, s),
                 )
         # Replace default_people if provided.
-        if "default_people" in updates and isinstance(updates["default_people"], list):
+        if normalized_defaults is not None:
             cur.execute(
                 "DELETE FROM work_center_default_people WHERE wc_id = "
                 "(SELECT id FROM work_centers WHERE name = %s)",
                 (loc.name,),
             )
-            for i, person_name in enumerate(updates["default_people"]):
-                if not isinstance(person_name, str) or not person_name.strip():
-                    continue
+            for i, person_name in enumerate(normalized_defaults):
                 cur.execute(
                     "INSERT INTO work_center_default_people (wc_id, person_id, sort_order) "
                     "SELECT wc.id, pe.id, %s FROM work_centers wc, people pe "
                     "WHERE wc.name = %s AND pe.name = %s",
-                    (i, loc.name, person_name.strip()),
+                    (i, loc.name, person_name),
                 )
 
     _invalidate_caches()
@@ -395,6 +556,13 @@ def rename_group(old: str, new: str) -> None:
             "(SELECT goal_per_day_override FROM groups WHERE name = %s) "
             "WHERE name = %s AND goal_per_day_override IS NULL",
             (old, new),
+        )
+        cur.execute(
+            "INSERT INTO group_default_people (group_name, person_id, sort_order) "
+            "SELECT %s, person_id, sort_order FROM group_default_people "
+            "WHERE group_name = %s "
+            "ON CONFLICT (group_name, person_id) DO NOTHING",
+            (new, old),
         )
         cur.execute("DELETE FROM groups WHERE name = %s", (old,))
     _invalidate_caches()

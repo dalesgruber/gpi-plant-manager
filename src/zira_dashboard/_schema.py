@@ -137,6 +137,13 @@ CREATE TABLE IF NOT EXISTS groups (
   goal_per_day_override INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS group_default_people (
+  group_name      TEXT NOT NULL REFERENCES groups(name) ON DELETE CASCADE,
+  person_id       INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (group_name, person_id)
+);
+
 CREATE TABLE IF NOT EXISTS departments (
   name            TEXT PRIMARY KEY,
   goal_per_day_override INTEGER
