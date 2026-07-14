@@ -1468,11 +1468,13 @@ def test_rebuild_rejects_bad_day(monkeypatch):
 def test_staffing_exposes_unified_training_setup_and_removes_row_toggles():
     html = (ROOT / "src/zira_dashboard/templates/staffing.html").read_text()
     js = (ROOT / "src/zira_dashboard/static/staffing.js").read_text()
+    print_css = (ROOT / "src/zira_dashboard/static/staffing-print.css").read_text()
 
     assert 'id="training-protocol-open"' in html
     assert 'id="training-protocol-modal"' in html
     assert 'class="wc-training-cb"' not in html
     assert "setWcTraining" not in js
+    assert ".wc-training-toggle" not in print_css
     assert "/api/rotations/training-blocks" in js
 
 
@@ -2310,14 +2312,10 @@ def test_absence_by_day_window_is_bounded(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_staffing_skills_context_includes_rotation_editor_data(monkeypatch):
-    """The People Matrix GET hands the template the per-person rotation
-    preferences and active training blocks the editor renders."""
+def test_staffing_skills_context_includes_scheduling_preferences_only(monkeypatch):
+    """The People Matrix keeps scheduling preferences, not training-form data."""
     from types import SimpleNamespace
-    from zira_dashboard import (
-        odoo_sync, cert_lookup, rotation_store,
-        skill_matrix_views_store as views_store,
-    )
+    from zira_dashboard import odoo_sync, cert_lookup, skill_matrix_views_store as views_store
     from zira_dashboard.routes import skills as skills_routes
 
     monkeypatch.setattr(skills_routes._http_cache, "get_cached_response", lambda *a, **k: None)
@@ -2339,11 +2337,11 @@ def test_staffing_skills_context_includes_rotation_editor_data(monkeypatch):
         skills_routes.rotation_store, "load_preferences_by_name",
         lambda: {"Alex": {"Repair": "primary"}},
     )
-    block = rotation_store.TrainingBlock(
-        id=7, trainee_name="Alex", trainer_name="Green", skill="Repair",
-        start_day=TARGET_DAY, planned_attended_days=5, status="active",
+    monkeypatch.setattr(
+        skills_routes.rotation_store,
+        "active_blocks",
+        lambda: (_ for _ in ()).throw(AssertionError("People Matrix must not load training blocks")),
     )
-    monkeypatch.setattr(skills_routes.rotation_store, "active_blocks", lambda: [block])
 
     captured: dict = {}
 
@@ -2362,17 +2360,11 @@ def test_staffing_skills_context_includes_rotation_editor_data(monkeypatch):
     skills_routes.staffing_skills(request=object())
     ctx = captured["context"]
 
-    assert ctx["rotation_groups"] == ["Dismantler", "Repair", "Trim Saw"]
     assert ctx["rotation_preference_options"] == ["primary", "regular", "occasional", "never"]
     assert ctx["rotation_preferences"] == {"Alex": {"Repair": "primary"}}
-    assert ctx["rotation_levels"]["Green"]["Repair"] == 3
-    assert ctx["rotation_levels"]["Alex"]["Repair"] == 0
-    assert "Alex" in ctx["rotation_active_people"]
-    assert len(ctx["active_training_blocks"]) == 1
-    tb = ctx["active_training_blocks"][0]
-    assert tb["trainee"] == "Alex"
-    assert tb["group"] == "Repair"
-    assert tb["status"] == "active"
+    assert "active_training_blocks" not in ctx
+    assert "rotation_levels" not in ctx
+    assert "rotation_active_people" not in ctx
 
 
 def test_skills_context_only_exposes_qualified_preference_targets(monkeypatch):
@@ -2399,7 +2391,6 @@ def test_skills_context_only_exposes_qualified_preference_targets(monkeypatch):
     monkeypatch.setattr(views_store, "list_views", lambda: [])
     monkeypatch.setattr(views_store, "get_default_view", lambda: None)
     monkeypatch.setattr(skills_routes.rotation_store, "load_preferences_by_name", lambda: {})
-    monkeypatch.setattr(skills_routes.rotation_store, "active_blocks", lambda: [])
 
     captured: dict = {}
 
@@ -2428,9 +2419,8 @@ def test_people_matrix_uses_dynamic_scheduling_preferences_picker():
     assert "dataset.rotationPreference" in js
 
 
-def test_staffing_skills_context_degrades_when_rotation_load_fails(monkeypatch):
-    """A DB hiccup loading rotation data leaves the matrix renderable with an
-    empty editor rather than 500ing."""
+def test_staffing_skills_context_degrades_when_preference_load_fails(monkeypatch):
+    """A preferences outage leaves the People Matrix renderable rather than 500ing."""
     from types import SimpleNamespace
     from zira_dashboard import (
         odoo_sync, cert_lookup, skill_matrix_views_store as views_store,
@@ -2454,7 +2444,6 @@ def test_staffing_skills_context_degrades_when_rotation_load_fails(monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(skills_routes.rotation_store, "load_preferences_by_name", boom)
-    monkeypatch.setattr(skills_routes.rotation_store, "active_blocks", boom)
 
     captured: dict = {}
 
@@ -2469,4 +2458,4 @@ def test_staffing_skills_context_degrades_when_rotation_load_fails(monkeypatch):
     ctx = captured["context"]
 
     assert ctx["rotation_preferences"] == {}
-    assert ctx["active_training_blocks"] == []
+    assert "active_training_blocks" not in ctx
