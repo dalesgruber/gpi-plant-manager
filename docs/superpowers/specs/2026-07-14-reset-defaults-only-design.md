@@ -14,11 +14,14 @@ work-center notes, testing-day state, custom hours, Auto/Training settings,
 time off, and the selected schedule goal.
 
 For each configured exact default, the reset assigns that person to the named
-work center when they are on the day's roster. For each configured group
-default, it assigns that person to the next eligible work center in that group
-according to the existing per-person center-rotation history. Group assignment
-uses the existing deterministic `choose_center` rule, which favors the least
-used center and avoids the most recently used center on a tie.
+work center when they are on the day's roster, regardless of that work center's
+Auto toggle. For each configured group default, it assigns that person to the
+next eligible work center in that group *only among the group's members whose
+Auto toggle is on*, according to the existing per-person center-rotation
+history. Group assignment uses the existing deterministic `choose_center` rule,
+which favors the least used center and avoids the most recently used center on
+a tie. If a group has no Auto-enabled member, the reset simply does not place
+that group's default person; it still completes successfully.
 
 People who are absent for the full day are not assigned. A person configured
 in more than one default target is assigned once using the existing stable
