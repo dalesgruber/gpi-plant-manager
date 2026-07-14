@@ -77,6 +77,11 @@ class RecycledSuggestion:
     unresolved_centers: tuple[str, ...] = ()
     issues: tuple[schedule_solver.CoverageIssue, ...] = ()
     unused_people: tuple[str, ...] = ()
+    complete: bool = False
+    available_people: tuple[str, ...] = ()
+    placed_people: tuple[str, ...] = ()
+    placement_issues: tuple[schedule_solver.PlacementIssue, ...] = ()
+    default_assignments: dict[str, str] = field(default_factory=dict)
 
     @property
     def assigned_people(self) -> set[str]:
@@ -368,7 +373,9 @@ def _assignments_from_row(row: dict) -> dict:
 
 
 def _recycled_history_from_rows(
-    rows: Sequence[dict], group_locations: dict[str, Sequence[str]]
+    rows: Sequence[dict],
+    group_locations: dict[str, Sequence[str]],
+    user_group_centers: Mapping[str, Sequence[str]] | None = None,
 ) -> RecycledHistory:
     """Aggregate bounded Recycled history across every managed center.
 
@@ -381,6 +388,10 @@ def _recycled_history_from_rows(
     for group, centers in group_locations.items():
         for center in centers:
             center_to_group[center] = group
+    user_groups_by_center: dict[str, list[str]] = {}
+    for group, centers in (user_group_centers or {}).items():
+        for center in centers:
+            user_groups_by_center.setdefault(center, []).append(str(group))
 
     center_counts: dict[tuple[str, str], int] = {}
     group_counts: dict[tuple[str, str], int] = {}
@@ -402,6 +413,10 @@ def _recycled_history_from_rows(
                 # Rows are newest-first, so the first center we see for a
                 # (name, group) pair is the most recent one they worked.
                 last_center_by_person_group.setdefault((name, group), center)
+                for user_group in user_groups_by_center.get(center, ()):
+                    last_center_by_person_group.setdefault(
+                        (name, f"User Group:{user_group}"), center
+                    )
                 if idx == 0:
                     most_recent_group_names.setdefault(group, set()).add(name)
 
@@ -416,6 +431,7 @@ def _recycled_history_from_rows(
 def _load_recycled_history(
     day: date,
     group_locations: dict[str, Sequence[str]] | None = None,
+    user_group_centers: Mapping[str, Sequence[str]] | None = None,
 ) -> RecycledHistory:
     """Load bounded Recycled center/group history for ``day``.
 
@@ -453,6 +469,7 @@ def _load_recycled_history(
     return _recycled_history_from_rows(
         rows,
         _default_group_locations() if group_locations is None else group_locations,
+        user_group_centers,
     )
 
 
@@ -937,6 +954,9 @@ def suggest_recycled_assignments(
     center_minimums: Mapping[str, int] | None = None,
     center_capacities: Mapping[str, int | None] | None = None,
     runnable_centers: Collection[str] | None = None,
+    exact_defaults: Mapping[str, Sequence[str]] | None = None,
+    group_defaults: Mapping[str, Sequence[str]] | None = None,
+    user_group_centers: Mapping[str, Sequence[str]] | None = None,
 ) -> RecycledSuggestion:
     """Suggest safe Recycled assignments for the Dismantler/Repair/Trim Saw groups.
 
@@ -1023,16 +1043,6 @@ def suggest_recycled_assignments(
         ]
         return choose_center(name, group, prioritized, resolved_history)
 
-    def _eligible(person: staffing.Person, group: str) -> bool:
-        if not person.active or person.reserve:
-            return False
-        if _group_level(person, group, resolved_group_required_skills) < 1:
-            return False
-        return _preference_for(resolved_preferences, person.name, group) != "never"
-
-    def _level_of(name: str, group: str) -> int:
-        return _group_level(by_name.get(name), group, resolved_group_required_skills)
-
     # 1. Manual locks survive rebuilds untouched.
     for center, names in (locked_assignments or {}).items():
         for name in names or []:
@@ -1113,22 +1123,21 @@ def suggest_recycled_assignments(
         for name, centers in protected_centers_by_name.items()
         if len(set(centers)) > 1
     }
-    requirements = _coverage_requirements(
-        mode=mode,
-        roster=roster,
-        groups=groups,
-        required_skills=resolved_group_required_skills,
-        preferences=resolved_preferences,
-        history=resolved_history,
-        assignments=assignments,
-        sources=sources,
-        assigned=assigned,
-        allowed_centers=allowed_centers,
-        minimum_for=_effective_minimum,
-        capacity_for=_effective_capacity,
-        block_trainees_by_center=block_trainees_by_center,
-        conflicting_protected_people=set(conflicting_protected),
-    )
+
+    # Complete rebuild: every active non-reserve person who is not already
+    # protected must flow to exactly one enabled center. Defaults narrow that
+    # person's safe edges; they never create or enable work centers.
+    available_names = tuple(sorted(
+        (person.name for person in roster if person.active and not person.reserve),
+        key=str.lower,
+    ))
+    solver_people = tuple(name for name in available_names if name not in assigned)
+    center_group: dict[str, str] = {}
+    for group, centers in sorted(groups.items(), key=lambda item: item[0].lower()):
+        for center in centers:
+            if center in allowed_centers:
+                center_group.setdefault(center, group)
+
     protected_issues = _protected_assignment_issues(
         roster=roster,
         groups=groups,
@@ -1138,268 +1147,390 @@ def suggest_recycled_assignments(
         allowed_centers=allowed_centers,
         block_trainees_by_center=block_trainees_by_center,
     )
-    conflict_issues = tuple(
-        schedule_solver.CoverageIssue(
-            center=center,
-            group=next(
-                (
-                    group
-                    for group, group_centers in groups.items()
-                    if center in group_centers
-                ),
-                "",
-            ),
+    placement_issues: list[schedule_solver.PlacementIssue] = []
+    for name, centers in sorted(conflicting_protected.items(), key=lambda item: item[0].lower()):
+        placement_issues.append(schedule_solver.PlacementIssue(
             code="protected_assignment_conflict",
+            person=name,
+            centers=centers,
             message=(
                 f"{name} is protected at multiple work centers "
-                f"({', '.join(centers)}); none of those commitments count "
-                "toward minimum coverage."
+                f"({', '.join(centers)}). Previous schedule kept."
             ),
-            rejections=(schedule_solver.CandidateRejection(
+        ))
+
+    default_targets: dict[str, list[tuple[str, str]]] = {}
+    for center, names in (exact_defaults or {}).items():
+        for raw_name in names or ():
+            name = str(raw_name or "").strip()
+            if name:
+                default_targets.setdefault(name, []).append(("exact", str(center)))
+    for group_name, names in (group_defaults or {}).items():
+        for raw_name in names or ():
+            name = str(raw_name or "").strip()
+            if name:
+                default_targets.setdefault(name, []).append(("group", str(group_name)))
+
+    exact_target_by_person: dict[str, str] = {}
+    group_target_by_person: dict[str, str] = {}
+    constrained_centers: dict[str, frozenset[str]] = {}
+    solver_people_set = frozenset(solver_people)
+    for name, targets in sorted(default_targets.items(), key=lambda item: item[0].lower()):
+        if name not in solver_people_set:
+            continue  # absent, reserve, inactive, or manually protected today
+        unique_targets = tuple(sorted(set(targets), key=lambda item: (item[0], item[1].lower())))
+        if len(unique_targets) > 1:
+            labels = tuple(f"{kind}:{target}" for kind, target in unique_targets)
+            placement_issues.append(schedule_solver.PlacementIssue(
+                code="default_target_conflict",
                 person=name,
-                code="protected_assignment_conflict",
-                detail=f"Protected at {', '.join(centers)}.",
-            ),),
-        )
-        for name, centers in sorted(conflicting_protected.items(), key=lambda item: item[0].lower())
-        for center in centers
-    )
-    coverage = schedule_solver.solve_minimum_coverage(requirements)
-    issues = protected_issues + conflict_issues + coverage.issues
-    for decision in coverage.decisions:
-        _place(
-            decision.center,
-            decision.person,
-            GENERATED_SOURCE,
-            decision.reason,
-            decision.reason_code,
-        )
-
-    warnings.extend(
-        issue.message for issue in issues if issue.message not in warnings
-    )
-    for issue in coverage.issues:
-        if issue.group == TRIM_SAW_SKILL and issue.code == "no_safe_pair":
-            warning = f"No safe operator pairing available for {issue.center}."
-            if warning not in warnings:
-                warnings.append(warning)
-
-    # Minimum coverage is now frozen. Rank the remaining optional candidates
-    # without allowing a Never preference to fill spare capacity.
-
-    candidate_pairs = [
-        (person, group)
-        for person in roster
-        for group in groups
-        if _eligible(person, group)
-    ]
-
-    # Optimized mode steers each green toward the group with the fewest other
-    # available greens so multi-group greens maximize level-3 coverage.
-    green_supply: dict[str, int] = {}
-    if mode == "optimized":
-        greens_by_group: dict[str, set[str]] = {}
-        for person, group in candidate_pairs:
-            if person.name not in assigned and _group_level(
-                person, group, resolved_group_required_skills
-            ) == 3:
-                greens_by_group.setdefault(group, set()).add(person.name)
-        green_supply = {group: len(names) for group, names in greens_by_group.items()}
-
-    candidate_pairs.sort(
-        key=lambda pair: _candidate_rank_key(
-            mode,
-            pair[0],
-            pair[1],
-            preferences,
-            resolved_history,
-            resolved_group_required_skills,
-            green_supply,
-        )
-    )
-    development_limit = max(0, int(training_cap))
-    placed_developments = 0
-
-    # Fill optional capacity only at centers whose complete minimum crew was
-    # established by the global solver or protected inputs.
-    for person, group in candidate_pairs:
-        if person.name in assigned:
-            continue
-        centers = groups[group]
-        open_centers = [
-            c
-            for c in centers
-            if c in allowed_centers
-            and c in coverage.staffed_centers
-            and len(assignments.get(c, [])) < _effective_capacity(c)
-        ]
-        if not open_centers:
-            continue
-        level = _group_level(person, group, resolved_group_required_skills)
-        pref = _preference_for(preferences, person.name, group)
-        if mode == "training" and level in (1, 2):
-            continue
-        if group != TRIM_SAW_SKILL:
-            center = _choose_prioritized_center(person.name, group, open_centers)
-            reason_code, reason = _optional_reason(
-                mode,
-                level,
-                pref,
-                group,
-                len(centers),
-                training_development=(
-                    mode == "training"
-                    and level in (1, 2)
-                    and any(_level_of(name, group) == 3 for name in assignments.get(center, []))
+                centers=tuple(target for _kind, target in unique_targets),
+                message=(
+                    f"{name} has multiple default targets ({', '.join(labels)}). "
+                    "Previous schedule kept."
                 ),
-            )
-            _place(center, person.name, GENERATED_SOURCE, reason, reason_code)
+            ))
             continue
-        # Trim Saw keeps its pairing guarantee: never generate an unsafe pair.
-        # Try the candidate's open centers in fairness order so one unsafe
-        # center does not discard them while another center could seat them.
-        remaining = list(open_centers)
-        while remaining:
-            center = _choose_prioritized_center(person.name, group, remaining)
-            remaining.remove(center)
-            occupants = assignments.get(center, [])
-            if occupants:
-                if all(_valid_trim_saw_pair(level, _level_of(name, group)) for name in occupants):
-                    reason_code, reason = _optional_reason(
-                        mode, level, pref, group, len(centers),
-                        training_development=(
-                            mode == "training"
-                            and level in (1, 2)
-                            and any(
-                                _level_of(name, group) == 3
-                                for name in assignments.get(center, [])
-                            )
-                        ),
-                    )
-                    _place(center, person.name, GENERATED_SOURCE, reason, reason_code)
-                    break
+        kind, target = unique_targets[0]
+        if kind == "exact":
+            if target not in allowed_centers or target not in center_group:
+                placement_issues.append(schedule_solver.PlacementIssue(
+                    code="exact_default_center_disabled",
+                    person=name,
+                    centers=(target,),
+                    message=(
+                        f"{name}'s default work center {target} is not enabled. "
+                        "Previous schedule kept."
+                    ),
+                ))
                 continue
-            if _effective_capacity(center) < 2:
+            group = center_group[target]
+            if _group_level(by_name.get(name), group, resolved_group_required_skills) < 1:
+                placement_issues.append(schedule_solver.PlacementIssue(
+                    code="exact_default_unqualified",
+                    person=name,
+                    centers=(target,),
+                    message=(
+                        f"{name} is not qualified for default work center {target}. "
+                        "Previous schedule kept."
+                    ),
+                ))
                 continue
-            partner = None
-            for other, other_group in candidate_pairs:
-                if other_group != group or other.name == person.name or other.name in assigned:
-                    continue
-                if _valid_trim_saw_pair(
-                    level,
-                    _group_level(other, group, resolved_group_required_skills),
-                ):
-                    partner = other
-                    break
-            if partner is None:
-                continue  # no safe pairing from this anchor; warned about below
-            partner_level = _group_level(partner, group, resolved_group_required_skills)
-            partner_is_development = mode == "training" and partner_level in (1, 2)
-            if partner_is_development and placed_developments >= development_limit:
-                continue
-            reason_code, reason = _optional_reason(
-                mode, level, pref, group, len(centers)
-            )
-            _place(center, person.name, GENERATED_SOURCE, reason, reason_code)
-            partner_pref = _preference_for(preferences, partner.name, group)
-            partner_code, partner_reason = _optional_reason(
-                mode,
-                partner_level,
-                partner_pref,
-                group,
-                len(centers),
-                training_development=(mode == "training" and partner_level in (1, 2)),
-            )
-            _place(
-                center,
-                partner.name,
-                GENERATED_SOURCE,
-                partner_reason,
-                partner_code,
-            )
-            if partner_is_development:
-                placed_developments += 1
-            break
+            exact_target_by_person[name] = target
+            constrained_centers[name] = frozenset((target,))
+            continue
 
-    # Training mode adds capped development placements: level-1/2 people
-    # paired into a center that already has a level-3 operator, without ever
-    # exceeding that center's hard capacity.
-    if mode == "training":
-        development = [
-            (person, group)
-            for person, group in candidate_pairs
-            if person.name not in assigned
-            and _group_level(person, group, resolved_group_required_skills) in (1, 2)
-        ]
-        development.sort(
-            key=lambda pair: _development_rank_key(
-                pair[0],
-                pair[1],
-                preferences,
-                resolved_history,
-                resolved_group_required_skills,
-            )
+        members = tuple(
+            center
+            for center in (user_group_centers or {}).get(target, ())
+            if center in allowed_centers and center in center_group
         )
-        for person, group in development:
-            if placed_developments >= development_limit:
-                break
-            if person.name in assigned:
+        if not members:
+            placement_issues.append(schedule_solver.PlacementIssue(
+                code="group_default_no_enabled_member",
+                person=name,
+                centers=(),
+                message=(
+                    f"{name}'s default group {target} has no enabled member work center. "
+                    "Previous schedule kept."
+                ),
+            ))
+            continue
+        qualified = tuple(
+            center
+            for center in members
+            if _group_level(
+                by_name.get(name),
+                center_group[center],
+                resolved_group_required_skills,
+            ) >= 1
+        )
+        if not qualified:
+            placement_issues.append(schedule_solver.PlacementIssue(
+                code="group_default_no_qualified_member",
+                person=name,
+                centers=tuple(sorted(members, key=str.lower)),
+                message=(
+                    f"{name} is not qualified for any enabled work center in "
+                    f"default group {target}. Previous schedule kept."
+                ),
+            ))
+            continue
+        group_target_by_person[name] = target
+        constrained_centers[name] = frozenset(qualified)
+
+    for center in sorted(allowed_centers, key=str.lower):
+        minimum = _effective_minimum(center)
+        capacity = _effective_capacity(center)
+        if minimum > capacity:
+            placement_issues.append(schedule_solver.PlacementIssue(
+                code="invalid_center_configuration",
+                centers=(center,),
+                message=(
+                    f"{center} has a minimum of {minimum} but a maximum of "
+                    f"{capacity}. Previous schedule kept."
+                ),
+            ))
+
+    def _finish_failure(
+        failures: Sequence[schedule_solver.PlacementIssue],
+        *,
+        solver_result: schedule_solver.CompleteScheduleResult | None = None,
+    ) -> RecycledSuggestion:
+        combined = tuple(failures)
+        failure_warnings = list(warnings)
+        for issue in (*protected_issues, *combined):
+            if issue.message not in failure_warnings:
+                failure_warnings.append(issue.message)
+        placed = tuple(sorted(
+            (name for name in available_names if name in assigned),
+            key=str.lower,
+        ))
+        unused = tuple(name for name in available_names if name not in assigned)
+        unresolved = tuple(sorted(
+            {
+                center
+                for issue in combined
+                for center in issue.centers
+                if center in allowed_centers
+            },
+            key=str.lower,
+        ))
+        return RecycledSuggestion(
+            assignments=assignments,
+            sources=sources,
+            reasons=reasons,
+            warnings=tuple(failure_warnings),
+            group_locations={group: tuple(centers) for group, centers in groups.items()},
+            reason_codes=reason_codes,
+            staffed_centers=(solver_result.staffed_centers if solver_result else ()),
+            unresolved_centers=unresolved,
+            issues=protected_issues,
+            unused_people=unused,
+            complete=False,
+            available_people=available_names,
+            placed_people=placed,
+            placement_issues=combined,
+        )
+
+    if placement_issues:
+        return _finish_failure(placement_issues)
+
+    candidate_edges: list[schedule_solver.CandidateEdge] = []
+    edges_by_center: dict[str, list[schedule_solver.CandidateEdge]] = {
+        center: [] for center in allowed_centers
+    }
+    for name in solver_people:
+        person = by_name[name]
+        allowed_for_person = constrained_centers.get(name)
+        for center in sorted(allowed_centers, key=str.lower):
+            if allowed_for_person is not None and center not in allowed_for_person:
+                continue
+            group = center_group.get(center)
+            if group is None:
                 continue
             level = _group_level(person, group, resolved_group_required_skills)
-            green_centers = [
-                c
-                for c in groups[group]
-                if c in allowed_centers
-                and c in coverage.staffed_centers
-                and len(assignments.get(c, [])) < _effective_capacity(c)
-                if any(_level_of(name, group) == 3 for name in assignments.get(c, []))
-            ]
-            if group == TRIM_SAW_SKILL:
-                # Trim Saw also retains its pairing guarantee.
-                green_centers = [
-                    c
-                    for c in green_centers
-                    if all(
-                        _valid_trim_saw_pair(level, _level_of(name, group))
-                        for name in assignments.get(c, [])
-                    )
-                ]
-            if not green_centers:
+            if level < 1:
                 continue
-            center = _choose_prioritized_center(person.name, group, green_centers)
-            pref = _preference_for(preferences, person.name, group)
-            reason_code, reason = _optional_reason(
-                mode,
-                level,
-                pref,
-                group,
-                len(groups[group]),
-                training_development=True,
+            preference = _preference_for(resolved_preferences, name, group)
+            if name in group_target_by_person:
+                user_group = group_target_by_person[name]
+                rank_cost = (
+                    int(resolved_history.center_counts.get((name, center), 0))
+                    * 10_000_000_000_000_000
+                    + int(
+                        center
+                        == resolved_history.last_center_by_person_group.get(
+                            (name, f"User Group:{user_group}")
+                        )
+                    )
+                    * 1_000_000_000_000_000
+                    + _minimum_rank_cost(
+                        person,
+                        group,
+                        center,
+                        mode,
+                        resolved_preferences,
+                        resolved_history,
+                        resolved_group_required_skills,
+                    )
+                )
+            else:
+                rank_cost = _minimum_rank_cost(
+                    person,
+                    group,
+                    center,
+                    mode,
+                    resolved_preferences,
+                    resolved_history,
+                    resolved_group_required_skills,
+                )
+            edge = schedule_solver.CandidateEdge(
+                person=name,
+                center=center,
+                level=level,
+                preference=preference,
+                rank_cost=rank_cost,
             )
+            candidate_edges.append(edge)
+            edges_by_center[center].append(edge)
+
+    complete_centers: list[schedule_solver.CompleteCenter] = []
+    direct_candidates: list[schedule_solver.CandidateEdge] = []
+    coupled_failure: list[schedule_solver.PlacementIssue] = []
+    remaining_minimum_by_center: dict[str, int] = {}
+    for center in sorted(allowed_centers, key=str.lower):
+        group = center_group[center]
+        existing = tuple(assignments.get(center, ()))
+        trainees = set(block_trainees_by_center.get(center, ()))
+        safe_existing = tuple(
+            name
+            for name in existing
+            if name not in conflicting_protected
+            and (
+                name in trainees
+                or (
+                    (person := by_name.get(name)) is not None
+                    and _minimum_eligible(
+                        person,
+                        group,
+                        resolved_preferences,
+                        resolved_group_required_skills,
+                    )
+                )
+            )
+        )
+        remaining_minimum = max(0, _effective_minimum(center) - len(safe_existing))
+        remaining_capacity = max(0, _effective_capacity(center) - len(existing))
+        remaining_minimum_by_center[center] = remaining_minimum
+        needs_green_partner = bool(trainees) and not any(
+            name not in trainees
+            and (person := by_name.get(name)) is not None
+            and _group_level(person, group, resolved_group_required_skills) == 3
+            for name in existing
+        )
+        coupled = group == TRIM_SAW_SKILL or needs_green_partner
+        crew_options: tuple[schedule_solver.CrewOption, ...] = ()
+        if coupled and remaining_capacity:
+            options = []
+            minimum_generated = max(remaining_minimum, int(needs_green_partner))
+            for size in range(max(1, minimum_generated), remaining_capacity + 1):
+                for crew in combinations(edges_by_center.get(center, ()), size):
+                    if _coverage_crew_is_safe(
+                        group=group,
+                        existing=existing,
+                        new_people=tuple(member.person for member in crew),
+                        by_name=by_name,
+                        required_skills=resolved_group_required_skills,
+                        trainees=trainees,
+                    ):
+                        options.append(schedule_solver.CrewOption(center, tuple(crew)))
+            crew_options = tuple(options)
+            if remaining_minimum and not crew_options:
+                coupled_failure.append(schedule_solver.PlacementIssue(
+                    code="no_safe_complete_crew",
+                    centers=(center,),
+                    message=(
+                        f"{center} cannot form a safe complete crew. "
+                        "Previous schedule kept."
+                    ),
+                ))
+        if coupled and not crew_options:
+            # No safe optional crew exists. Preserve the center at zero
+            # generated capacity so ordinary flow can never create an unsafe
+            # partial pair.
+            remaining_capacity = 0
+        elif not coupled:
+            direct_candidates.extend(edges_by_center.get(center, ()))
+        complete_centers.append(schedule_solver.CompleteCenter(
+            center=center,
+            group=group,
+            minimum=remaining_minimum,
+            capacity=remaining_capacity,
+            crew_options=crew_options,
+        ))
+
+    if coupled_failure:
+        return _finish_failure(coupled_failure)
+
+    complete_result = schedule_solver.solve_complete_schedule(
+        people=solver_people,
+        centers=tuple(complete_centers),
+        candidates=tuple(direct_candidates),
+    )
+    if not complete_result.complete:
+        return _finish_failure(complete_result.issues, solver_result=complete_result)
+
+    default_assignments: dict[str, str] = {}
+    decisions_by_center: dict[str, list[schedule_solver.AssignmentDecision]] = {}
+    for decision in complete_result.decisions:
+        decisions_by_center.setdefault(decision.center, []).append(decision)
+    for center, center_decisions in decisions_by_center.items():
+        remaining_minimum = remaining_minimum_by_center.get(center, 0)
+        ordered_decisions = sorted(
+            center_decisions,
+            key=lambda item: (
+                item.person not in exact_target_by_person
+                and item.person not in group_target_by_person,
+                item.rank_cost,
+                item.person.lower(),
+            ),
+        )
+        for decision in ordered_decisions:
+            group = center_group[center]
+            if decision.preference == "never":
+                reason_code = "preference_override"
+                reason = "Assigned despite Never so every available person is scheduled."
+            elif decision.person in exact_target_by_person:
+                reason_code = "exact_default"
+                reason = f"default work center: {center}"
+                default_assignments[decision.person] = center
+            elif decision.person in group_target_by_person:
+                reason_code = "group_default"
+                reason = (
+                    f"default group {group_target_by_person[decision.person]}; "
+                    "least-used qualified center"
+                )
+                default_assignments[decision.person] = center
+            elif remaining_minimum > 0:
+                reason_code = "minimum_coverage"
+                reason = "Assigned to meet minimum coverage."
+            else:
+                level = _group_level(
+                    by_name.get(decision.person),
+                    group,
+                    resolved_group_required_skills,
+                )
+                reason_code, reason = _optional_reason(
+                    mode,
+                    level,
+                    decision.preference,
+                    group,
+                    len(groups.get(group, ())),
+                    training_development=(mode == "training" and level in (1, 2)),
+                )
             _place(
                 center,
-                person.name,
+                decision.person,
                 GENERATED_SOURCE,
                 reason,
                 reason_code,
             )
-            placed_developments += 1
+            if remaining_minimum > 0:
+                remaining_minimum -= 1
 
-    generated_people = {
-        name
-        for center_sources in sources.values()
-        for name, source in center_sources.items()
-        if source == GENERATED_SOURCE
-    }
-    eligible_people = {
-        person.name
-        for person in roster
-        if person.active and not person.reserve
-    }
     for centers in groups.values():
         for center in centers:
             if center in allowed_centers:
                 assignments.setdefault(center, [])
+    placed_people = tuple(sorted(
+        (name for name in available_names if name in assigned),
+        key=str.lower,
+    ))
+    assert set(placed_people) == set(available_names)
+    for issue in protected_issues:
+        if issue.message not in warnings:
+            warnings.append(issue.message)
     return RecycledSuggestion(
         assignments=assignments,
         sources=sources,
@@ -1407,8 +1538,13 @@ def suggest_recycled_assignments(
         warnings=tuple(warnings),
         group_locations={group: tuple(centers) for group, centers in groups.items()},
         reason_codes=reason_codes,
-        staffed_centers=coverage.staffed_centers,
-        unresolved_centers=coverage.unresolved_centers,
-        issues=issues,
-        unused_people=tuple(sorted(eligible_people - generated_people - assigned, key=str.lower)),
+        staffed_centers=complete_result.staffed_centers,
+        unresolved_centers=(),
+        issues=protected_issues,
+        unused_people=(),
+        complete=True,
+        available_people=available_names,
+        placed_people=placed_people,
+        placement_issues=(),
+        default_assignments=default_assignments,
     )

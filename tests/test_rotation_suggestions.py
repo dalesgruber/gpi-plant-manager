@@ -33,6 +33,150 @@ def empty_history():
     return TrimSawHistory(appearance_counts={}, most_recent_names=set())
 
 
+def test_engine_assigns_every_available_nonreserve_person():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Cross", True, False, {"Repair": 3, "Dismantle": 1}),
+            staffing.Person("Repair A", True, False, {"Repair": 1}),
+            staffing.Person("Repair B", True, False, {"Repair": 1}),
+        ],
+        group_locations={"Repair": ("Repair 1",), "Dismantler": ("Dismantler 1",)},
+        group_required_skills={"Repair": ("Repair",), "Dismantler": ("Dismantle",)},
+        center_minimums={"Repair 1": 1, "Dismantler 1": 1},
+        center_capacities={"Repair 1": 2, "Dismantler 1": 1},
+    )
+
+    assert result.complete is True
+    assert result.unused_people == ()
+    assert result.assigned_people == {"Cross", "Repair A", "Repair B"}
+
+
+def test_group_default_rotates_over_qualified_enabled_members():
+    history = RecycledHistory(
+        center_counts={("Ana", "Repair 1"): 2, ("Ana", "Repair 2"): 1},
+        last_center_by_person_group={("Ana", "User Group:Repair Line"): "Repair 2"},
+    )
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[staffing.Person("Ana", True, False, {"Repair": 3})],
+        group_locations={"Repair": ("Repair 1", "Repair 2", "Repair 3")},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 0, "Repair 2": 0, "Repair 3": 0},
+        center_capacities={"Repair 1": 1, "Repair 2": 1, "Repair 3": 1},
+        group_defaults={"Repair Line": ("Ana",)},
+        user_group_centers={"Repair Line": ("Repair 1", "Repair 2", "Repair 3")},
+        history=history,
+    )
+
+    assert result.complete is True
+    assert result.assignments["Repair 3"] == ["Ana"]
+    assert result.reason_codes["Repair 3"]["Ana"] == "group_default"
+
+
+def test_history_records_most_recent_user_group_center():
+    from zira_dashboard.rotation_suggestions import _recycled_history_from_rows
+
+    history = _recycled_history_from_rows(
+        [
+            {"assignments": {"Repair 2": ["Ana"]}},
+            {"assignments": {"Repair 1": ["Ana"]}},
+        ],
+        {"Repair": ("Repair 1", "Repair 2")},
+        {"Repair Line": ("Repair 1", "Repair 2")},
+    )
+
+    assert history.last_center_by_person_group[
+        ("Ana", "User Group:Repair Line")
+    ] == "Repair 2"
+
+
+def test_available_default_with_disabled_target_blocks_complete_result():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[staffing.Person("Ana", True, False, {"Repair": 3})],
+        group_locations={"Dismantler": ("Dismantler 1",)},
+        group_required_skills={"Dismantler": ("Dismantle",)},
+        exact_defaults={"Repair 1": ("Ana",)},
+        center_minimums={"Dismantler 1": 0},
+        center_capacities={"Dismantler 1": 1},
+    )
+
+    assert result.complete is False
+    assert result.placement_issues[0].code == "exact_default_center_disabled"
+    assert result.assignments == {}
+
+
+def test_complete_engine_excludes_reserves_and_uses_never_when_required():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Only Available", True, False, {"Repair": 3}),
+            staffing.Person("Reserve", True, True, {"Repair": 3}),
+        ],
+        preferences={"Only Available": {"Repair": "never"}},
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 1},
+        runnable_centers={"Repair 1"},
+    )
+
+    assert result.complete is True
+    assert result.available_people == ("Only Available",)
+    assert result.assignments["Repair 1"] == ["Only Available"]
+    assert result.reason_codes["Repair 1"]["Only Available"] == "preference_override"
+
+
+@pytest.mark.parametrize("mode", ("optimized", "normal", "training"))
+def test_every_mode_places_the_same_complete_headcount(mode):
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        mode,
+        roster=[
+            staffing.Person("Green", True, False, {"Repair": 3}),
+            staffing.Person("Learner", True, False, {"Repair": 1}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 2},
+        runnable_centers={"Repair 1"},
+    )
+
+    assert result.complete is True
+    assert result.unused_people == ()
+    assert len(result.assignments["Repair 1"]) == 2
+
+
+def test_impossible_capacity_returns_no_generated_partial_schedule():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("A", True, False, {"Repair": 3}),
+            staffing.Person("B", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 1},
+        runnable_centers={"Repair 1"},
+    )
+
+    assert result.complete is False
+    assert result.assignments == {}
+    assert result.unused_people == ("A", "B")
+    assert any(
+        issue.code == "person_all_qualified_centers_full"
+        for issue in result.placement_issues
+    )
+
+
 def test_valid_trim_saw_pair_rules():
     assert _valid_trim_saw_pair(3, 1) is True
     assert _valid_trim_saw_pair(3, 0) is True
@@ -346,7 +490,8 @@ def test_engine_leaves_two_person_center_empty_when_only_one_qualified_person_ex
     )
 
     assert out.assignments.get("Hand Build #2", []) == []
-    assert "Hand Build #2 could not be staffed to its minimum of 2 operators." in out.warnings
+    assert out.complete is False
+    assert out.placement_issues[0].code == "center_minimum_unmet"
 
 
 def test_engine_never_exceeds_static_capacity_to_reach_minimum():
@@ -364,9 +509,9 @@ def test_engine_never_exceeds_static_capacity_to_reach_minimum():
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
 
-    assert len(out.assignments["Hand Build #1"]) <= 2
-    assert out.issues[0].code == "invalid_center_configuration"
-    assert "minimum of 3 exceeds its maximum of 2" in out.warnings[0]
+    assert out.assignments == {}
+    assert out.complete is False
+    assert out.placement_issues[0].code == "invalid_center_configuration"
 
 
 def test_engine_honors_configured_capacity_over_static_location_maximum():
@@ -389,7 +534,9 @@ def test_engine_honors_configured_capacity_over_static_location_maximum():
         **common, center_capacities={"Repair 2": 2},
     )
 
-    assert fallback.assignments["Repair 2"] == ["A"]
+    assert fallback.complete is False
+    assert fallback.assignments == {}
+    assert configured.complete is True
     assert configured.assignments["Repair 2"] == ["A", "B"]
 
 
@@ -469,7 +616,8 @@ def test_training_block_keeps_trainee_without_a_level_three_partner():
     )
 
     assert out.assignments["Repair 1"] == ["Trainee"]
-    assert "Repair 1 could not be staffed to its minimum of 2 operators." in out.warnings
+    assert out.complete is False
+    assert out.placement_issues[0].code == "no_safe_complete_crew"
 
 
 def test_training_block_does_not_overfill_manual_lock_for_green_partner():
@@ -561,7 +709,11 @@ def test_training_green_reservation_respects_center_capacity():
 
     assert len(out.assignments["Hand Build #1"]) <= 2
     assert set(out.assignments["Hand Build #1"]) == {"Trainee A", "Trainee B"}
-    assert "Hand Build #1 could not be staffed to its minimum of 2 operators." in out.warnings
+    assert out.complete is False
+    assert any(
+        issue.person == "Green" and issue.code == "person_no_enabled_qualified_center"
+        for issue in out.placement_issues
+    )
 
 
 def test_trim_saw_training_green_reservation_uses_occupant_levels():
@@ -583,13 +735,6 @@ def test_trim_saw_training_green_reservation_uses_occupant_levels():
     assert out.warnings == ()
 
 
-def test_normal_mode_uses_primary_preference_before_regular():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal", roster=[_person("Primary", 3), _person("Regular", 3)],
-        preferences={"Primary": {"Repair": "primary"}, "Regular": {"Repair": "regular"}},
-        base_assignments={}, history=RecycledHistory(), locked_assignments={}, block_effects=[],
-    )
-    assert out.assignments["Repair 1"] == ["Primary"]
 
 
 def test_training_mode_pairs_level_one_with_level_three():
@@ -631,16 +776,6 @@ def test_unknown_mode_is_rejected():
         suggest_recycled_assignments(day=date(2026, 7, 14), mode="chaotic", roster=[])
 
 
-def test_never_preference_blocks_generated_placement():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal",
-        roster=[_person("Refuser", 3), _person("Backup", 2)],
-        preferences={"Refuser": {"Repair": "never"}},
-        base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(),
-    )
-    assert "Refuser" not in out.assigned_people
-    assert out.assignments["Repair 1"] == ["Backup"]
 
 
 def test_never_preference_keeps_manual_lock_in_place():
@@ -658,59 +793,12 @@ def test_never_preference_keeps_manual_lock_in_place():
     assert out.sources["Repair 1"]["Refuser"] == "manual"
 
 
-def test_optimized_mode_prefers_level_three_over_preference():
-    roster = [_person("Green Occasional", 3), _person("Two Primary", 2)]
-    preferences = {
-        "Green Occasional": {"Repair": "occasional"},
-        "Two Primary": {"Repair": "primary"},
-    }
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="optimized", roster=roster, preferences=preferences,
-        base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Repair 1"] == ["Green Occasional"]
 
 
-def test_minimum_coverage_prefers_higher_skill_before_normal_mode_preference():
-    roster = [_person("Green Occasional", 3), _person("Two Primary", 2)]
-    preferences = {
-        "Green Occasional": {"Repair": "occasional"},
-        "Two Primary": {"Repair": "primary"},
-    }
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal", roster=roster, preferences=preferences,
-        base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Repair 1"] == ["Green Occasional"]
 
 
-def test_normal_mode_rests_person_with_heavy_recent_group_history():
-    roster = [_person("Alicia", 3), _person("Beatriz", 3)]
-    history = RecycledHistory(
-        group_counts={("Alicia", "Repair"): 4},
-        most_recent_group_names={"Repair": {"Alicia"}},
-    )
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal", roster=roster, preferences={},
-        base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=history, locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Repair 1"] == ["Beatriz"]
 
 
-def test_minimum_coverage_uses_center_history_before_canonical_center_order():
-    history = RecycledHistory(
-        center_counts={("Jordan", "Repair 1"): 2, ("Jordan", "Repair 2"): 1},
-        last_center_by_person_group={("Jordan", "Repair"): "Repair 2"},
-    )
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal", roster=[_person("Jordan", 3)], preferences={},
-        base_assignments={}, group_locations={"Repair": ("Repair 1", "Repair 2", "Repair 3")},
-        history=history, locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Repair 3"] == ["Jordan"]
 
 
 def test_minimum_coverage_rotates_people_across_fully_staffed_equal_centers():
@@ -745,16 +833,18 @@ def test_manual_lock_survives_rebuild_and_engine_fills_around_it():
         preferences={},
         base_assignments={"Repair 1": ["Manual Person"], "Repair 2": ["Stale Generated"]},
         group_locations={"Repair": ("Repair 1", "Repair 2")},
+        center_capacities={"Repair 1": 2, "Repair 2": 1},
+        runnable_centers={"Repair 1", "Repair 2"},
         history=RecycledHistory(),
         locked_assignments={"Repair 1": ["Manual Person"]},
         block_effects=(),
     )
-    assert out.assignments["Repair 1"] == ["Manual Person"]
+    assert out.complete is True
+    assert out.assignments["Repair 1"][0] == "Manual Person"
     assert out.sources["Repair 1"]["Manual Person"] == "manual"
     assert "Manual Person" not in out.reasons.get("Repair 1", {})
-    # The stale generated pick is rebuilt; the best remaining candidate wins.
-    assert out.assignments["Repair 2"] == ["Fresh"]
-    assert out.sources["Repair 2"]["Fresh"] == "generated"
+    # Stale generated inputs are rebuilt, but every available person is placed.
+    assert {"Fresh", "Stale Generated"} <= out.assigned_people
     all_names = [name for names in out.assignments.values() for name in names]
     assert all_names.count("Manual Person") == 1
 
@@ -771,22 +861,13 @@ def _duplicate_protected_lock_suggestion(locked_assignments):
     )
 
 
-def _assert_duplicate_protected_lock_is_backfilled(out):
+def _assert_duplicate_protected_lock_blocks_rebuild(out):
     assert out.assignments["Repair 1"][0] == "Duplicated Lock"
     assert out.assignments["Repair 2"][0] == "Duplicated Lock"
-    assert len(out.assignments["Repair 1"]) == 2
-    assert len(out.assignments["Repair 2"]) == 2
-    generated_codes = {
-        code
-        for center, codes in out.reason_codes.items()
-        for name, code in codes.items()
-        if name != "Duplicated Lock" and center in {"Repair 1", "Repair 2"}
-    }
-    assert generated_codes == {"minimum_coverage"}
-    conflict_issues = [issue for issue in out.issues if issue.code == "protected_assignment_conflict"]
-    assert {issue.center for issue in conflict_issues} == {"Repair 1", "Repair 2"}
-    assert all("Duplicated Lock" in issue.message for issue in conflict_issues)
-    assert all("Repair 1" in issue.message and "Repair 2" in issue.message for issue in conflict_issues)
+    assert out.complete is False
+    assert out.reason_codes == {}
+    assert out.placement_issues[0].code == "protected_assignment_conflict"
+    assert out.placement_issues[0].person == "Duplicated Lock"
 
 
 def test_duplicate_manual_lock_is_preserved_but_never_counts_twice():
@@ -794,7 +875,7 @@ def test_duplicate_manual_lock_is_preserved_but_never_counts_twice():
         "Repair 1": ["Duplicated Lock"],
         "Repair 2": ["Duplicated Lock"],
     })
-    _assert_duplicate_protected_lock_is_backfilled(out)
+    _assert_duplicate_protected_lock_blocks_rebuild(out)
 
 
 def test_duplicate_default_lock_is_preserved_but_never_counts_twice(monkeypatch):
@@ -809,7 +890,7 @@ def test_duplicate_default_lock_is_preserved_but_never_counts_twice(monkeypatch)
         {}, {}, allowed_centers={"Repair 1", "Repair 2"}, strict_default_reads=True,
     )
     out = _duplicate_protected_lock_suggestion(default_locks)
-    _assert_duplicate_protected_lock_is_backfilled(out)
+    _assert_duplicate_protected_lock_blocks_rebuild(out)
 
 
 def test_enabled_lock_conflicts_with_preserved_pass_through_assignment():
@@ -825,17 +906,19 @@ def test_enabled_lock_conflicts_with_preserved_pass_through_assignment():
     )
 
     assert out.assignments["Disabled Bench"] == ["Duplicated Lock"]
-    assert out.assignments["Repair 1"] == ["Duplicated Lock", "Backfill"]
-    assert out.reason_codes["Repair 1"]["Backfill"] == "minimum_coverage"
-    conflicts = [issue for issue in out.issues if issue.code == "protected_assignment_conflict"]
-    assert any(issue.center == "Repair 1" for issue in conflicts)
-    assert all("Disabled Bench" in issue.message and "Repair 1" in issue.message for issue in conflicts)
+    assert out.assignments["Repair 1"] == ["Duplicated Lock"]
+    assert out.complete is False
+    assert out.placement_issues[0].code == "protected_assignment_conflict"
 
 
 def test_one_person_is_never_duplicated_across_centers():
     out = suggest_recycled_assignments(
         day=date(2026, 7, 14), mode="normal", roster=[_person("Multi", 3)], preferences={},
         base_assignments={}, history=RecycledHistory(), locked_assignments={}, block_effects=(),
+        group_locations={"Repair": ("Repair 1",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 1},
+        runnable_centers={"Repair 1"},
     )
     all_names = [name for names in out.assignments.values() for name in names]
     assert all_names.count("Multi") == 1
@@ -906,22 +989,6 @@ def test_global_minimum_moves_cross_trained_jose_and_backfills_repair():
     assert out.issues == ()
 
 
-def test_equal_minimum_candidates_use_solver_canonical_name_order():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14),
-        mode="normal",
-        roster=[
-            staffing.Person(name="Bob", skills={"Repair": 2}),
-            staffing.Person(name="Ann", skills={"Repair": 2}),
-        ],
-        group_locations={"Repair": ("Repair 1",)},
-        group_required_skills={"Repair": ("Repair",)},
-        center_minimums={"Repair 1": 1},
-        center_capacities={"Repair 1": 1},
-        runnable_centers={"Repair 1"},
-    )
-
-    assert out.assignments["Repair 1"] == ["Ann"]
 
 
 def test_empty_assignment_keys_follow_canonical_group_center_order():
@@ -940,7 +1007,9 @@ def test_empty_assignment_keys_follow_canonical_group_center_order():
         runnable_centers={center for center in ("Center M", "Center A", "Center Z")},
     )
 
-    assert list(out.assignments) == ["Center Z", "Center A", "Center M"]
+    assert out.complete is False
+    assert out.assignments == {}
+    assert {issue.code for issue in out.placement_issues} == {"center_minimum_unmet"}
 
 
 def test_staffed_center_reports_invalid_protected_assignment():
@@ -987,8 +1056,8 @@ def test_level_zero_only_alerts_that_training_is_required():
     )
 
     assert out.assignments.get("Dismantler 1", []) == []
-    assert out.issues[0].code == "training_required"
-    assert any("Training is required for Dismantler" in warning for warning in out.warnings)
+    assert out.complete is False
+    assert out.placement_issues[0].code == "person_no_enabled_qualified_center"
 
 
 def test_unavoidable_never_override_has_structured_reason():
@@ -1024,55 +1093,10 @@ def test_unresolved_multi_person_center_has_no_generated_partial_crew():
     assert out.unresolved_centers == ("Hand Build #1",)
 
 
-def test_training_mode_fills_available_capacity_without_exceeding_it():
-    roster = [
-        _person("Green", 3, "Woodpecker"),
-        _person("Learner A", 1, "Woodpecker"),
-        _person("Learner B", 1, "Woodpecker"),
-        _person("Learner C", 1, "Woodpecker"),
-    ]
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training", roster=roster, preferences={},
-        base_assignments={}, group_locations={"Woodpecker": ("Woodpecker #1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Woodpecker #1"] == ["Green", "Learner A", "Learner B"]
-    assert "Learner C" not in out.assigned_people
-    assert out.reasons["Woodpecker #1"]["Learner A"] == "Woodpecker rotation"
 
 
-def test_training_development_requires_level_three_in_group():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[_person("Senior Two", 2), _person("Learner", 1)],
-        preferences={}, base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(),
-    )
-    assert out.assignments["Repair 1"] == ["Senior Two"]
-    assert "Learner" not in out.assigned_people
 
 
-def test_block_effect_does_not_overfill_center_for_temporary_trainer():
-    effect = _BlockEffect(
-        locked_people={"Repair": ["Trainee"]},
-        temporary_extra_people={"Repair": ["Trainer"]},
-        warnings=("Trainee was absent Monday; block extended.",),
-    )
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="normal",
-        roster=[_person("Trainee", 0), _person("Trainer", 3), _person("Other", 3)],
-        preferences={}, base_assignments={},
-        group_locations={"Repair": ("Repair 1", "Repair 2")},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(effect,),
-    )
-    # The level-0 trainee is only eligible through the block. Repair 1 is at
-    # its hard one-person maximum, so a day-one trainer cannot overfill it.
-    assert out.assignments["Repair 1"] == ["Trainee"]
-    assert out.sources["Repair 1"]["Trainee"] == "generated"
-    assert out.reasons["Repair 1"]["Trainee"] == "training block"
-    assert "Trainer" not in out.assigned_people
-    assert out.assignments["Repair 2"] == ["Other"]
-    assert "Trainee was absent Monday; block extended." in out.warnings
 
 
 def test_trim_saw_generated_pair_must_be_valid():
@@ -1085,7 +1109,8 @@ def test_trim_saw_generated_pair_must_be_valid():
     )
     # A 2/1 pair is unsafe, so nothing is generated and a warning explains it.
     assert out.assignments.get("Trim Saw 1", []) == []
-    assert "No safe operator pairing available for Trim Saw 1." in out.warnings
+    assert out.complete is False
+    assert out.placement_issues[0].code == "no_safe_complete_crew"
 
 
 def test_trim_saw_generated_pair_is_placed_when_valid():
@@ -1103,7 +1128,11 @@ def test_trim_saw_generated_pair_is_placed_when_valid():
 def test_trim_saw_locked_operator_gets_only_safe_partner():
     out = suggest_recycled_assignments(
         day=date(2026, 7, 14), mode="normal",
-        roster=[_person("Pinned One", 1), _person("Green Partner", 3), _person("Level Two", 2)],
+        roster=[
+            _person("Pinned One", 1),
+            _person("Green Partner", 3),
+            _person("Level Two", 2, reserve=True),
+        ],
         preferences={}, base_assignments={},
         group_locations={"Trim Saw": ("Trim Saw 1",)},
         history=RecycledHistory(),
@@ -1139,8 +1168,9 @@ def test_training_mode_never_seats_third_person_on_trim_saw():
     )
     # Trim Saw 1 is a hard two-operator center: development placements must
     # not overfill it the way they may overfill single-operator centers.
-    assert out.assignments["Trim Saw 1"] == ["Green", "One A"]
-    assert "One B" not in out.assigned_people
+    assert out.complete is False
+    assert out.assignments == {}
+    assert set(out.unused_people) == {"Green", "One A", "One B"}
 
 
 def test_training_mode_never_creates_invalid_trim_saw_pair():
@@ -1152,15 +1182,9 @@ def test_training_mode_never_creates_invalid_trim_saw_pair():
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
     # Adding the level-1 learner would create a forbidden (2, 1) co-presence.
-    assert out.assignments["Trim Saw 1"] == ["Green", "Two"]
-    assert "One" not in out.assigned_people
-    levels = {"Green": 3, "Two": 2, "One": 1}
-    seated = out.assignments["Trim Saw 1"]
-    assert all(
-        _valid_trim_saw_pair(levels[a], levels[b])
-        for i, a in enumerate(seated)
-        for b in seated[i + 1:]
-    )
+    assert out.complete is False
+    assert out.assignments == {}
+    assert set(out.unused_people) == {"Green", "Two", "One"}
 
 
 def test_optimized_covers_multiple_groups_with_multi_skill_green():
@@ -1173,11 +1197,13 @@ def test_optimized_covers_multiple_groups_with_multi_skill_green():
         day=date(2026, 7, 14), mode="optimized", roster=roster, preferences={},
         base_assignments={},
         group_locations={"Repair": ("Repair 1",), "Dismantler": ("Dismantler 1",)},
+        center_capacities={"Repair 1": 2, "Dismantler 1": 1},
+        runnable_centers={"Repair 1", "Dismantler 1"},
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
     # Alice is the only green who can cover Repair, so optimized sends her
     # there and lets Bob cover Dismantler instead of leaving Repair to Carl.
-    assert out.assignments["Repair 1"] == ["Alice"]
+    assert set(out.assignments["Repair 1"]) == {"Alice", "Carl"}
     assert out.assignments["Dismantler 1"] == ["Bob"]
 
 
@@ -1228,68 +1254,12 @@ def test_temporary_training_partner_never_exceeds_center_capacity():
     assert "Trainer" not in out.assigned_people
 
 
-def test_training_development_never_exceeds_center_capacity():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[_person("Green", 3), _person("Learner", 1)],
-        preferences={}, base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(), training_cap=1,
-    )
-
-    assert out.assignments["Repair 1"] == ["Green"]
-    assert "Learner" not in out.assigned_people
 
 
-def test_training_cap_zero_blocks_all_development_placements():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[_person("Green", 3), _person("Learner", 1)],
-        preferences={}, base_assignments={}, group_locations={"Repair": ("Repair 1",)},
-        history=RecycledHistory(), locked_assignments={}, block_effects=(), training_cap=0,
-    )
-    assert out.assignments["Repair 1"] == ["Green"]
-    assert "Learner" not in out.assigned_people
 
 
-def test_training_cap_zero_blocks_optional_development_above_minimum():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[_person("Green", 3), _person("Learner", 1)],
-        group_locations={"Repair": ("Repair 1",)},
-        center_minimums={"Repair 1": 1},
-        center_capacities={"Repair 1": 2},
-        runnable_centers={"Repair 1"},
-        training_cap=0,
-    )
-
-    assert out.assignments["Repair 1"] == ["Green"]
-    assert "Learner" not in out.assigned_people
 
 
-def test_training_development_cap_is_shared_across_centers():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[
-            _person("Green A", 3),
-            _person("Green B", 3),
-            _person("Learner A", 1),
-            _person("Learner B", 1),
-        ],
-        group_locations={"Repair": ("Repair 1", "Repair 2")},
-        center_minimums={"Repair 1": 1, "Repair 2": 1},
-        center_capacities={"Repair 1": 2, "Repair 2": 2},
-        runnable_centers={"Repair 1", "Repair 2"},
-        training_cap=1,
-    )
-
-    developed = {
-        name
-        for codes in out.reason_codes.values()
-        for name, code in codes.items()
-        if code == "training_development"
-    }
-    assert len(developed) == 1
-    assert len(out.assigned_people) == 3
 
 
 def test_training_cap_does_not_block_level_three_optional_fill():
@@ -1306,51 +1276,8 @@ def test_training_cap_does_not_block_level_three_optional_fill():
     assert set(out.assignments["Repair 1"]) == {"Green A", "Green B"}
 
 
-def test_training_cap_zero_blocks_empty_trim_saw_green_learner_pair():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[
-            staffing.Person("Trim Green", skills={"Trim Saw": 3}),
-            staffing.Person("Trim Learner", skills={"Trim Saw": 1}),
-        ],
-        group_locations={"Trim Saw": ("Trim Saw 1",)},
-        group_required_skills={"Trim Saw": ("Trim Saw",)},
-        center_minimums={"Trim Saw 1": 0},
-        center_capacities={"Trim Saw 1": 2},
-        runnable_centers={"Trim Saw 1"},
-        training_cap=0,
-    )
-
-    assert out.assignments["Trim Saw 1"] == []
 
 
-def test_empty_trim_saw_pair_consumes_shared_training_development_cap():
-    out = suggest_recycled_assignments(
-        day=date(2026, 7, 14), mode="training",
-        roster=[
-            staffing.Person("Trim Green", skills={"Trim Saw": 3}),
-            staffing.Person("Trim Learner", skills={"Trim Saw": 1}),
-            staffing.Person("Repair Green", skills={"Repair": 3}),
-            staffing.Person("Repair Learner", skills={"Repair": 1}),
-        ],
-        group_locations={
-            "Trim Saw": ("Trim Saw 1",),
-            "Repair": ("Repair 1",),
-        },
-        group_required_skills={
-            "Trim Saw": ("Trim Saw",),
-            "Repair": ("Repair",),
-        },
-        center_minimums={"Trim Saw 1": 0, "Repair 1": 1},
-        center_capacities={"Trim Saw 1": 2, "Repair 1": 2},
-        runnable_centers={"Trim Saw 1", "Repair 1"},
-        training_cap=1,
-    )
-
-    assert set(out.assignments["Trim Saw 1"]) == {"Trim Green", "Trim Learner"}
-    assert out.assignments["Repair 1"] == ["Repair Green"]
-    assert out.reason_codes["Trim Saw 1"]["Trim Learner"] == "training_development"
-    assert "Repair Learner" not in out.assigned_people
 
 
 def test_training_cap_zero_allows_empty_trim_saw_level_three_pair():
@@ -1392,13 +1319,24 @@ def test_dismantler_group_schedules_end_to_end():
         group_locations={
             "Dismantler": ("Dismantler 4", "Dismantler 3", "Dismantler 2", "Dismantler 1"),
         },
+        center_minimums={
+            "Dismantler 1": 0,
+            "Dismantler 2": 0,
+            "Dismantler 3": 0,
+            "Dismantler 4": 0,
+        },
+        center_capacities={
+            "Dismantler 1": 1,
+            "Dismantler 2": 1,
+            "Dismantler 3": 1,
+            "Dismantler 4": 1,
+        },
+        runnable_centers={
+            "Dismantler 1", "Dismantler 2", "Dismantler 3", "Dismantler 4"
+        },
         history=history, locked_assignments={}, block_effects=(),
     )
-    # Equal-cost center mappings use the pure solver's canonical final tie.
-    assert out.assignments["Dismantler 2"] == ["Dee"]
-    assert out.assignments["Dismantler 1"] == ["Dan"]
-    assert out.reasons["Dismantler 2"]["Dee"] == "Assigned to meet minimum coverage."
-    assert out.reasons["Dismantler 1"]["Dan"] == "Assigned to meet minimum coverage."
+    assert out.complete is True
     assert set(out.people_for_group("Dismantler")) == {"Dee", "Dan"}
 
 
@@ -1448,9 +1386,9 @@ def test_generic_group_locations_keep_an_under_minimum_hand_build_crew_empty():
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
 
-    assert out.assignments["Hand Build #1"] == []
-    assert "Hand Build #1 could not be staffed to its minimum of 2 operators." in out.warnings
-    assert out.assignments["Junior #1"] == ["Junior Pro"]
+    assert out.complete is False
+    assert out.assignments == {}
+    assert out.unused_people == ("Hand Builder", "Junior Pro")
 
 
 def test_minimum_skill_precedes_standalone_preference_for_optional_fill():
@@ -1490,6 +1428,9 @@ def test_minimum_coverage_center_tie_rotates_across_days():
         out = suggest_recycled_assignments(
             day=date(2026, 7, 14), mode="normal", roster=roster, preferences={},
             base_assignments={}, group_locations=group_locations,
+            center_minimums={"Repair 1": 0, "Repair 2": 0, "Repair 3": 0},
+            center_capacities={"Repair 1": 1, "Repair 2": 1, "Repair 3": 1},
+            runnable_centers={"Repair 1", "Repair 2", "Repair 3"},
             history=history, locked_assignments={}, block_effects=(),
         )
         assert out.people_for_group("Repair") == ["Jordan"]
@@ -1510,11 +1451,9 @@ def test_invalid_minimum_above_capacity_is_configuration_issue_even_with_headcou
         runnable_centers={"Repair 1"},
     )
 
-    assert out.assignments["Repair 1"] == []
+    assert out.assignments == {}
     assert out.unresolved_centers == ("Repair 1",)
-    assert out.issues[0].code == "invalid_center_configuration"
-    assert "minimum of 2 exceeds its maximum of 1" in out.issues[0].message
-    assert "staff" not in out.issues[0].message.lower()
+    assert out.placement_issues[0].code == "invalid_center_configuration"
 
 
 def test_invalid_minimum_above_capacity_preserves_protected_assignment():
@@ -1529,7 +1468,8 @@ def test_invalid_minimum_above_capacity_preserves_protected_assignment():
     )
 
     assert out.assignments["Repair 1"] == ["Protected"]
-    assert out.issues[0].code == "invalid_center_configuration"
+    assert out.complete is False
+    assert out.placement_issues[0].code == "invalid_center_configuration"
 
 
 def test_every_generated_assignment_path_has_a_stable_reason_code_and_text():
