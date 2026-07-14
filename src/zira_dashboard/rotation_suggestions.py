@@ -1142,46 +1142,46 @@ def suggest_recycled_assignments(
                     f"{', '.join(sorted(manual_exact_people, key=str.lower))}."
                 )
 
-        for center, names in (() if manual_exact_people else exact_locks.items()):
-            center = str(center)
-            group = center_group.get(center)
-            if center not in allowed_centers or group is None:
-                _warn_exact_center(center, "has no schedulable work center.")
-                continue
-            for raw_name in names or ():
-                name = str(raw_name).strip()
-                if not name:
+        if not manual_exact_people:
+            for raw_center in dict.fromkeys((*exact_locks, *exact_extras)):
+                center = str(raw_center)
+                group = center_group.get(center)
+                if center not in allowed_centers or group is None:
+                    _warn_exact_center(center, "has no schedulable work center.")
                     continue
-                if name in assigned:
-                    _warn_exact_center(
-                        center, f"did not reserve {name}; an existing assignment owns them."
-                    )
-                    continue
-                if len(assignments.get(center, ())) >= _effective_capacity(center):
-                    _warn_exact_center(center, "could not reserve an open work center.")
-                    continue
-                _place(center, name, GENERATED_SOURCE, "training block", "training_block")
-                protected_block_people.add(name)
-                block_centers.add((group, center))
 
-        for center, names in (() if manual_exact_people else exact_extras.items()):
-            center = str(center)
-            if center not in allowed_centers or center not in center_group:
-                _warn_exact_center(center, "has no schedulable work center.")
-                continue
-            for raw_name in names or ():
-                name = str(raw_name).strip()
-                if not name:
-                    continue
-                if name in assigned:
+                locked_names = [
+                    str(raw_name).strip()
+                    for raw_name in exact_locks.get(raw_center, ())
+                    if str(raw_name).strip()
+                ]
+                extra_names = [
+                    str(raw_name).strip()
+                    for raw_name in exact_extras.get(raw_center, ())
+                    if str(raw_name).strip()
+                ]
+                direct_names = tuple(dict.fromkeys((*locked_names, *extra_names)))
+                existing_name = next((name for name in direct_names if name in assigned), None)
+                if existing_name:
                     _warn_exact_center(
-                        center, f"did not reserve {name}; an existing assignment owns them."
+                        center,
+                        f"did not reserve {existing_name}; an existing assignment owns them.",
                     )
                     continue
-                if len(assignments.get(center, ())) >= _effective_capacity(center):
-                    _warn_exact_center(center, "could not reserve an open work center.")
+                if len(assignments.get(center, ())) + len(direct_names) > _effective_capacity(center):
+                    _warn_exact_center(
+                        center,
+                        "could not reserve enough open work center slots for the complete training pair.",
+                    )
                     continue
-                _place(center, name, GENERATED_SOURCE, "training pair", "training_block")
+
+                for name in locked_names:
+                    _place(center, name, GENERATED_SOURCE, "training block", "training_block")
+                    protected_block_people.add(name)
+                    block_centers.add((group, center))
+                for name in extra_names:
+                    if name not in assigned:
+                        _place(center, name, GENERATED_SOURCE, "training pair", "training_block")
 
         block_center_by_group: dict[str, str] = {}
         warned_groups: set[str] = set()

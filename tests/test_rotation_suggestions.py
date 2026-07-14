@@ -547,6 +547,62 @@ def test_exact_center_protocol_never_falls_back_to_sibling_center():
     assert out.assignments["Repair 2"] == ["Trainee", "Trainer"]
 
 
+def test_exact_center_protocol_leaves_pair_unplaced_when_center_capacity_is_one():
+    effect = _BlockEffect(
+        locked_work_centers={"Repair 2": ["Trainee"]},
+        temporary_extra_work_centers={"Repair 2": ["Trainer"]},
+    )
+
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14),
+        mode="normal",
+        roster=[
+            staffing.Person(name="Trainee", skills={"Repair": 0}),
+            staffing.Person(name="Trainer", skills={"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1", "Repair 2")},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 0, "Repair 2": 0},
+        center_capacities={"Repair 1": 2, "Repair 2": 1},
+        runnable_centers={"Repair 1", "Repair 2"},
+        block_effects=[effect],
+    )
+
+    assert out.assignments.get("Repair 2", []) == []
+    assert "Trainee" not in out.assigned_people
+    assert "Trainer" not in out.assigned_people
+    assert len([warning for warning in out.warnings if "Training block for Repair 2" in warning]) == 1
+
+
+def test_exact_center_protocol_leaves_pair_unplaced_when_only_one_slot_remains():
+    effect = _BlockEffect(
+        locked_work_centers={"Repair 2": ["Trainee"]},
+        temporary_extra_work_centers={"Repair 2": ["Trainer"]},
+    )
+
+    out = suggest_recycled_assignments(
+        day=date(2026, 7, 14),
+        mode="normal",
+        roster=[
+            staffing.Person(name="Existing", skills={"Repair": 3}),
+            staffing.Person(name="Trainee", skills={"Repair": 0}),
+            staffing.Person(name="Trainer", skills={"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1", "Repair 2")},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 0, "Repair 2": 0},
+        center_capacities={"Repair 1": 2, "Repair 2": 2},
+        runnable_centers={"Repair 1", "Repair 2"},
+        locked_assignments={"Repair 2": ["Existing"]},
+        block_effects=[effect],
+    )
+
+    assert out.assignments["Repair 2"] == ["Existing"]
+    assert "Trainee" not in out.assigned_people
+    assert "Trainer" not in out.assigned_people
+    assert len([warning for warning in out.warnings if "Training block for Repair 2" in warning]) == 1
+
+
 def test_exact_center_protocol_does_not_move_trainer_when_trainee_is_manually_locked():
     effect = _BlockEffect(
         locked_work_centers={"Repair 2": ["Trainee"]},
