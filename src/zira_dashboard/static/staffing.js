@@ -1386,6 +1386,15 @@
       if (helpEl && HELP[mode]) helpEl.textContent = HELP[mode];
     }
 
+    function clearActiveMode() {
+      modeBtns.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
+      window.RECYCLED_ROTATION_MODE = null;
+      if (helpEl) helpEl.textContent = '';
+    }
+
     function renderCoverageIssues(warnings, issues) {
       window.ROTATION_WARNINGS = Array.isArray(warnings) ? warnings : [];
       window.ROTATION_ISSUES = Array.isArray(issues) ? issues : [];
@@ -1599,7 +1608,10 @@
         resetScheduleBtn.disabled = true;
         try {
           const succeeded = await rebuild(currentMode(), { resetToDefaults: true });
-          if (succeeded) syncLeftRailWithSchedule();
+          if (succeeded) {
+            clearActiveMode();
+            syncLeftRailWithSchedule();
+          }
         } finally {
           resetScheduleBtn.disabled = false;
         }
