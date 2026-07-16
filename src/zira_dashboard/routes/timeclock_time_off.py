@@ -47,6 +47,7 @@ from .. import (
     time_off_balances,
     time_off_calendar as _tcal,
     time_off_sync,
+    timeclock_i18n,
 )
 from ..deps import templates
 from ..time_off_wizard import (
@@ -145,7 +146,7 @@ def time_off_landing(request: Request, token: str):
             # Salaried staff land here directly (no punch dashboard), so
             # their "Back" should exit to the home roster, not /dashboard.
             "time_off_only": _is_time_off_only(p),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -366,7 +367,7 @@ def _details_context(
         "shift_to": shift_to,
         "today_iso": _date.today().isoformat(),
         "work_weekdays": sorted(schedule_store.current().work_weekdays),
-        "bilingual": bool(p.get("spanish_speaker")),
+        **timeclock_i18n.context_for_person(p),
     }
 
 
@@ -604,7 +605,7 @@ def request_submit(
             "shape": shape,
             "date_from": df.isoformat(),
             "date_to": dt.isoformat(),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -695,7 +696,12 @@ def mine_list(request: Request, token: str):
     return templates.TemplateResponse(
         request,
         "timeclock_time_off_mine.html",
-        {"person": p, "token": fresh, "requests": rows, "bilingual": bool(p.get("spanish_speaker"))},
+        {
+            "person": p,
+            "token": fresh,
+            "requests": rows,
+            **timeclock_i18n.context_for_person(p),
+        },
     )
 
 
@@ -727,7 +733,12 @@ def mine_detail(request: Request, token: str, rid: int):
     return templates.TemplateResponse(
         request,
         "timeclock_time_off_mine_detail.html",
-        {"person": p, "token": fresh, "request_row": row, "bilingual": bool(p.get("spanish_speaker"))},
+        {
+            "person": p,
+            "token": fresh,
+            "request_row": row,
+            **timeclock_i18n.context_for_person(p),
+        },
     )
 
 
@@ -1049,7 +1060,7 @@ def _build_calendar_context(month: str | None) -> dict:
     the public glance route (reached from the kiosk home): the heading,
     the Mon–Sat week cells (Sundays dropped, since the plant is closed),
     and the prev/next month anchors. Callers layer on ``token``/``public``
-    and ``bilingual`` themselves.
+    and their personalized language mode themselves.
 
     Each leave entry's ``full`` flag is refined against the company shift
     length (via :func:`_tcal.is_full_day`) before grid assembly: an unpaid
@@ -1099,7 +1110,7 @@ def time_off_calendar(request: Request, token: str, month: str | None = None):
         "person": p,
         "token": _mint_token(person_id),
         "public": False,
-        "bilingual": bool(p.get("spanish_speaker")),
+        **timeclock_i18n.context_for_person(p),
     })
     return templates.TemplateResponse(
         request, "timeclock_time_off_calendar.html", ctx,
@@ -1122,7 +1133,7 @@ def whos_out_public(request: Request, month: str | None = None):
         "person": None,
         "token": None,
         "public": True,
-        "bilingual": False,
+        "timeclock_language": "en",
     })
     return templates.TemplateResponse(
         request, "timeclock_time_off_calendar.html", ctx,

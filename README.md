@@ -43,6 +43,17 @@ pytest -v
 Pure-logic tests run anywhere; tests that touch Postgres are skipped unless
 `DATABASE_URL` is set.
 
+### Optional Saturday recruiting
+
+When optional Saturday work is needed, managers choose the requested position
+counts on the Saturday Staffing page, then activate and confirm the snapshotted
+shift and response deadline. Qualified hourly employees can commit through
+Timeclock. Recruiting closes automatically at the nearest prior workday's
+start time; then assign volunteers from **Unassigned**, resolve every
+qualification shortage, and publish the schedule. Partial commitments use
+30-minute increments. Employees whose exact Spanish skill level is 3 see
+personalized Timeclock screens Spanish-first.
+
 ## Layout
 
 - `src/zira_dashboard/` — the app. `routes/` holds feature routers;

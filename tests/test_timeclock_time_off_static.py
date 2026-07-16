@@ -1,4 +1,27 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from zira_dashboard.routes import timeclock_time_off
+
+
+PERSON_ES = {
+    "id": 2,
+    "name": "José",
+    "odoo_id": 7,
+    "wage_type": "hourly",
+    "spanish_speaker": True,
+    "spanish_level": 3,
+}
+PERSON_LEVEL_2 = {
+    "id": 3,
+    "name": "Luis",
+    "odoo_id": 8,
+    "wage_type": "hourly",
+    "spanish_speaker": True,
+    "spanish_level": 2,
+}
 
 
 def _template():
@@ -54,3 +77,36 @@ def test_time_off_cancel_submit_exposes_busy_state():
     assert "form.addEventListener('submit'" in html
     assert "btn.disabled = true;" in html
     assert "btn.setAttribute('aria-busy', 'true');" in html
+
+
+@pytest.mark.parametrize(
+    ("person", "expected_language"),
+    [(PERSON_ES, "es_primary"), (PERSON_LEVEL_2, "en")],
+)
+def test_time_off_request_context_uses_personalized_language_mode(
+    monkeypatch, person, expected_language
+):
+    captured = {}
+
+    class FakeTemplates:
+        @staticmethod
+        def TemplateResponse(request, template, context):
+            captured["context"] = context
+            return SimpleNamespace(context=context, headers={})
+
+    monkeypatch.setattr(timeclock_time_off, "templates", FakeTemplates())
+    monkeypatch.setattr(timeclock_time_off, "_verify_token", lambda token: person["id"])
+    monkeypatch.setattr(timeclock_time_off, "_person_by_id", lambda person_id: person)
+    monkeypatch.setattr(timeclock_time_off, "_mint_token", lambda person_id: "fresh")
+    monkeypatch.setattr(timeclock_time_off, "_refresh_and_load_balances", lambda odoo_id: [])
+    monkeypatch.setattr(timeclock_time_off, "_shift_window_for", lambda odoo_id: (7.0, 15.5))
+    monkeypatch.setattr(timeclock_time_off, "_fetch_visible_leave_types", lambda shape: [])
+    monkeypatch.setattr(
+        timeclock_time_off.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+
+    timeclock_time_off.request_details(SimpleNamespace(), "token", "full_day")
+
+    assert captured["context"]["timeclock_language"] == expected_language

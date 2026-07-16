@@ -30,6 +30,16 @@
     gap: 1rem;
   }
   .k-header > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .k-header-home { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
+  .k-header-actions { justify-self:end; display:flex; align-items:center; gap:1rem; }
+  .saturday-home-banner { justify-self:center; display:flex; flex-direction:column; align-items:center; text-align:center; color:#92400e; }
+  .saturday-home-banner strong { font-size:1.05rem; }
+  .saturday-home-banner small { font-size:.72rem; font-weight:600; margin-top:.2rem; }
+  .saturday-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; width:min(100%, 800px); }
+  .saturday-choice-grid .k-btn { width:100%; min-width:0; }
+  .saturday-partial-link { display:block; margin:1rem auto 0; width:max-content; font-size:.85rem; color:#64748b; }
+  .saturday-status { margin-top:2rem; padding:1.25rem; border:1px solid #bfdbfe; border-radius:.75rem; background:#eff6ff; text-align:center; }
+  .saturday-status h2 { color:#1e3a8a; }
 
   .k-back {
     background: #e2e8f0; color: #0f172a;
@@ -158,10 +168,8 @@
   }
   #timeclock-screen.htmx-swapping { opacity: 0; }
 
-  /* Bilingual text: one inline-flex column so English always sits directly
-     above Spanish in ANY parent — headings, buttons, and flex-row links
-     alike. Emitting two bare sibling spans would split side-by-side when the
-     parent is a flex row; wrapping them in k-bi keeps them a single unit. */
+  /* Spanish-primary text: one inline-flex column keeps the two language lines
+     together in headings, buttons, and flex-row links alike. */
   .k-bi {
     display: inline-flex;
     flex-direction: column;
@@ -169,7 +177,12 @@
     vertical-align: middle;
     line-height: 1.15;
   }
-  .k-es {
+  .k-primary {
+    font-size: 1em;
+    font-weight: inherit;
+    color: inherit;
+  }
+  .k-secondary {
     font-size: 0.6em;
     font-weight: 400;
     font-style: italic;
@@ -181,7 +194,7 @@
   /* Filled buttons (blue/red/green) have white English text — the muted
      gray Spanish is low-contrast on them. Use light text so it stays
      legible. Secondary (white) buttons keep the gray, which reads fine. */
-  .k-btn:not(.secondary) .k-es { color: rgba(255, 255, 255, 0.9); opacity: 1; }
+  .k-btn:not(.secondary) .k-secondary { color: rgba(255, 255, 255, 0.9); opacity: 1; }
 </style>
 <script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"
         integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"

@@ -78,6 +78,10 @@ CREATE INDEX IF NOT EXISTS people_active_idx ON people (active);
 ALTER TABLE people ADD COLUMN IF NOT EXISTS excluded BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS wage_type TEXT;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS spanish_speaker BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE people ADD COLUMN IF NOT EXISTS spanish_level SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE people DROP CONSTRAINT IF EXISTS people_spanish_level_check;
+ALTER TABLE people ADD CONSTRAINT people_spanish_level_check
+  CHECK (spanish_level BETWEEN 0 AND 3);
 ALTER TABLE people ADD COLUMN IF NOT EXISTS resource_calendar_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS skills (
@@ -873,6 +877,61 @@ CREATE UNIQUE INDEX IF NOT EXISTS employee_notifications_dedupe
 -- Sign-in hot path: "does this person have anything to show?"
 CREATE INDEX IF NOT EXISTS employee_notifications_unack
   ON employee_notifications (person_odoo_id) WHERE acknowledged_at IS NULL;
+
+-- Optional Saturday-work recruiting. A Saturday starts closed for everyone;
+-- only a voluntary commitment can later become an Unassigned schedule entry.
+CREATE TABLE IF NOT EXISTS saturday_recruitments (
+  day DATE PRIMARY KEY CHECK (EXTRACT(ISODOW FROM day) = 6),
+  status TEXT NOT NULL CHECK (status IN ('recruiting', 'closed', 'published', 'cancelled')),
+  shift_start TIME NOT NULL,
+  shift_end TIME NOT NULL,
+  response_deadline TIMESTAMPTZ NOT NULL,
+  activated_by TEXT,
+  activated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ,
+  published_at TIMESTAMPTZ,
+  cancelled_by TEXT,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (shift_end > shift_start)
+);
+
+CREATE TABLE IF NOT EXISTS saturday_recruitment_openings (
+  day DATE NOT NULL REFERENCES saturday_recruitments(day) ON DELETE CASCADE,
+  wc_id INTEGER NOT NULL REFERENCES work_centers(id) ON DELETE RESTRICT,
+  requested_count INTEGER NOT NULL CHECK (requested_count > 0),
+  PRIMARY KEY (day, wc_id)
+);
+
+CREATE TABLE IF NOT EXISTS saturday_work_responses (
+  day DATE NOT NULL REFERENCES saturday_recruitments(day) ON DELETE CASCADE,
+  person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('later', 'declined', 'committed', 'cancelled')),
+  availability_start TIME,
+  availability_end TIME,
+  eligible_wc_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  responded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  committed_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  cancelled_by TEXT,
+  cancellation_reason TEXT,
+  punch_reminder_shown_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, person_id),
+  CHECK (
+    (status IN ('later', 'declined') AND availability_start IS NULL AND availability_end IS NULL)
+    OR
+    (status IN ('committed', 'cancelled') AND availability_start IS NOT NULL
+      AND availability_end IS NOT NULL AND availability_end > availability_start)
+  )
+);
+
+ALTER TABLE employee_notifications ADD COLUMN IF NOT EXISTS saturday_day DATE;
+CREATE UNIQUE INDEX IF NOT EXISTS employee_notifications_saturday_dedupe
+  ON employee_notifications (person_odoo_id, saturday_day, kind)
+  WHERE saturday_day IS NOT NULL;
 
 -- Audit log of scheduler reassignments caused by time-off cascade. Bucket
 -- vocabulary: `from_bucket` / `to_bucket` are either a WC name from

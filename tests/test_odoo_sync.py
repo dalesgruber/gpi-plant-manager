@@ -54,10 +54,21 @@ def _clean_sync_state():
     )
 
 
-def _stub_client(monkeypatch, employees, skills_for, columns_meta, buckets):
+def _stub_client(
+    monkeypatch,
+    employees,
+    skills_for,
+    columns_meta,
+    buckets,
+    spanish_level_ids=None,
+):
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_employees", lambda: employees)
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skills_for", lambda ids: skills_for)
-    monkeypatch.setattr(odoo_sync.odoo_client, "fetch_spanish_speaker_ids", lambda: set())
+    monkeypatch.setattr(
+        odoo_sync.odoo_client,
+        "fetch_spanish_skill_level_ids",
+        lambda: spanish_level_ids or {},
+    )
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skill_columns_with_types", lambda: columns_meta)
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_skill_level_buckets", lambda: buckets)
     monkeypatch.setattr(odoo_sync.odoo_client, "fetch_departments", lambda: [])
@@ -100,6 +111,35 @@ def test_sync_force_refreshes_even_within_ttl(monkeypatch):
         "JOIN skills sk ON sk.id = ps.skill_id WHERE pe.odoo_id = 99001"
     )
     assert rows == [{"name": "TestAlice", "level": 3, "skill_name": "TestRepair"}]
+
+
+def test_sync_persists_exact_spanish_level_and_derived_speaker_flag(monkeypatch):
+    from zira_dashboard import db
+
+    _stub_client(
+        monkeypatch,
+        employees=[
+            {"id": 99002, "name": "TestSpanishThree", "active": True, "work_email": False},
+            {"id": 99004, "name": "TestSpanishTwo", "active": True, "work_email": False},
+            {"id": 99005, "name": "TestNoSpanish", "active": True, "work_email": False},
+        ],
+        skills_for={},
+        columns_meta=[],
+        buckets={103: 3, 102: 2},
+        spanish_level_ids={99002: 103, 99004: 102},
+    )
+
+    assert odoo_sync.sync(force=True).ok is True
+
+    rows = db.query(
+        "SELECT odoo_id, spanish_level, spanish_speaker FROM people "
+        "WHERE odoo_id IN (99002, 99004, 99005) ORDER BY odoo_id"
+    )
+    assert rows == [
+        {"odoo_id": 99002, "spanish_level": 3, "spanish_speaker": True},
+        {"odoo_id": 99004, "spanish_level": 2, "spanish_speaker": True},
+        {"odoo_id": 99005, "spanish_level": 0, "spanish_speaker": False},
+    ]
 
 
 def test_sync_stores_skill_odoo_ids(monkeypatch):

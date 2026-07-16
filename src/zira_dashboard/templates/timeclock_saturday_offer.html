@@ -1,0 +1,19 @@
+{% extends "timeclock_base.html" %}
+{% block title %}Saturday Work{% endblock %}
+{% block content %}
+<div class="k-header"><a href="/timeclock/dashboard/{{ token }}" class="k-back">{{ t("‹ Back") }}</a>{% include "_timeclock_brand.html" %}</div>
+<main class="k-main" style="align-items:center; text-align:center; padding-top:3rem;">
+  {% if error %}<div class="k-error">{{ t(error) }}</div>{% endif %}
+  {% if offer %}
+  <h1>{{ td("Can you work Saturday, {date}?", es={"date": offer.day_label_es}, en={"date": offer.day_label}) }}</h1>
+  <h2>{{ offer.shift_label }}</h2>
+  <div class="k-warning">{{ td("Respond by {deadline}.", es={"deadline": offer.deadline_label_es}, en={"deadline": offer.deadline_label}) }}<br>{{ t("Openings may fill before the deadline.") }}</div>
+  <div class="saturday-choice-grid">
+    <form method="post" action="/timeclock/saturday/confirm/{{ token }}"><input type="hidden" name="day" value="{{ offer.day }}"><input type="hidden" name="availability_start" value="{{ offer.shift_start }}"><input type="hidden" name="availability_end" value="{{ offer.shift_end }}"><button class="k-btn" type="submit">{{ t("Yes") }}</button></form>
+    <form method="post" action="/timeclock/saturday/decline/{{ token }}"><input type="hidden" name="day" value="{{ offer.day }}"><button class="k-btn secondary" type="submit">{{ t("No") }}</button></form>
+    <form method="post" action="/timeclock/saturday/later/{{ token }}"><input type="hidden" name="day" value="{{ offer.day }}"><button class="k-btn secondary" type="submit">{{ t("Decide later") }}</button></form>
+  </div>
+  <a class="saturday-partial-link" href="/timeclock/saturday/partial/{{ token }}">{{ t("I can work only part of the shift") }}</a>
+  {% else %}<h1>{{ t("Contact a manager to make a change.") }}</h1>{% endif %}
+</main>
+{% endblock %}

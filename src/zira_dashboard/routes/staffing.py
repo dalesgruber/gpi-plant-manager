@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_solver, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, saturday_recruiting as sr, saturday_recruiting_store, schedule_solver, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -1040,6 +1040,90 @@ def staffing_page(
     hours_source = shift_config.scheduler_hours_source(d, sched.custom_hours is not None)
     eff_hours_label = f"{eff_start.strftime('%H:%M')}–{eff_end.strftime('%H:%M')}"
 
+    saturday_bundle = None
+    saturday_positions = []
+    saturday_coverage = None
+    saturday_commitments = []
+    saturday_staffing_commitments = None
+    saturday_deadline = None
+    if d.weekday() == 5:
+        try:
+            saturday_bundle = saturday_recruiting_store.get(d)
+            saturday_positions = saturday_recruiting_store.available_positions()
+            saturday_deadline = (
+                saturday_bundle.recruitment.response_deadline
+                if saturday_bundle else sr.response_deadline(
+                    d,
+                    schedule_store.current().work_weekdays,
+                    shift_config.configured_shift_start_for,
+                )
+            )
+            saturday_payload = (
+                saturday_recruiting_store.serialize_bundle(saturday_bundle)
+                if saturday_bundle else None
+            )
+            saturday_coverage = saturday_payload["coverage"] if saturday_payload else None
+            saturday_commitments = saturday_payload["commitments"] if saturday_payload else []
+            if saturday_bundle is None or saturday_bundle.recruitment.status == "cancelled":
+                saturday_staffing_commitments = {}
+            else:
+                saturday_staffing_commitments = {
+                    item.person_name: {
+                        "start": item.availability_start,
+                        "end": item.availability_end,
+                    }
+                    for item in saturday_bundle.commitments
+                    if item.status == "committed"
+                    and item.availability_start is not None
+                    and item.availability_end is not None
+                }
+        except Exception:
+            log.exception("Saturday recruiting context failed for %s", d)
+
+    saturday_context = {
+        "day_is_saturday": d.weekday() == 5,
+        "saturday_recruiting": saturday_bundle.recruitment if saturday_bundle else None,
+        "saturday_positions": saturday_positions,
+        "saturday_coverage": saturday_coverage,
+        "saturday_commitments": saturday_commitments,
+        "saturday_shift_start": (
+            saturday_bundle.recruitment.shift_start.strftime("%H:%M")
+            if saturday_bundle else eff_start.strftime("%H:%M")
+        ),
+        "saturday_shift_end": (
+            saturday_bundle.recruitment.shift_end.strftime("%H:%M")
+            if saturday_bundle else eff_end.strftime("%H:%M")
+        ),
+        "saturday_deadline_label": (
+            sr.format_deadline(saturday_deadline) if saturday_deadline else ""
+        ),
+        "saturday_publish_locked": bool(
+            saturday_bundle
+            and saturday_bundle.recruitment.status != "cancelled"
+            and plant_now() < saturday_bundle.recruitment.response_deadline
+        ),
+        "saturday_publish_lock_message": (
+            "Saturday recruiting stays open until "
+            f"{sr.format_deadline(saturday_bundle.recruitment.response_deadline)}."
+            if saturday_bundle
+            and saturday_bundle.recruitment.status != "cancelled"
+            and plant_now() < saturday_bundle.recruitment.response_deadline
+            else ""
+        ),
+    }
+
+    # Rebuild the pure roster view once Saturday recruiting is known.  A
+    # recruiting Saturday starts closed: only commitments enter Unassigned or
+    # a work-center picker; everyone else remains visibly Off.
+    if d.weekday() == 5:
+        bay_model = staffing_view.build_staffing_bays(
+            roster=roster,
+            sched=sched,
+            time_off_entries=time_off_entries,
+            publish_blocked=publish_blocked,
+            saturday_commitments=saturday_staffing_commitments or {},
+        )
+
     # Forklift demand advisor (read-only; never blocks scheduling).
     try:
         from .. import app_settings, forklift_advisor, forklift_settings
@@ -1096,6 +1180,7 @@ def staffing_page(
             "staffing.html",
             {
                 "active": "plant",
+                **saturday_context,
                 **recycled_ctx,
                 "rotation_mode_help": _rotation_mode_help(
                     recycled_ctx["recycled_rotation_mode"]
@@ -1180,12 +1265,15 @@ async def staffing_save(
 
 def _staffing_save_work(request: Request, d: date, auto: int, form):
     action = (form.get("action") or "save").strip().lower()
+    if action not in {"save", "publish", "unpublish", "save_notes", "discard_draft"}:
+        return JSONResponse({"ok": False, "error": "Unknown staffing action."}, status_code=400)
     if (form.get("viewing_posted") or "").strip() == "1" and action != "discard_draft":
         return JSONResponse(
             {"ok": False, "error": "The posted schedule view is read-only."},
             status_code=400,
         )
     assignments: dict[str, list[str]] = {}
+    default_updates: list[tuple[object, list[str]]] = []
     for loc in staffing.LOCATIONS:
         picked = form.getlist(f"loc__{loc.name}")
         clean = [n.strip() for n in picked if n and n.strip()]
@@ -1198,7 +1286,7 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         if form.get(f"defaults_dirty__{loc.name}") == "1":
             picked_defaults = form.getlist(f"default__{loc.name}")
             clean_defaults = [n.strip() for n in picked_defaults if n and n.strip()]
-            work_centers_store.save_one(loc, {"default_people": clean_defaults})
+            default_updates.append((loc, clean_defaults))
     # Time-off is sourced from the Odoo mirror. The scheduler UI
     # no longer collects time-off entries via form fields, so we ignore any
     # `loc____time_off` values that a stale tab might still be posting.
@@ -1211,10 +1299,87 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             wc_notes[loc.name] = v
     testing_day = (form.get("testing_day") or "").strip() in ("1", "on", "true")
 
-    publish_block = (
-        _publish_shortages(assignments, _enabled_auto_work_centers(d))
-        if action == "publish" else []
+    saturday_bundle = None
+    saturday_lookup_failed = False
+    if d.weekday() == 5:
+        try:
+            saturday_bundle = saturday_recruiting_store.get(d)
+        except Exception:
+            saturday_lookup_failed = True
+            log.exception("Saturday recruiting lookup failed for %s", d)
+
+    if saturday_lookup_failed:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Saturday recruiting state could not be verified. No schedule changes were saved.",
+            },
+            status_code=409,
+        )
+
+    active_saturday_recruiting = bool(
+        saturday_bundle
+        and saturday_bundle.recruitment.status in {"recruiting", "closed", "published"}
     )
+    committed_names = set()
+    if active_saturday_recruiting:
+        committed_names = {
+            item.person_name
+            for item in saturday_bundle.commitments
+            if item.status == "committed"
+        }
+
+    def _noncommitted_names(candidate_assignments):
+        return sorted({
+            name
+            for names in candidate_assignments.values()
+            for name in names
+            if name not in committed_names
+        })
+
+    if active_saturday_recruiting and action in {"save", "publish", "unpublish"}:
+        noncommitted_names = _noncommitted_names(assignments)
+        if noncommitted_names:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Only committed Saturday volunteers can be scheduled.",
+                    "validation_errors": [
+                        f"{name} is not committed to Saturday." for name in noncommitted_names
+                    ],
+                },
+                status_code=409,
+            )
+
+    for loc, clean_defaults in default_updates:
+        work_centers_store.save_one(loc, {"default_people": clean_defaults})
+
+    publish_block = []
+    if action == "publish" and not active_saturday_recruiting:
+        publish_block = _publish_shortages(assignments, _enabled_auto_work_centers(d))
+    if action == "publish" and active_saturday_recruiting:
+        try:
+            assert saturday_bundle is not None
+            if plant_now() < saturday_bundle.recruitment.response_deadline:
+                saturday_block = [
+                    "Saturday recruiting stays open until "
+                    f"{sr.format_deadline(saturday_bundle.recruitment.response_deadline)}."
+                ]
+            else:
+                roster = staffing.load_roster()
+                people_by_name = {person.name: person for person in roster}
+                full_day_off_names = {
+                    entry["name"]
+                    for entry in _safe_time_off_entries(d)
+                    if entry.get("hours") is None
+                }
+                saturday_block = sr.validate_publish(
+                    saturday_bundle, assignments, people_by_name, full_day_off_names,
+                )
+            publish_block = saturday_block
+        except Exception:
+            log.exception("Saturday publish validation failed for %s", d)
+            publish_block = ["Saturday recruiting could not be verified. Please try again."]
 
     existing = staffing.load_schedule(d)
 
@@ -1247,10 +1412,54 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
     # Discard-draft action: restore the posted snapshot, clear it, and re-publish.
     if action == "discard_draft" and existing.published_snapshot:
         snap = existing.published_snapshot
+        restored_assignments = {
+            k: list(v) for k, v in (snap.get("assignments") or {}).items()
+        }
+        if active_saturday_recruiting:
+            noncommitted_names = _noncommitted_names(restored_assignments)
+            if noncommitted_names:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "Only committed Saturday volunteers can be scheduled.",
+                        "validation_errors": [
+                            f"{name} is not committed to Saturday." for name in noncommitted_names
+                        ],
+                    },
+                    status_code=409,
+                )
+            if plant_now() < saturday_bundle.recruitment.response_deadline:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "Saturday recruiting stays open until "
+                        f"{sr.format_deadline(saturday_bundle.recruitment.response_deadline)}.",
+                    },
+                    status_code=409,
+                )
+            roster = staffing.load_roster()
+            people_by_name = {person.name: person for person in roster}
+            full_day_off_names = {
+                entry["name"]
+                for entry in _safe_time_off_entries(d)
+                if entry.get("hours") is None
+            }
+            saturday_reasons = sr.validate_publish(
+                saturday_bundle, restored_assignments, people_by_name, full_day_off_names,
+            )
+            if saturday_reasons:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "Publish blocked — Saturday commitments need attention.",
+                        "publish_block_reasons": saturday_reasons,
+                    },
+                    status_code=409,
+                )
         restored = staffing.Schedule(
             day=d,
             published=True,
-            assignments={k: list(v) for k, v in (snap.get("assignments") or {}).items()},
+            assignments=restored_assignments,
             notes=str(snap.get("notes") or ""),
             wc_notes=dict(snap.get("wc_notes") or {}),
             testing_day=bool(snap.get("testing_day", False)),
@@ -1265,6 +1474,11 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             },
         )
         staffing.save_schedule(restored)
+        if active_saturday_recruiting:
+            try:
+                saturday_recruiting_store.mark_published(d, plant_now())
+            except Exception:
+                log.exception("Could not mark restored Saturday recruiting as published for %s", d)
         _http_cache.invalidate_today_cache()
         if (request.headers.get("accept") or "").startswith("application/json"):
             return JSONResponse({"ok": True, "published": True, "discarded": True})
@@ -1319,6 +1533,13 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         rotation_mode=existing.rotation_mode,
         assignment_sources=assignment_sources,
     ))
+    if action == "publish" and published and saturday_bundle is not None:
+        try:
+            saturday_recruiting_store.mark_published(d, plant_now())
+        except Exception:
+            # The schedule itself is already published. Keep that source of
+            # truth visible and let the next manager action retry the marker.
+            log.exception("Could not mark Saturday recruiting as published for %s", d)
     # Bust the today response cache so the next GET sees fresh data.
     _http_cache.invalidate_today_cache()
 

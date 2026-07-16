@@ -421,6 +421,11 @@ def _invalidate_schedule_cache(day: date) -> None:
         _schedule_cache.pop(day, None)
 
 
+def invalidate_schedule_cache(day: date) -> None:
+    """Public cache invalidator for transactional schedule lifecycle changes."""
+    _invalidate_schedule_cache(day)
+
+
 def load_schedule(day: date) -> Schedule:
     """Hydrate a Schedule from Postgres (schedules + schedule_assignments
     + schedule_wc_notes). Returns an empty Schedule
