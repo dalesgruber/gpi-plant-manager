@@ -158,10 +158,8 @@
   }
   #timeclock-screen.htmx-swapping { opacity: 0; }
 
-  /* Bilingual text: one inline-flex column so English always sits directly
-     above Spanish in ANY parent — headings, buttons, and flex-row links
-     alike. Emitting two bare sibling spans would split side-by-side when the
-     parent is a flex row; wrapping them in k-bi keeps them a single unit. */
+  /* Spanish-primary text: one inline-flex column keeps the two language lines
+     together in headings, buttons, and flex-row links alike. */
   .k-bi {
     display: inline-flex;
     flex-direction: column;
@@ -169,7 +167,12 @@
     vertical-align: middle;
     line-height: 1.15;
   }
-  .k-es {
+  .k-primary {
+    font-size: 1em;
+    font-weight: inherit;
+    color: inherit;
+  }
+  .k-secondary {
     font-size: 0.6em;
     font-weight: 400;
     font-style: italic;
@@ -181,7 +184,7 @@
   /* Filled buttons (blue/red/green) have white English text — the muted
      gray Spanish is low-contrast on them. Use light text so it stays
      legible. Secondary (white) buttons keep the gray, which reads fine. */
-  .k-btn:not(.secondary) .k-es { color: rgba(255, 255, 255, 0.9); opacity: 1; }
+  .k-btn:not(.secondary) .k-secondary { color: rgba(255, 255, 255, 0.9); opacity: 1; }
 </style>
 <script src="/static/htmx-1.9.12.min.js?v={{ static_v('htmx-1.9.12.min.js') }}"
         integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2"

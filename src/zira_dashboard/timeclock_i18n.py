@@ -1,21 +1,21 @@
-"""Kiosk English→Spanish translation for bilingual employees.
+"""Kiosk English→Spanish translation for personalized Timeclock screens.
 
-Employees with an Odoo Spanish (Languages) skill see Spanish stacked under
-English on every screen after they pick their name. One glossary, one
-helper. `t()` is registered as a Jinja global in deps.py; templates call
-`{{ t("Clock Out") }}` (optionally with format kwargs, e.g.
-`{{ t("Since {time}", time=check_in_display) }}`).
+Employees with an exact Odoo Spanish (Languages) level of 3 see Spanish
+stacked above smaller English after they pick their name. Everyone else sees
+English only. One glossary, one mode helper, one rendering helper. `t()` is
+registered as a Jinja global in deps.py; templates call `{{ t("Clock Out") }}`
+(optionally with format kwargs, e.g. `{{ t("Since {time}",
+time=check_in_display) }}`).
 
-Register format: when the render context flag `bilingual` is False (the
-default), `t()` returns plain English; when True, it returns stacked
-`<span class="k-en">…</span><span class="k-es">…</span>` markup. An
-unknown English string falls back to English (never blank), so a missing
-glossary entry degrades gracefully.
+An unknown English string always falls back to English (never blank), so a
+missing glossary entry degrades gracefully.
 
 Latin-American / Mexican shop-floor register. Edit a value here to fix any
 wording — one line, one place.
 """
 from __future__ import annotations
+
+from typing import Literal
 
 from jinja2 import pass_context
 from markupsafe import Markup, escape
@@ -149,6 +149,20 @@ TRANSLATIONS: dict[str, str] = {
         "Tu solicitud de tiempo libre del {start} al {end} está pendiente de aprobación.",
 }
 
+LanguageMode = Literal["en", "es_primary"]
+
+
+def language_mode_for_person(person: dict | None) -> LanguageMode:
+    """Return the personalized Timeclock language mode for one employee."""
+    if person and person.get("spanish_level") == 3:
+        return "es_primary"
+    return "en"
+
+
+def context_for_person(person: dict | None) -> dict[str, LanguageMode]:
+    """Return the template context needed for personalized language output."""
+    return {"timeclock_language": language_mode_for_person(person)}
+
 
 def _fill(template: str, kwargs: dict) -> Markup:
     """Escape the template text and any substituted values, then format."""
@@ -160,17 +174,21 @@ def _fill(template: str, kwargs: dict) -> Markup:
 
 @pass_context
 def t(ctx, text: str, **kwargs) -> str | Markup:
-    """Translate a UI string for the current render. English-only unless the
-    context flag `bilingual` is True; then English + Spanish stacked. Unknown
-    strings fall back to English."""
+    """Translate a UI string for the current render.
+
+    Spanish-primary output is available only for the explicit
+    ``timeclock_language`` context value. Unknown strings fall back to English.
+    """
     english = _fill(text, kwargs)
-    if not ctx.get("bilingual"):
+    if ctx.get("timeclock_language", "en") != "es_primary":
         return english
     spanish_tmpl = TRANSLATIONS.get(text)
     if not spanish_tmpl:
         return english  # graceful fallback — never blank
     spanish = _fill(spanish_tmpl, kwargs)
     return Markup(
-        '<span class="k-bi"><span class="k-en">{}</span>'
-        '<span class="k-es">{}</span></span>'
-    ).format(english, spanish)
+        '<span class="k-bi k-bi-es-primary">'
+        '<span class="k-es k-primary">{}</span>'
+        '<span class="k-en k-secondary">{}</span>'
+        '</span>'
+    ).format(spanish, english)

@@ -1,5 +1,4 @@
-"""End-to-end-ish: the dashboard template renders Spanish under English
-only for bilingual users."""
+"""Dashboard template uses the approved personalized language modes."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,30 +17,32 @@ def _env():
     return env
 
 
-def _ctx(bilingual):
+def _ctx(spanish_level):
+    person = {"name": "Maria Garcia", "spanish_level": spanish_level}
     return {
-        "person": {"name": "Maria Garcia"},
+        "person": person,
         "token": "t",
         "is_clocked_in": False,
         "scheduled_wc": None,
         "sync_warning": None,
         "time_off_enabled": True,
         "pending_time_off_count": 0,
-        "bilingual": bilingual,
+        "timeclock_language": timeclock_i18n.language_mode_for_person(person),
     }
 
 
-def test_dashboard_english_only_when_not_bilingual():
-    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(False))
+def test_dashboard_english_only_for_non_level_three_spanish_employee():
+    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(2))
     assert "Pick Work Center" in html
     assert "Elegir estación" not in html
 
 
-def test_dashboard_bilingual_shows_spanish():
-    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(True))
-    assert "Pick Work Center" in html       # English still present
-    assert "Elegir estación" in html        # Spanish added
-    assert 'class="k-es"' in html
+def test_dashboard_level_three_shows_spanish_before_english():
+    html = _env().get_template("timeclock_dashboard.html").render(**_ctx(3))
+    assert "Pick Work Center" in html
+    assert "Elegir estación" in html
+    assert 'class="k-es k-primary"' in html
+    assert html.index("Elegir estación") < html.index("Pick Work Center")
 
 
 def test_home_search_input_has_accessible_name():
