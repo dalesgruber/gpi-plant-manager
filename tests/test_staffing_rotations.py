@@ -528,6 +528,31 @@ def test_current_minimum_coverage_uses_displayed_safe_assignments(monkeypatch):
     assert issues == ()
 
 
+def test_current_minimum_coverage_respects_effective_zero(monkeypatch):
+    from zira_dashboard.routes import staffing as staffing_route
+
+    loc = next(loc for loc in staffing.LOCATIONS if loc.name == "Repair 1")
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "effective",
+        lambda _loc: staffing_route.work_centers_store._shape_effective(
+            loc,
+            {"min_ops": 0, "max_ops": loc.max_ops},
+            ["Repair"],
+            [],
+        ),
+    )
+
+    issues = staffing_route._current_minimum_coverage_issues(
+        roster=[],
+        assignments={"Repair 1": []},
+        time_off_entries=[],
+        enabled_centers={"Repair 1"},
+    )
+
+    assert issues == ()
+
+
 def test_current_minimum_coverage_excludes_people_who_cannot_cover(monkeypatch):
     from zira_dashboard.routes import staffing as staffing_route
 

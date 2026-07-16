@@ -1062,8 +1062,9 @@ def staffing_page(
         forklift_live_model = {"available": False}
 
     # Recycled rotation context: effective mode, per-assignment reasons,
-    # warnings, and active training blocks. Computed once from a single engine
-    # run; failures degrade to safe empty defaults so the page never 500s.
+    # warnings, and active training blocks. Current staffing issues are computed
+    # independently so they survive recommendation-preview failures; preview-only
+    # context degrades to safe empty defaults so the page never 500s.
     recycled_ctx = _recycled_context_for_day(
         d,
         roster,
