@@ -15,6 +15,7 @@ wording — one line, one place.
 """
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Literal
 
 from jinja2 import pass_context
@@ -161,6 +162,13 @@ TRANSLATIONS: dict[str, str] = {
     "Your Saturday commitment": "Tu compromiso del sábado",
     "Cancel Saturday commitment": "Cancelar compromiso del sábado",
     "Contact a manager to make a change.": "Habla con un gerente para hacer un cambio.",
+    "This is a firm commitment.": "Este es un compromiso firme.",
+    "Start": "Inicio",
+    "End": "Fin",
+    "Availability must use 30-minute increments and stay within the Saturday shift.":
+        "La disponibilidad debe usar incrementos de 30 minutos y mantenerse dentro del turno del sábado.",
+    "That opening was just filled. You have not been scheduled.":
+        "Ese lugar se acaba de llenar. No has sido programado.",
 }
 
 LanguageMode = Literal["en", "es_primary"]
@@ -185,6 +193,32 @@ def _fill(template: str, kwargs: dict) -> Markup:
     if not kwargs:
         return safe
     return safe.format(**{k: escape(v) for k, v in kwargs.items()})
+
+
+_SPANISH_WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_SPANISH_MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+
+def spanish_date_label(value: date | datetime) -> str:
+    return f"{_SPANISH_WEEKDAYS[value.weekday()]}, {value.day} de {_SPANISH_MONTHS[value.month - 1]}"
+
+
+def spanish_deadline_label(value: datetime) -> str:
+    clock = value.strftime("%I:%M %p").lstrip("0")
+    return f"{spanish_date_label(value)} a las {clock}"
+
+
+@pass_context
+def td(ctx, text: str, *, es: dict | None = None, en: dict | None = None) -> str | Markup:
+    """Translate text whose interpolated date/value also differs by language."""
+    english = _fill(text, en or {})
+    if ctx.get("timeclock_language", "en") != "es_primary":
+        return english
+    spanish = _fill(TRANSLATIONS.get(text, text), es if es is not None else (en or {}))
+    return Markup(
+        '<span class="k-bi k-bi-es-primary"><span class="k-es k-primary">{}</span>'
+        '<span class="k-en k-secondary">{}</span></span>'
+    ).format(spanish, english)
 
 
 @pass_context

@@ -20,10 +20,12 @@ def _offer_context(offer: store.Offer) -> dict:
     return {
         "day": offer.day.isoformat(),
         "day_label": f"{offer.day.strftime('%A, %B')} {offer.day.day}",
+        "day_label_es": timeclock_i18n.spanish_date_label(offer.day),
         "shift_start": offer.shift_start.isoformat(timespec="minutes"),
         "shift_end": offer.shift_end.isoformat(timespec="minutes"),
         "shift_label": sr.format_time_range(offer.shift_start, offer.shift_end),
         "deadline_label": sr.format_deadline(offer.response_deadline),
+        "deadline_label_es": timeclock_i18n.spanish_deadline_label(offer.response_deadline),
     }
 
 
@@ -163,6 +165,9 @@ def saturday_commit(request: Request, token: str, day: str = Form(...),
                        error="That opening was just filled. You have not been scheduled.", status_code=409)
     except (ValueError, sr.SaturdayRecruitingError):
         return RedirectResponse(url=f"/timeclock/saturday/{_mint_token(person_id)}", status_code=303)
+    except Exception:
+        _log.exception("Saturday commit failed for person %s", person_id)
+        return _decision_redirect(person_id)
     return _decision_redirect(person_id)
 
 
@@ -173,6 +178,9 @@ def _simple_decision(request, token, day: str, operation):
     try:
         operation(date.fromisoformat(day), person_id, plant_now())
     except (ValueError, sr.SaturdayRecruitingError):
+        return _decision_redirect(person_id)
+    except Exception:
+        _log.exception("Saturday response failed for person %s", person_id)
         return _decision_redirect(person_id)
     return _decision_redirect(person_id)
 
@@ -206,5 +214,8 @@ def saturday_cancel(request: Request, token: str, day: str = Form(...)):
             **timeclock_i18n.context_for_person(person),
         }, status_code=409)
     except (ValueError, sr.SaturdayRecruitingError):
+        return _decision_redirect(person_id)
+    except Exception:
+        _log.exception("Saturday cancellation failed for person %s", person_id)
         return _decision_redirect(person_id)
     return _decision_redirect(person_id)

@@ -71,3 +71,30 @@ def test_yes_opens_confirmation_before_commit(monkeypatch):
     response = client.post(f"/timeclock/saturday/confirm/{timeclock._mint_token(1)}", data={"day": "2026-07-25", "availability_start": "07:00", "availability_end": "12:00"})
     assert "Confirm your commitment" in response.text
     assert "firm commitment" in response.text
+
+
+def test_spanish_primary_offer_localizes_date_deadline_and_errors(monkeypatch):
+    _person(monkeypatch)
+    monkeypatch.setattr(timeclock_saturday.store, "offer_for_person", lambda *_args: OFFER)
+    token = timeclock._mint_token(1)
+    response = client.get(f"/timeclock/saturday/{token}")
+    assert "¿Puedes trabajar el sábado sábado, 25 de julio?" in response.text
+    assert "viernes, 24 de julio a las 7:00 AM" in response.text
+    bad = client.post(f"/timeclock/saturday/partial/{token}", data={"availability_start": "07:15", "availability_end": "11:30"})
+    assert "La disponibilidad debe usar incrementos de 30 minutos" in bad.text
+
+
+def test_unexpected_decision_store_errors_fail_safe(monkeypatch):
+    _person(monkeypatch)
+    token = timeclock._mint_token(1)
+    boom = lambda *_args: (_ for _ in ()).throw(RuntimeError("database unavailable"))
+    for endpoint, method, data in [
+        ("commit", "commit", {"day": "2026-07-25", "availability_start": "07:00", "availability_end": "12:00"}),
+        ("decline", "decline", {"day": "2026-07-25"}),
+        ("later", "record_later", {"day": "2026-07-25"}),
+        ("cancel", "cancel_by_employee", {"day": "2026-07-25"}),
+    ]:
+        monkeypatch.setattr(timeclock_saturday.store, method, boom)
+        response = client.post(f"/timeclock/saturday/{endpoint}/{token}", data=data, follow_redirects=False)
+        assert response.status_code == 303
+        assert "/timeclock/dashboard/" in response.headers["location"]

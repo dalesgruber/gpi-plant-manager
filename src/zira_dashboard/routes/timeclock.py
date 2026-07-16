@@ -445,8 +445,10 @@ def _saturday_commitment_context(person_id: int) -> dict | None:
     return {
         "day": status.day.isoformat(),
         "day_label": f"{status.day.strftime('%A, %B')} {status.day.day}",
+        "day_label_es": timeclock_i18n.spanish_date_label(status.day),
         "hours": sr.format_time_range(status.availability_start, status.availability_end),
         "deadline_label": sr.format_deadline(status.response_deadline),
+        "deadline_label_es": timeclock_i18n.spanish_deadline_label(status.response_deadline),
         "can_employee_cancel": status.can_employee_cancel,
     }
 
