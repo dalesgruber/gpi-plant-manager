@@ -647,7 +647,7 @@ def _training_blocks_context(active_blocks, d: date):
 
 def _recycled_context_for_day(
     d: date, roster, mode: str, base_assignments, locked_assignments, time_off_entries,
-    enabled_work_centers=None, assignment_sources=None,
+    enabled_work_centers=None, assignment_sources=None, current_assignments=None,
 ):
     """Recycled template context: mode, per-assignment reasons, warnings, blocks.
 
@@ -714,10 +714,39 @@ def _recycled_context_for_day(
         ctx["rotation_reason_codes"] = {
             wc: dict(values) for wc, values in suggestion.reason_codes.items()
         }
-        ctx["rotation_warnings"] = list(suggestion.warnings)
+        action_only_codes = {"person_unplaced", "center_minimum_unmet"}
+        action_only_messages = {
+            issue.message
+            for issue in suggestion.placement_issues
+            if issue.code in action_only_codes
+        }
+        current_minimum_issues = (
+            _current_minimum_coverage_issues(
+                roster=roster,
+                assignments=current_assignments,
+                time_off_entries=time_off_entries,
+                enabled_centers=enabled,
+            )
+            if current_assignments is not None
+            else ()
+        )
+        page_placement_issues = tuple(
+            issue
+            for issue in suggestion.placement_issues
+            if issue.code not in action_only_codes
+        )
+        ctx["rotation_warnings"] = [
+            warning
+            for warning in suggestion.warnings
+            if warning not in action_only_messages
+        ]
         ctx["rotation_issues"] = [
             issue.to_dict()
-            for issue in (*suggestion.issues, *suggestion.placement_issues)
+            for issue in (
+                *suggestion.issues,
+                *page_placement_issues,
+                *current_minimum_issues,
+            )
         ]
         ctx["active_training_blocks"] = _training_blocks_context(active_blocks, d)
     except Exception:
@@ -1042,6 +1071,7 @@ def staffing_page(
         time_off_entries=time_off_entries,
         enabled_work_centers=enabled_auto_work_centers,
         assignment_sources=sched.assignment_sources,
+        current_assignments=sched.assignments,
     )
 
     with _Phase(phases, "render"):

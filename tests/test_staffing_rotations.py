@@ -1112,6 +1112,9 @@ def test_rebuild_applies_safe_partial_assignments_and_reports_unplaced(monkeypat
     assert body["applied"] is True
     assert body["assignments"]["Repair 1"] == ["Qualified"]
     assert body["unplaced"] == ["Missing"]
+    assert body["placement"]["issues"][0]["code"] == (
+        "person_no_enabled_qualified_center"
+    )
     assert saved[0].assignments["Repair 1"] == ["Qualified"]
 
 
@@ -1154,6 +1157,65 @@ def test_recycled_context_reports_invalid_minimum_above_maximum(monkeypatch):
 
     assert context["rotation_issues"][0]["code"] == "invalid_center_configuration"
     assert "minimum of 2 but a maximum of 1" in context["rotation_issues"][0]["message"]
+
+
+def test_recycled_context_uses_current_staffing_instead_of_auto_preview_shortage(
+    monkeypatch,
+):
+    staffing_route = _stub_recommendation_inputs(monkeypatch)
+    preview_message = "Repair 1 is below its minimum Auto staffing level."
+    monkeypatch.setattr(
+        staffing_route,
+        "_auto_group_maps",
+        lambda _enabled: ({"Repair": ("Repair 1",)}, {"Repair": ("Repair",)}),
+    )
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "required_skills",
+        lambda loc: ["Repair"] if loc.name == "Repair 1" else list(
+            staffing.required_skills_for(loc)
+        ),
+    )
+    monkeypatch.setattr(
+        rotation_suggestions,
+        "suggest_recycled_assignments",
+        lambda **_kwargs: rotation_suggestions.RecycledSuggestion(
+            assignments={},
+            sources={},
+            reasons={},
+            warnings=(preview_message, "Keep this training warning."),
+            group_locations={"Repair": ("Repair 1",)},
+            placement_issues=(
+                schedule_solver.PlacementIssue(
+                    code="center_minimum_unmet",
+                    centers=("Repair 1",),
+                    message=preview_message,
+                ),
+                schedule_solver.PlacementIssue(
+                    code="person_unplaced",
+                    person="Preview Person",
+                    message=(
+                        "Preview Person could not be placed in an enabled Auto work center."
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    context = staffing_route._recycled_context_for_day(
+        TARGET_DAY,
+        roster=[_person("Qualified", 3)],
+        mode="normal",
+        base_assignments={},
+        locked_assignments={},
+        time_off_entries=[],
+        enabled_work_centers={"Repair 1"},
+        assignment_sources={},
+        current_assignments={"Repair 1": ["Qualified"]},
+    )
+
+    assert context["rotation_issues"] == []
+    assert context["rotation_warnings"] == ["Keep this training warning."]
 
 
 
@@ -2419,6 +2481,9 @@ def test_staffing_context_does_not_treat_exact_default_as_duplicate_lock(monkeyp
 
     assert captured["base_assignments"] == {}
     assert captured["locked_assignments"] == {}
+    assert captured["current_assignments"] == {
+        "Repair 2": ["Default Green"],
+    }
 
 
 def test_saved_day_hints_thread_stored_mode(monkeypatch):
