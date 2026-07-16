@@ -53,7 +53,14 @@ from datetime import datetime, UTC
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, timeclock_sync, shift_config, staffing, attendance_state
+from .. import (
+    attendance_state,
+    db,
+    shift_config,
+    staffing,
+    timeclock_i18n,
+    timeclock_sync,
+)
 from .. import employee_notifications, time_off_reminder
 # Not called directly here, but the state-reconciliation tests patch
 # timeclock.live_cache.read_open_attendance through this module — keep it
@@ -162,7 +169,7 @@ def _verify_token(token: str) -> int | None:
 
 def _person_by_id(person_id: int) -> dict | None:
     rows = db.query(
-        "SELECT id, name, odoo_id, wage_type, spanish_speaker FROM people "
+        "SELECT id, name, odoo_id, wage_type, spanish_speaker, spanish_level "
         "WHERE id = %s AND active = TRUE",
         (person_id,),
     )
@@ -516,7 +523,7 @@ def timeclock_dashboard(request: Request, token: str):
             "sync_warning": sync_warning,
             "time_off_enabled": time_off_on,
             "pending_time_off_count": pending_time_off,
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -538,7 +545,7 @@ def timeclock_notifications(request: Request, token: str):
             url=f"/timeclock/dashboard/{_mint_token(person_id)}",
             status_code=303)
     # The template renders each card's text via t() (keyed on kind) so it
-    # localizes for bilingual employees; it needs the formatted date span.
+    # localizes for Spanish-primary employees; it needs the formatted date span.
     for n in notes:
         n["span"] = employee_notifications.span_label(n)
     return templates.TemplateResponse(
@@ -548,7 +555,7 @@ def timeclock_notifications(request: Request, token: str):
             "person": p,
             "token": _mint_token(person_id),
             "notifications": notes,
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -598,7 +605,7 @@ def timeclock_pick_wc(
             "purpose": purpose,
             "scheduled": scheduled,
             "work_centers": _wc_list(),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -636,7 +643,7 @@ def kiosk_clock_in(
             "person": p,
             "message": f"Clocked in to {wc_name}",
             "time": _fmt_time(rounded_at),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -683,7 +690,7 @@ def kiosk_clock_out(
             "person": p,
             "message": "Clocked out",
             "time": _fmt_time(rounded_at),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
             "time_off_reminder": time_off_reminder_card,
         },
     )
@@ -719,6 +726,6 @@ def kiosk_transfer(
             "person": p,
             "message": f"Transferred to {new_wc_name}",
             "time": _fmt_time(in_rounded),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )

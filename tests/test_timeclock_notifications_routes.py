@@ -11,7 +11,11 @@ client = TestClient(app)
 PERSON = {"id": 1, "name": "Test Person", "odoo_id": 5,
           "wage_type": "hourly", "spanish_speaker": False}
 PERSON_ES = {"id": 2, "name": "José", "odoo_id": 7,
-             "wage_type": "hourly", "spanish_speaker": True}
+             "wage_type": "hourly", "spanish_speaker": True,
+             "spanish_level": 3}
+PERSON_LEVEL_2 = {"id": 3, "name": "Luis", "odoo_id": 8,
+                  "wage_type": "hourly", "spanish_speaker": True,
+                  "spanish_level": 2}
 
 
 def test_start_redirects_to_notifications_when_unacked(monkeypatch):
@@ -64,7 +68,7 @@ def test_notifications_screen_lists_cards(monkeypatch):
     assert f"/timeclock/notifications/ack/{token}" in resp.text
 
 
-def test_notifications_screen_bilingual_shows_spanish(monkeypatch):
+def test_notifications_screen_spanish_primary_shows_spanish(monkeypatch):
     from datetime import date
     monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_ES)
     monkeypatch.setattr(
@@ -82,6 +86,51 @@ def test_notifications_screen_bilingual_shows_spanish(monkeypatch):
     assert "Tiempo libre aprobado" in resp.text      # Spanish title
     assert "fue aprobado" in resp.text               # Spanish body
     assert "was approved" in resp.text               # English still stacked above
+
+
+def test_notifications_level_three_is_spanish_first(monkeypatch):
+    from datetime import date
+
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_ES)
+    monkeypatch.setattr(
+        employee_notifications,
+        "list_unacknowledged",
+        lambda oid: [{
+            "id": 1,
+            "kind": "time_off_approved",
+            "leave_date_from": date(2026, 7, 1),
+            "leave_date_to": date(2026, 7, 1),
+        }],
+    )
+
+    response = client.get(f"/timeclock/notifications/{timeclock._mint_token(2)}")
+
+    assert response.status_code == 200
+    assert response.text.index("Tiempo libre aprobado") < response.text.index(
+        "Time off approved"
+    )
+
+
+def test_notifications_level_two_is_english_only(monkeypatch):
+    from datetime import date
+
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_LEVEL_2)
+    monkeypatch.setattr(
+        employee_notifications,
+        "list_unacknowledged",
+        lambda oid: [{
+            "id": 1,
+            "kind": "time_off_approved",
+            "leave_date_from": date(2026, 7, 1),
+            "leave_date_to": date(2026, 7, 1),
+        }],
+    )
+
+    response = client.get(f"/timeclock/notifications/{timeclock._mint_token(3)}")
+
+    assert response.status_code == 200
+    assert "Time off approved" in response.text
+    assert "Tiempo libre aprobado" not in response.text
 
 
 def test_notifications_screen_skips_to_dashboard_when_empty(monkeypatch):
@@ -151,7 +200,7 @@ def test_clock_out_shows_reminder_card(monkeypatch):
     assert "}, 3000)" not in resp.text
 
 
-def test_clock_out_reminder_bilingual_shows_spanish(monkeypatch):
+def test_clock_out_reminder_spanish_primary_shows_spanish(monkeypatch):
     from datetime import datetime, timezone
     from zira_dashboard import time_off_reminder, timeclock_sync, auto_lunch
 
