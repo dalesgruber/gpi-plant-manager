@@ -1,0 +1,81 @@
+from datetime import date, datetime, time
+
+import pytest
+
+from zira_dashboard import saturday_recruiting as sr
+from zira_dashboard.shift_config import SITE_TZ
+
+
+def test_deadline_is_previous_configured_workday_start():
+    starts = {date(2026, 7, 24): time(7, 0)}
+    assert sr.response_deadline(
+        date(2026, 7, 25), frozenset({0, 1, 2, 3, 4}), starts.__getitem__
+    ) == datetime(2026, 7, 24, 7, 0, tzinfo=SITE_TZ)
+
+
+def test_deadline_label_is_consistent_and_explicit():
+    value = datetime(2026, 7, 24, 7, 0, tzinfo=SITE_TZ)
+    assert sr.format_deadline(value) == "Friday, July 24 at 7:00 AM"
+
+
+def test_partial_hours_label_uses_half_hour_range():
+    assert sr.format_time_range(time(7, 0), time(11, 30)) == "7:00 AM–11:30 AM"
+
+
+def test_deadline_skips_nonworking_friday():
+    starts = {date(2026, 7, 23): time(6, 30)}
+    assert sr.response_deadline(
+        date(2026, 7, 25), frozenset({0, 1, 2, 3}), starts.__getitem__
+    ) == datetime(2026, 7, 23, 6, 30, tzinfo=SITE_TZ)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (time(5, 30), time(10, 0)),
+        (time(6, 0), time(12, 30)),
+        (time(8, 15), time(10, 0)),
+        (time(10, 0), time(10, 0)),
+    ],
+)
+def test_partial_rejects_invalid_boundaries(start, end):
+    with pytest.raises(sr.InvalidAvailability):
+        sr.validate_availability(start, end, time(6, 0), time(12, 0))
+
+
+def test_partial_accepts_half_hour_boundaries():
+    sr.validate_availability(time(7, 0), time(11, 30), time(6, 0), time(12, 0))
+
+
+def _opening(wc_id, count, *skills):
+    return sr.Opening(wc_id, f"WC {wc_id}", count, tuple(skills))
+
+
+def test_eligibility_requires_level_two_in_every_skill():
+    openings = [_opening(10, 1, "Repair", "Forklift")]
+    assert sr.eligible_work_centers({"Repair": 3, "Forklift": 2}, openings) == {10}
+    assert sr.eligible_work_centers({"Repair": 3, "Forklift": 1}, openings) == set()
+    assert sr.eligible_work_centers({"Repair": 3, "Forklift": 4}, openings) == set()
+
+
+def test_matcher_rematches_multiskilled_person():
+    openings = [_opening(10, 1, "Repair"), _opening(20, 1, "Dismantle")]
+    result = sr.match_commitments(
+        openings,
+        [
+            sr.Commitment(1, frozenset({10, 20})),
+            sr.Commitment(2, frozenset({10})),
+        ],
+    )
+    assert result.wc_by_person == {1: 20, 2: 10}
+
+
+def test_matcher_rejects_impossible_skill_mix():
+    openings = [_opening(10, 1, "Repair"), _opening(20, 1, "Dismantle")]
+    assert sr.match_commitments(
+        openings,
+        [
+            sr.Commitment(1, frozenset({10})),
+            sr.Commitment(2, frozenset({10})),
+        ],
+    ) is None
