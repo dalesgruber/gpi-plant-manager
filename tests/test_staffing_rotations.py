@@ -2876,6 +2876,7 @@ def test_rebuild_does_not_restore_person_after_clear_removes_manual_source(monke
         staffing_route.staffing, "load_schedule", lambda _day: schedule_before_clear,
     )
     monkeypatch.setattr(staffing_route.staffing, "save_schedule", cleared.append)
+    monkeypatch.setattr(staffing_route.staffing, "schedule_revision", lambda _day: "test")
     monkeypatch.setattr(staffing_route._http_cache, "invalidate_today_cache", lambda: None)
 
     staffing_route._staffing_save_work(

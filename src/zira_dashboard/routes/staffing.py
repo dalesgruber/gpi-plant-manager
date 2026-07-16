@@ -1322,9 +1322,9 @@ async def staffing_save(
 
 def _staffing_save_work(request: Request, d: date, auto: int, form):
     action = (form.get("action") or "save").strip().lower()
-    if action not in {"save", "publish", "unpublish", "save_notes", "discard_draft"}:
+    if action not in {"save", "publish"}:
         return JSONResponse({"ok": False, "error": "Unknown staffing action."}, status_code=400)
-    if (form.get("viewing_posted") or "").strip() == "1" and action != "discard_draft":
+    if (form.get("viewing_posted") or "").strip() == "1":
         return JSONResponse(
             {"ok": False, "error": "The posted schedule view is read-only."},
             status_code=400,
@@ -1394,7 +1394,7 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             if name not in committed_names
         })
 
-    if active_saturday_recruiting and action in {"save", "publish", "unpublish"}:
+    if active_saturday_recruiting and action in {"save", "publish"}:
         noncommitted_names = _noncommitted_names(assignments)
         if noncommitted_names:
             return JSONResponse(
@@ -1439,127 +1439,17 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             publish_block = ["Saturday recruiting could not be verified. Please try again."]
 
     existing = staffing.load_schedule(d)
+    if action == "save" or (action == "publish" and publish_block):
+        existing = staffing.draft_from_posted(existing)
 
-    # Notes-only update on a published schedule. Lets supervisors edit the
-    # day's notes (or per-WC notes) after publishing without dropping the
-    # schedule back to draft. Preserves assignments, published_snapshot,
-    # testing_day, custom_hours, and rotation metadata — only `notes` and
-    # `wc_notes` change.
-    if action == "save_notes":
-        staffing.save_schedule(staffing.Schedule(
-            day=d,
-            published=existing.published,
-            assignments={k: list(v) for k, v in existing.assignments.items()},
-            notes=notes,
-            wc_notes=wc_notes,
-            testing_day=existing.testing_day,
-            published_snapshot=existing.published_snapshot,
-            custom_hours=existing.custom_hours,
-            rotation_mode=existing.rotation_mode,
-            assignment_sources={
-                wc_name: dict(sources or {})
-                for wc_name, sources in existing.assignment_sources.items()
-            },
-        ))
-        _http_cache.invalidate_today_cache()
-        if (request.headers.get("accept") or "").startswith("application/json"):
-            return JSONResponse({"ok": True, "published": existing.published, "notes_only": True})
-        return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
-
-    # Discard-draft action: restore the posted snapshot, clear it, and re-publish.
-    if action == "discard_draft" and existing.published_snapshot:
-        snap = existing.published_snapshot
-        restored_assignments = {
-            k: list(v) for k, v in (snap.get("assignments") or {}).items()
-        }
-        if active_saturday_recruiting:
-            noncommitted_names = _noncommitted_names(restored_assignments)
-            if noncommitted_names:
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": "Only committed Saturday volunteers can be scheduled.",
-                        "validation_errors": [
-                            f"{name} is not committed to Saturday." for name in noncommitted_names
-                        ],
-                    },
-                    status_code=409,
-                )
-            if plant_now() < saturday_bundle.recruitment.response_deadline:
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": "Saturday recruiting stays open until "
-                        f"{sr.format_deadline(saturday_bundle.recruitment.response_deadline)}.",
-                    },
-                    status_code=409,
-                )
-            roster = staffing.load_roster()
-            people_by_name = {person.name: person for person in roster}
-            full_day_off_names = {
-                entry["name"]
-                for entry in _safe_time_off_entries(d)
-                if entry.get("hours") is None
-            }
-            saturday_reasons = sr.validate_publish(
-                saturday_bundle, restored_assignments, people_by_name, full_day_off_names,
-            )
-            if saturday_reasons:
-                return JSONResponse(
-                    {
-                        "ok": False,
-                        "error": "Publish blocked — Saturday commitments need attention.",
-                        "publish_block_reasons": saturday_reasons,
-                    },
-                    status_code=409,
-                )
-        restored = staffing.Schedule(
-            day=d,
-            published=True,
-            assignments=restored_assignments,
-            notes=str(snap.get("notes") or ""),
-            wc_notes=dict(snap.get("wc_notes") or {}),
-            testing_day=bool(snap.get("testing_day", False)),
-            published_snapshot=None,
-            # Discard-draft only reverts the schedule grid; custom_hours are
-            # managed independently via the Hours editor and persist.
-            custom_hours=existing.custom_hours,
-            rotation_mode=str(snap.get("rotation_mode") or "normal"),
-            assignment_sources={
-                wc_name: dict(sources or {})
-                for wc_name, sources in (snap.get("assignment_sources") or {}).items()
-            },
-        )
-        staffing.save_schedule(restored)
-        if active_saturday_recruiting:
-            try:
-                saturday_recruiting_store.mark_published(d, plant_now())
-            except Exception:
-                log.exception("Could not mark restored Saturday recruiting as published for %s", d)
-        _http_cache.invalidate_today_cache()
-        if (request.headers.get("accept") or "").startswith("application/json"):
-            return JSONResponse({"ok": True, "published": True, "discarded": True})
-        return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
-
-    if publish_block:
-        published = False
-    elif action == "publish":
+    if action == "publish" and not publish_block:
         published = True
-    elif action == "unpublish":
-        published = False
+        published_snapshot = None
+        published_delivery = staffing.new_published_delivery()
     else:
         published = existing.published
-
-    published_snapshot = existing.published_snapshot
-    if action == "publish":
-        if publish_block:
-            if existing.published:
-                published_snapshot = staffing.snapshot_of(existing)
-        else:
-            published_snapshot = None
-    elif existing.published and published_snapshot is None:
-        published_snapshot = staffing.snapshot_of(existing)
-        published = False
+        published_snapshot = existing.published_snapshot
+        published_delivery = existing.published_delivery
 
     # An ordinary save owns the current grid, so sources only survive for
     # people still submitted in the same work center. This prevents a cleared
@@ -1585,8 +1475,9 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         published_snapshot=published_snapshot,
         # Custom hours live alongside the day's schedule and are managed by
         # the dedicated /staffing/hours route. Preserve them through every
-        # publish / save / unpublish so the user's overrides aren't dropped.
+        # publish / save so the user's overrides aren't dropped.
         custom_hours=existing.custom_hours,
+        published_delivery=published_delivery,
         rotation_mode=existing.rotation_mode,
         assignment_sources=assignment_sources,
     ))
@@ -1611,7 +1502,18 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             status_code=409,
         )
     if wants_json:
-        return JSONResponse({"ok": True, "published": published, "testing_day": testing_day})
+        delivery = (
+            published_delivery if published
+            else (published_snapshot or {}).get("published_delivery") or {}
+        )
+        return JSONResponse({
+            "ok": True,
+            "revision": staffing.schedule_revision(d),
+            "published": published,
+            "has_snapshot": bool(published_snapshot) and not published,
+            "posted_version": delivery.get("version"),
+            "testing_day": testing_day,
+        })
 
     # If publish was blocked, bounce back to the same day with a flag so the UI can show the alert.
     if publish_block:
@@ -1623,6 +1525,28 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
 
     return RedirectResponse(f"/staffing?day={d.isoformat()}", status_code=303)
+
+
+@router.get("/staffing/live")
+def staffing_live(day: str = Query(...)):
+    try:
+        target_day = date.fromisoformat(day)
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "bad day"}, status_code=400)
+    sched = staffing.load_schedule(target_day)
+    delivery = (
+        sched.published_delivery if sched.published
+        else (sched.published_snapshot or {}).get("published_delivery") or {}
+    )
+    response = JSONResponse({
+        "ok": True,
+        "revision": staffing.schedule_revision(target_day),
+        "published": sched.published,
+        "has_snapshot": bool(sched.published_snapshot) and not sched.published,
+        "posted_version": delivery.get("version"),
+    })
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/staffing/hours")
@@ -1644,7 +1568,7 @@ async def staffing_hours_save(request: Request):
         except ValueError:
             return JSONResponse({"ok": False, "error": "bad day"}, status_code=400)
 
-        sched = staffing.load_schedule(d)
+        sched = staffing.draft_from_posted(staffing.load_schedule(d))
 
         if form.get("reset") == "1":
             sched.custom_hours = None
@@ -2120,6 +2044,7 @@ async def staffing_clear_partial(request: Request):
         )
 
     def _work():
+        sched = staffing.draft_from_posted(staffing.load_schedule(day))
         try:
             if name:
                 late_report.clear_partial_by_name(day, name)
@@ -2129,6 +2054,7 @@ async def staffing_clear_partial(request: Request):
                 late_report.clear_non_work_shift(day, str(emp_id))
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+        staffing.save_schedule(sched)
         _bust_after_mutation()
         return JSONResponse({"ok": True})
 
@@ -2141,10 +2067,9 @@ async def staffing_clear_testing_day(request: Request):
     anything else (assignments, notes, published state, custom_hours).
     Powers the × on the Testing Day pill at the top of the staffing page.
 
-    The regular save path requires Edit mode on a published schedule, and
-    `save_notes` deliberately preserves testing_day so editing notes
-    doesn't accidentally undo a Testing Day override. This endpoint is
-    the explicit clear path — idempotent, JSON-only, no Edit mode needed.
+    The regular save path requires Edit mode on a published schedule. This
+    endpoint is the explicit clear path — idempotent, JSON-only, no Edit mode
+    needed.
 
     Body: {day: ISO date}
     """
@@ -2155,7 +2080,7 @@ async def staffing_clear_testing_day(request: Request):
     except (KeyError, TypeError, ValueError) as e:
         return JSONResponse({"ok": False, "error": f"bad day: {e}"}, status_code=400)
     def _work():
-        existing = staffing.load_schedule(d)
+        existing = staffing.draft_from_posted(staffing.load_schedule(d))
         if not existing.testing_day:
             return JSONResponse({"ok": True, "no_op": True})
         staffing.save_schedule(staffing.Schedule(
@@ -2167,6 +2092,7 @@ async def staffing_clear_testing_day(request: Request):
             testing_day=False,
             published_snapshot=existing.published_snapshot,
             custom_hours=existing.custom_hours,
+            published_delivery=existing.published_delivery,
             rotation_mode=existing.rotation_mode,
             assignment_sources={
                 wc_name: dict(sources or {})
@@ -2199,6 +2125,7 @@ async def staffing_restore_partial(request: Request):
         )
 
     def _work():
+        sched = staffing.draft_from_posted(staffing.load_schedule(day))
         try:
             if name:
                 late_report.restore_partial_by_name(day, name)
@@ -2208,6 +2135,7 @@ async def staffing_restore_partial(request: Request):
                 late_report.restore_non_work_shift(day, str(emp_id))
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+        staffing.save_schedule(sched)
         _bust_after_mutation()
         return JSONResponse({"ok": True})
 
