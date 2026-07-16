@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from .. import (
+    employee_notifications,
     saturday_recruiting as sr,
     saturday_recruiting_store as store,
     schedule_store,
@@ -150,10 +151,28 @@ async def cancel(request: Request):
         raise HTTPException(status_code=500, detail="Could not update Saturday recruiting") from None
     staffing.invalidate_schedule_cache(day)
     staffing_routes._bust_after_mutation()
-    return JSONResponse({
+    failed_notifications: list[str] = []
+    for item in targets:
+        if item.person_odoo_id is None:
+            failed_notifications.append(item.person_name)
+            continue
+        try:
+            employee_notifications.create_saturday_cancelled(item.person_odoo_id, day)
+        except Exception:
+            # The cancellation itself is already committed. Tell the manager
+            # exactly who needs a direct heads-up rather than rolling it back.
+            log.exception("Could not create Saturday cancellation notification for %s", item.person_id)
+            failed_notifications.append(item.person_name)
+    response: dict[str, object] = {
         "ok": True,
         "committed_people": [
             {"person_id": item.person_id, "person_name": item.person_name}
             for item in targets
         ],
-    })
+    }
+    if failed_notifications:
+        response["warning"] = (
+            "Contact directly: " + ", ".join(failed_notifications)
+            + ". Their Saturday cancellation notice could not be delivered."
+        )
+    return JSONResponse(response)

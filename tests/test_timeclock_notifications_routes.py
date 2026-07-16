@@ -68,6 +68,36 @@ def test_notifications_screen_lists_cards(monkeypatch):
     assert f"/timeclock/notifications/ack/{token}" in resp.text
 
 
+def test_notifications_screen_renders_saturday_cancellation(monkeypatch):
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON)
+    monkeypatch.setattr(
+        employee_notifications, "list_unacknowledged",
+        lambda oid: [{"id": 1, "kind": "saturday_work_cancelled"}],
+    )
+
+    response = client.get(f"/timeclock/notifications/{timeclock._mint_token(1)}")
+
+    assert response.status_code == 200
+    assert "Saturday work cancelled" in response.text
+    assert "Do not report to work" in response.text
+
+
+def test_saturday_cancellation_notification_is_spanish_first(monkeypatch):
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_ES)
+    monkeypatch.setattr(
+        employee_notifications, "list_unacknowledged",
+        lambda oid: [{"id": 1, "kind": "saturday_work_cancelled"}],
+    )
+
+    response = client.get(f"/timeclock/notifications/{timeclock._mint_token(2)}")
+
+    assert response.status_code == 200
+    assert "Trabajo del sábado cancelado" in response.text
+    assert response.text.index("Trabajo del sábado cancelado") < response.text.index(
+        "Saturday work cancelled"
+    )
+
+
 def test_notifications_screen_spanish_primary_shows_spanish(monkeypatch):
     from datetime import date
     monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_ES)
@@ -250,3 +280,64 @@ def test_clock_out_no_reminder_keeps_auto_redirect(monkeypatch):
     assert resp.status_code == 200
     # No reminder -> success-template's 3s auto-redirect script is present.
     assert "}, 3000)" in resp.text
+
+
+def test_clock_out_shows_one_time_saturday_reminder(monkeypatch):
+    from datetime import datetime, timezone
+    from zira_dashboard import (
+        auto_lunch, saturday_work_reminder, time_off_reminder, timeclock_sync,
+    )
+
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON)
+    monkeypatch.setattr(timeclock, "_time_off_redirect_if_salaried", lambda p, pid: None)
+    monkeypatch.setattr(
+        timeclock, "_open_log_row",
+        lambda *a, **k: (1, datetime(2026, 7, 24, 22, 0, tzinfo=timezone.utc)))
+    monkeypatch.setattr(auto_lunch, "note_employee_clock_out", lambda oid: None)
+    monkeypatch.setattr(timeclock_sync, "sync_one_by_id", lambda lid: None)
+    monkeypatch.setattr(time_off_reminder, "reminder_for_person", lambda oid, today: None)
+    monkeypatch.setattr(
+        saturday_work_reminder, "claim_for_person",
+        lambda person_id, today, now: {
+            "day_label": "Saturday, July 25", "hours": "7:00 AM–11:30 AM",
+            "work_center": "Repair"},
+    )
+
+    response = client.post(f"/timeclock/clock-out/{timeclock._mint_token(1)}")
+
+    assert response.status_code == 200
+    assert "Saturday work reminder" in response.text
+    assert "Saturday, July 25" in response.text
+    assert "Repair" in response.text
+    assert "}, 3000)" not in response.text
+
+
+def test_clock_out_saturday_reminder_is_spanish_first(monkeypatch):
+    from datetime import datetime, timezone
+    from zira_dashboard import (
+        auto_lunch, saturday_work_reminder, time_off_reminder, timeclock_sync,
+    )
+
+    monkeypatch.delenv("KIOSK_TIME_OFF_NOTIFY_ENABLED", raising=False)
+    monkeypatch.setattr(timeclock, "_person_by_id", lambda pid: PERSON_ES)
+    monkeypatch.setattr(timeclock, "_time_off_redirect_if_salaried", lambda p, pid: None)
+    monkeypatch.setattr(
+        timeclock, "_open_log_row",
+        lambda *a, **k: (1, datetime(2026, 7, 24, 22, 0, tzinfo=timezone.utc)))
+    monkeypatch.setattr(auto_lunch, "note_employee_clock_out", lambda oid: None)
+    monkeypatch.setattr(timeclock_sync, "sync_one_by_id", lambda lid: None)
+    monkeypatch.setattr(time_off_reminder, "reminder_for_person", lambda oid, today: None)
+    monkeypatch.setattr(
+        saturday_work_reminder, "claim_for_person",
+        lambda person_id, today, now: {
+            "day_label": "Saturday, July 25", "hours": "7:00 AM–11:30 AM",
+            "work_center": None},
+    )
+
+    response = client.post(f"/timeclock/clock-out/{timeclock._mint_token(2)}")
+
+    assert response.status_code == 200
+    assert response.text.index("Recordatorio de trabajo del sábado") < response.text.index(
+        "Saturday work reminder"
+    )

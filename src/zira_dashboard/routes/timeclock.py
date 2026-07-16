@@ -62,7 +62,7 @@ from .. import (
     timeclock_i18n,
     timeclock_sync,
 )
-from .. import employee_notifications, time_off_reminder
+from .. import employee_notifications, saturday_work_reminder, time_off_reminder
 # Not called directly here, but the state-reconciliation tests patch
 # timeclock.live_cache.read_open_attendance through this module — keep it
 # importable as part of the module surface.
@@ -731,12 +731,21 @@ def kiosk_clock_out(
     # ~30s idle timer is still the backstop). Never block the clock-out on a
     # reminder lookup failure.
     time_off_reminder_card = None
+    saturday_reminder_card = None
     if employee_notifications.notifications_enabled():
         try:
             time_off_reminder_card = time_off_reminder.reminder_for_person(
                 odoo_id, plant_today())
         except Exception:
             _log.exception("time-off reminder lookup failed for %s", odoo_id)
+    try:
+        saturday_reminder_card = saturday_work_reminder.claim_for_person(
+            person_id, plant_today(), plant_now())
+    except Exception:
+        # The punch is already saved; this convenience reminder must never
+        # turn a successful clock-out into a kiosk error. This is independent
+        # of the time-off notification kill switch.
+        _log.exception("Saturday reminder claim failed for %s", person_id)
     return templates.TemplateResponse(
         request,
         "timeclock_success.html",
@@ -746,6 +755,7 @@ def kiosk_clock_out(
             "time": _fmt_time(rounded_at),
             **timeclock_i18n.context_for_person(p),
             "time_off_reminder": time_off_reminder_card,
+            "saturday_work_reminder": saturday_reminder_card,
         },
     )
 

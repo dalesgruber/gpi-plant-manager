@@ -60,6 +60,9 @@ TRANSLATIONS: dict[str, str] = {
     "Your approved time off for {span} was cancelled. ⚠️ See a supervisor if you have questions.":
         "Tu tiempo libre aprobado del {span} fue cancelado. ⚠️ "
         "Habla con un supervisor si tienes preguntas.",
+    "Saturday work cancelled": "Trabajo del sábado cancelado",
+    "Saturday work was cancelled. Do not report to work.":
+        "El trabajo del sábado fue cancelado. No te presentes a trabajar.",
     # --- clock-out day-before reminder ---
     "Time off reminder": "Recordatorio de tiempo libre",
     "Heads up — you have approved time off {day}. Enjoy!":
@@ -76,6 +79,12 @@ TRANSLATIONS: dict[str, str] = {
         "Atención — {day}, estás libre de {hf} a {ht} (aprobado).",
     "Heads up — {day}, you have partial time off (approved).":
         "Atención — {day}, tienes tiempo libre parcial (aprobado).",
+    "Saturday work reminder": "Recordatorio de trabajo del sábado",
+    "You are scheduled for {day}.": "Estás programado para {day}.",
+    "Scheduled hours: {hours}": "Horario programado: {hours}",
+    "Work area: {work_center}": "Área de trabajo: {work_center}",
+    "Work area: check with your supervisor.":
+        "Área de trabajo: consulta con tu supervisor.",
     # --- time off: landing ---
     "Time Off — {name}": "Tiempo libre — {name}",
     "Request Time Off": "Solicitar tiempo libre",

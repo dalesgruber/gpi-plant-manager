@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from zira_dashboard import db, saturday_recruiting_store as store
+from zira_dashboard import employee_notifications
 from zira_dashboard.app import app
 from zira_dashboard.routes import saturday_recruiting as routes
 from zira_dashboard.shift_config import SITE_TZ
@@ -92,6 +93,31 @@ def test_manager_commitment_cancel_requires_reason():
         "day": "2026-07-25", "reason": "  ",
     })
     assert response.status_code == 422
+
+
+def test_full_cancel_notifies_committed_people_and_reports_failures(monkeypatch):
+    targets = (
+        store.StoredCommitment(1, 101, "Ana", "committed", time(6), time(12), frozenset()),
+        store.StoredCommitment(2, 102, "Ben", "committed", time(6), time(12), frozenset()),
+    )
+    notified = []
+    monkeypatch.setattr(routes.store, "cancel_recruitment", lambda *_args: targets)
+    monkeypatch.setattr(routes, "plant_now", lambda: NOW)
+    monkeypatch.setattr(routes.staffing, "invalidate_schedule_cache", lambda _day: None)
+    monkeypatch.setattr(routes.staffing_routes, "_bust_after_mutation", lambda: None)
+
+    def notify(odoo_id, day):
+        notified.append((odoo_id, day))
+        if odoo_id == 102:
+            raise RuntimeError("notification down")
+
+    monkeypatch.setattr(employee_notifications, "create_saturday_cancelled", notify)
+
+    response = client.post("/api/staffing/saturday-recruiting/cancel", json={"day": "2026-07-25"})
+
+    assert response.status_code == 200
+    assert notified == [(101, SATURDAY), (102, SATURDAY)]
+    assert "Ben" in response.json()["warning"]
 
 
 pytestmark_db = pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
