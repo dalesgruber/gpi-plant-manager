@@ -1865,6 +1865,27 @@ def test_staffing_has_rotation_mode_controls_without_automated_person_notes():
     assert "tr.work-center-off .dept," not in css
 
 
+def test_staffing_keeps_automation_controls_in_the_notes_sidebar():
+    html = (ROOT / "src/zira_dashboard/templates/staffing.html").read_text()
+
+    sidebar_start = html.index('<aside class="day-context">')
+    sidebar_end = html.index('</aside>', sidebar_start)
+    sidebar = html[sidebar_start:sidebar_end]
+    main_start = html.index('<main class="panel">')
+    main_end = html.index('</main>', main_start)
+    main = html[main_start:main_end]
+
+    assert 'class="day-notes"' in sidebar
+    assert 'class="rotation-controls" data-day="{{ day }}"' in sidebar
+    assert 'id="rotation-auto-summary"' in sidebar
+    assert 'id="reset-schedule-btn"' in sidebar
+    assert 'id="clear-schedule-btn"' in sidebar
+    assert 'id="rotation-warnings"' in main
+    assert 'class="rotation-controls" data-day="{{ day }}"' not in main
+    assert 'id="reset-schedule-btn"' not in main
+    assert 'id="clear-schedule-btn"' not in main
+
+
 def test_skills_matrix_exposes_scheduling_preferences_without_training_controls():
     html = (ROOT / "src/zira_dashboard/templates/skills.html").read_text()
     js = (ROOT / "src/zira_dashboard/static/skills-page.js").read_text()

@@ -167,8 +167,6 @@
           <button type="button" class="save"   id="hours-save" aria-busy="false">Save</button>
         </div>
       </div>
-      <button type="button" id="reset-schedule-btn" class="clear-btn">Reset to defaults</button>
-      <button type="button" id="clear-schedule-btn" class="clear-btn clear-schedule-btn">Clear schedule</button>
       {% if has_snapshot %}
         <div class="view-toggle" role="tablist" aria-label="Draft vs posted view">
           <a href="/staffing?day={{ day }}&amp;view=draft"
@@ -225,55 +223,30 @@
 
     {% include "_saturday_recruiting_panel.html" %}
 
-    {# Auto-scheduler controls. The mode buttons set the goal for the enabled
-       work centers; manual/default locks always survive. #}
-    {% if auto_scheduler_available %}
-    <div class="rotation-controls" data-day="{{ day }}">
-      <div class="rotation-mode" role="group" aria-labelledby="rotation-mode-label">
-        <span class="rotation-mode-label" id="rotation-mode-label">Schedule goal</span>
-        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'optimized' %}active{% endif %}"
-                data-rotation-mode="optimized" aria-pressed="{{ (recycled_rotation_mode == 'optimized')|tojson }}"
-                aria-label="Optimized schedule goal" title="Optimized: strongest coverage">⚡⚡⚡</button>
-        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'normal' %}active{% endif %}"
-                data-rotation-mode="normal" aria-pressed="{{ (recycled_rotation_mode == 'normal')|tojson }}"
-                aria-label="Normal schedule goal" title="Normal: balanced coverage and fair rotation">⚖</button>
-        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'training' %}active{% endif %}"
-                data-rotation-mode="training" aria-pressed="{{ (recycled_rotation_mode == 'training')|tojson }}"
-                aria-label="Training schedule goal" title="Training: develop operator skills">🎓</button>
-        <p class="hint rotation-mode-help" id="rotation-mode-help">{{ rotation_mode_help }}</p>
-        <output class="rotation-auto-summary minimum-crew-balance" id="rotation-auto-summary"
-                data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'>
-          <span id="minimum-crew-action"></span>
-        </output>
-      </div>
-      <div class="rotation-warning" id="rotation-warnings" role="alert"
-           {% if not rotation_warnings and not rotation_issues %}hidden{% endif %}>
-        <ul id="rotation-warning-list">
-          {% for issue in rotation_issues %}
-            <li class="coverage-issue" data-issue-code="{{ issue.code }}">
-              <span>{{ issue.message }}</span>
-              {% if issue.rejections %}
-                <details class="coverage-why">
-                  <summary>Why?</summary>
-                  <ul>
-                    {% for rejection in issue.rejections %}
-                      <li><strong>{{ rejection.person }}</strong>: {{ rejection.detail }}</li>
-                    {% endfor %}
-                  </ul>
-                </details>
-              {% endif %}
-            </li>
-          {% endfor %}
-          {% set issue_messages = rotation_issues | map(attribute='message') | list %}
-          {% for warning in rotation_warnings %}
-            {% if warning not in issue_messages %}
-              <li>{{ warning }}</li>
+    <div class="rotation-warning" id="rotation-warnings" role="alert"
+         {% if not rotation_warnings and not rotation_issues %}hidden{% endif %}>
+      <ul id="rotation-warning-list">
+        {% for issue in rotation_issues %}
+          <li class="coverage-issue" data-issue-code="{{ issue.code }}">
+            <span>{{ issue.message }}</span>
+            {% if issue.rejections %}
+              <details class="coverage-why">
+                <summary>Why?</summary>
+                <ul>
+                  {% for rejection in issue.rejections %}
+                    <li><strong>{{ rejection.person }}</strong>: {{ rejection.detail }}</li>
+                  {% endfor %}
+                </ul>
+              </details>
             {% endif %}
-          {% endfor %}
-        </ul>
-      </div>
+          </li>
+        {% endfor %}
+        {% set issue_messages = rotation_issues | map(attribute='message') | list %}
+        {% for warning in rotation_warnings %}
+          {% if warning not in issue_messages %}<li>{{ warning }}</li>{% endif %}
+        {% endfor %}
+      </ul>
     </div>
-    {% endif %}
 
     {% macro scheduled_operator_name(name) %}
       {%- set parts = name.split() -%}
@@ -415,6 +388,31 @@
       <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
       <textarea id="notes-textarea" name="notes" rows="6" placeholder=""{% if viewing_posted %} readonly{% endif %}>{{ notes }}</textarea>
     </div>
+    {% if auto_scheduler_available %}
+    <div class="rotation-controls" data-day="{{ day }}">
+      <div class="rotation-mode" role="group" aria-labelledby="rotation-mode-label">
+        <span class="rotation-mode-label" id="rotation-mode-label">Schedule goal</span>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'optimized' %}active{% endif %}"
+                data-rotation-mode="optimized" aria-pressed="{{ (recycled_rotation_mode == 'optimized')|tojson }}"
+                aria-label="Optimized schedule goal" title="Optimized: strongest coverage">⚡⚡⚡</button>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'normal' %}active{% endif %}"
+                data-rotation-mode="normal" aria-pressed="{{ (recycled_rotation_mode == 'normal')|tojson }}"
+                aria-label="Normal schedule goal" title="Normal: balanced coverage and fair rotation">⚖</button>
+        <button type="button" class="rotation-mode-btn rotation-mode-icon {% if recycled_rotation_mode == 'training' %}active{% endif %}"
+                data-rotation-mode="training" aria-pressed="{{ (recycled_rotation_mode == 'training')|tojson }}"
+                aria-label="Training schedule goal" title="Training: develop operator skills">🎓</button>
+        <p class="hint rotation-mode-help" id="rotation-mode-help">{{ rotation_mode_help }}</p>
+        <output class="rotation-auto-summary minimum-crew-balance" id="rotation-auto-summary"
+                data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'>
+          <span id="minimum-crew-action"></span>
+        </output>
+      </div>
+      <div class="sidebar-schedule-actions">
+        <button type="button" id="reset-schedule-btn" class="clear-btn">Reset to defaults</button>
+        <button type="button" id="clear-schedule-btn" class="clear-btn clear-schedule-btn">Clear schedule</button>
+      </div>
+    </div>
+    {% endif %}
   </aside>
 
 </div>
