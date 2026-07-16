@@ -30,6 +30,9 @@ def test_staffing_template_exposes_smart_defaults():
         partial_hours_by_name={},
         time_off_names=[],
         forklift_live_model={"available": False},
+        active_training_blocks=[],
+        training_protocol_people=[],
+        training_protocol_work_centers=[],
     )
 
     assert "window.SMART_DEFAULTS_BY_LOC" in rendered
