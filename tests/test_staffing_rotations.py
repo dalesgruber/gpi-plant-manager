@@ -1218,6 +1218,54 @@ def test_recycled_context_uses_current_staffing_instead_of_auto_preview_shortage
     assert context["rotation_warnings"] == ["Keep this training warning."]
 
 
+def test_recycled_context_keeps_current_shortage_when_auto_preview_fails(monkeypatch):
+    staffing_route = _stub_recommendation_inputs(monkeypatch)
+    monkeypatch.setattr(
+        staffing_route,
+        "_effective_minimum",
+        lambda loc: 1 if loc.name == "Repair 1" else loc.min_ops,
+    )
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "required_skills",
+        lambda loc: ["Repair"] if loc.name == "Repair 1" else list(
+            staffing.required_skills_for(loc)
+        ),
+    )
+
+    def preview_unavailable(**_kwargs):
+        raise RuntimeError("preview unavailable")
+
+    monkeypatch.setattr(
+        rotation_suggestions,
+        "suggest_recycled_assignments",
+        preview_unavailable,
+    )
+
+    context = staffing_route._recycled_context_for_day(
+        TARGET_DAY,
+        roster=[_person("Qualified", 3)],
+        mode="normal",
+        base_assignments={},
+        locked_assignments={},
+        time_off_entries=[],
+        enabled_work_centers={"Repair 1"},
+        assignment_sources={},
+        current_assignments={"Repair 1": []},
+    )
+
+    assert context["rotation_issues"] == [{
+        "code": "center_minimum_unmet",
+        "message": (
+            "Repair 1 is below its minimum staffing level: "
+            "0 qualified and present, minimum 1."
+        ),
+        "person": None,
+        "centers": ["Repair 1"],
+        "rejections": [],
+    }]
+
+
 
 
 def test_rebuild_uses_enabled_new_work_center_and_leaves_disabled_recycled(monkeypatch):

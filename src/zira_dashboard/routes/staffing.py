@@ -651,9 +651,9 @@ def _recycled_context_for_day(
 ):
     """Recycled template context: mode, per-assignment reasons, warnings, blocks.
 
-    Computed once per GET and derived from a single engine run. Any failure
-    degrades to safe empty defaults so the staffing page never 500s on a
-    recommendation-data problem.
+    Current minimum coverage is computed before the Auto preview so displayed
+    shortages survive a preview failure. Recommendation-data failures retain
+    safe empty preview defaults so the staffing page never 500s.
     """
     ctx = {
         "recycled_rotation_mode": mode or "normal",
@@ -664,6 +664,33 @@ def _recycled_context_for_day(
         "active_training_blocks": [],
     }
     try:
+        enabled = set(
+            _ordered_work_center_names(
+                enabled_work_centers
+                if enabled_work_centers is not None
+                else _enabled_auto_work_centers(d)
+            )
+        )
+        current_minimum_issues = (
+            _current_minimum_coverage_issues(
+                roster=roster,
+                assignments=current_assignments,
+                time_off_entries=time_off_entries,
+                enabled_centers=enabled,
+            )
+            if current_assignments is not None
+            else ()
+        )
+        ctx["rotation_issues"] = [
+            issue.to_dict() for issue in current_minimum_issues
+        ]
+    except Exception:
+        log.exception(
+            "Current staffing coverage failed for %s; degrading to empty defaults", d,
+        )
+        return ctx
+
+    try:
         exact_defaults, group_defaults, user_group_centers = _default_inputs()
         preferences, history, block_effects, active_blocks = _gather_recycled_inputs(
             d,
@@ -673,13 +700,6 @@ def _recycled_context_for_day(
             user_group_centers=user_group_centers,
         )
         available = _roster_minus_full_day_off(roster, time_off_entries)
-        enabled = set(
-            _ordered_work_center_names(
-                enabled_work_centers
-                if enabled_work_centers is not None
-                else _enabled_auto_work_centers(d)
-            )
-        )
         group_locations, group_required_skills = _auto_group_maps(enabled)
         center_minimums = {
             loc.name: _effective_minimum(loc)
@@ -720,16 +740,6 @@ def _recycled_context_for_day(
             for issue in suggestion.placement_issues
             if issue.code in action_only_codes
         }
-        current_minimum_issues = (
-            _current_minimum_coverage_issues(
-                roster=roster,
-                assignments=current_assignments,
-                time_off_entries=time_off_entries,
-                enabled_centers=enabled,
-            )
-            if current_assignments is not None
-            else ()
-        )
         page_placement_issues = tuple(
             issue
             for issue in suggestion.placement_issues
@@ -740,14 +750,13 @@ def _recycled_context_for_day(
             for warning in suggestion.warnings
             if warning not in action_only_messages
         ]
-        ctx["rotation_issues"] = [
+        ctx["rotation_issues"].extend(
             issue.to_dict()
             for issue in (
                 *suggestion.issues,
                 *page_placement_issues,
-                *current_minimum_issues,
             )
-        ]
+        )
         ctx["active_training_blocks"] = _training_blocks_context(active_blocks, d)
     except Exception:
         log.exception("Recycled context failed for %s; degrading to empty defaults", d)
