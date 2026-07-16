@@ -286,8 +286,8 @@ def fetch_skills_for(employee_ids: list[int]) -> dict[int, list[dict]]:
     return _odoo_skills.fetch_skills_for(execute, employee_ids, unwrap_m2o)
 
 
-def fetch_spanish_speaker_ids() -> set[int]:
-    return _odoo_skills.fetch_spanish_speaker_ids(execute, unwrap_m2o)
+def fetch_spanish_skill_level_ids() -> dict[int, int]:
+    return _odoo_skills.fetch_spanish_skill_level_ids(execute, unwrap_m2o)
 
 
 # ---------- Kiosk attendance writes (Phase 0 pilot) ----------

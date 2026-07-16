@@ -34,7 +34,9 @@ from .routes import (
     goat_watch,
     new_leaderboard,
     recycling_leaderboard,
+    saturday_recruiting,
     timeclock,
+    timeclock_saturday,
     timeclock_time_off,
     late_report,
     missing_wc,
@@ -320,6 +322,12 @@ async def _tick_automated_skills():
     await asyncio.to_thread(automated_skills.run_daily_if_due, datetime.now(UTC))
 
 
+async def _tick_saturday_recruiting():
+    """Close Saturday recruiting windows whose persisted deadline has passed."""
+    from . import saturday_recruiting_store
+    await asyncio.to_thread(saturday_recruiting_store.close_due, datetime.now(UTC))
+
+
 # (name, tick coroutine, interval seconds). `name` is used only in the
 # "warmer tick failed" log line. Intervals are unchanged from the original
 # per-loop functions this registry replaced.
@@ -344,6 +352,7 @@ _WARMERS = [
     ("time-off local backfill", _tick_time_off_backfill, 3600),
     ("page-usage flush", _tick_page_usage, 60),
     ("automated skills", _tick_automated_skills, 300),
+    ("Saturday recruiting", _tick_saturday_recruiting, 60),
 ]
 
 
@@ -522,6 +531,7 @@ app.include_router(recycling_leaderboard.router)
 app.include_router(new_leaderboard.router)
 app.include_router(tv_displays.router)
 app.include_router(staffing.router)
+app.include_router(saturday_recruiting.router)
 app.include_router(rotations.router)
 app.include_router(late_report.router)
 app.include_router(missing_wc.router)
@@ -543,6 +553,7 @@ app.include_router(feedback.router)
 app.include_router(admin.router)
 app.include_router(goat_watch.router)
 app.include_router(timeclock.router)
+app.include_router(timeclock_saturday.router)
 app.include_router(timeclock_time_off.router)
 
 

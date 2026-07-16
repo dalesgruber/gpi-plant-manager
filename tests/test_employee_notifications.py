@@ -49,6 +49,17 @@ def test_create_inserts_with_on_conflict_do_nothing(fake_db):
     assert 7 in params and 88 in params
 
 
+def test_create_saturday_cancelled_is_idempotent(fake_db):
+    day = date(2026, 7, 25)
+
+    en.create_saturday_cancelled(5, day)
+
+    sql, params = fake_db["executes"][0]
+    assert "saturday_day" in sql
+    assert "ON CONFLICT" in sql
+    assert params[:3] == (5, "saturday_work_cancelled", day)
+
+
 def test_render_messages_distinct_per_kind():
     req = {"date_from": date(2026, 7, 1), "date_to": date(2026, 7, 1)}
     approved_title, approved_body = en._render("time_off_approved", req)
@@ -86,6 +97,7 @@ def test_list_unacknowledged_filters_by_person_and_unacked(fake_db):
     sql, params = fake_db["queries"][0]
     assert "acknowledged_at IS NULL" in sql
     assert "ORDER BY created_at" in sql
+    assert "saturday_day" in sql
     assert params == (5,)
 
 

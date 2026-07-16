@@ -37,6 +37,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # unless the render context sets bilingual=True. See timeclock_i18n.
 from . import timeclock_i18n  # noqa: E402
 templates.env.globals["t"] = timeclock_i18n.t
+templates.env.globals["td"] = timeclock_i18n.td
 
 
 # Top-nav Inbox count: templates call {{ nav_inbox_summary() }} to server-render

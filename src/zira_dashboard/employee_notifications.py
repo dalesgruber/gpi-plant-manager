@@ -99,6 +99,25 @@ def create_time_off_notification(
     )
 
 
+def create_saturday_cancelled(person_odoo_id: int, day: date) -> None:
+    """Notify a committed volunteer that their whole Saturday was cancelled.
+
+    The partial unique index on ``(person_odoo_id, saturday_day, kind)`` keeps
+    a retry of the manager cancellation endpoint from creating another kiosk
+    card for the same person and Saturday.
+    """
+    db.execute(
+        "INSERT INTO employee_notifications "
+        "(person_odoo_id, kind, saturday_day, title, body) "
+        "VALUES (%s, %s, %s, %s, %s) "
+        "ON CONFLICT (person_odoo_id, saturday_day, kind) "
+        "WHERE saturday_day IS NOT NULL DO NOTHING",
+        (person_odoo_id, "saturday_work_cancelled", day,
+         "Saturday work cancelled",
+         "Saturday work was cancelled. Do not report to work."),
+    )
+
+
 def suppress_resolution(
     person_odoo_id: int, req: dict[str, Any], kind: str,
 ) -> None:
@@ -188,7 +207,7 @@ def has_unacknowledged(person_odoo_id: int) -> bool:
 
 def list_unacknowledged(person_odoo_id: int) -> list[dict]:
     return db.query(
-        "SELECT id, kind, title, body, leave_date_from, leave_date_to, "
+        "SELECT id, kind, title, body, leave_date_from, leave_date_to, saturday_day, "
         "created_at FROM employee_notifications "
         "WHERE person_odoo_id = %s AND acknowledged_at IS NULL "
         "ORDER BY created_at",

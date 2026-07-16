@@ -1,24 +1,27 @@
-"""Kiosk English→Spanish translation for bilingual employees.
+"""Kiosk English→Spanish translation for personalized Timeclock screens.
 
-Employees with an Odoo Spanish (Languages) skill see Spanish stacked under
-English on every screen after they pick their name. One glossary, one
-helper. `t()` is registered as a Jinja global in deps.py; templates call
-`{{ t("Clock Out") }}` (optionally with format kwargs, e.g.
-`{{ t("Since {time}", time=check_in_display) }}`).
+Employees with an exact Odoo Spanish (Languages) level of 3 see Spanish
+stacked above smaller English after they pick their name. Everyone else sees
+English only. One glossary, one mode helper, one rendering helper. `t()` is
+registered as a Jinja global in deps.py; templates call `{{ t("Clock Out") }}`
+(optionally with format kwargs, e.g. `{{ t("Since {time}",
+time=check_in_display) }}`).
 
-Register format: when the render context flag `bilingual` is False (the
-default), `t()` returns plain English; when True, it returns stacked
-`<span class="k-en">…</span><span class="k-es">…</span>` markup. An
-unknown English string falls back to English (never blank), so a missing
-glossary entry degrades gracefully.
+An unknown English string always falls back to English (never blank), so a
+missing glossary entry degrades gracefully.
 
 Latin-American / Mexican shop-floor register. Edit a value here to fix any
 wording — one line, one place.
 """
 from __future__ import annotations
 
+from datetime import date, datetime
+from typing import Literal
+
 from jinja2 import pass_context
 from markupsafe import Markup, escape
+
+from .shift_config import SITE_TZ
 
 # English UI string -> Spanish. Keys must match the template literals exactly.
 TRANSLATIONS: dict[str, str] = {
@@ -59,6 +62,9 @@ TRANSLATIONS: dict[str, str] = {
     "Your approved time off for {span} was cancelled. ⚠️ See a supervisor if you have questions.":
         "Tu tiempo libre aprobado del {span} fue cancelado. ⚠️ "
         "Habla con un supervisor si tienes preguntas.",
+    "Saturday work cancelled": "Trabajo del sábado cancelado",
+    "Saturday work was cancelled. Do not report to work.":
+        "El trabajo del sábado fue cancelado. No te presentes a trabajar.",
     # --- clock-out day-before reminder ---
     "Time off reminder": "Recordatorio de tiempo libre",
     "Heads up — you have approved time off {day}. Enjoy!":
@@ -75,6 +81,12 @@ TRANSLATIONS: dict[str, str] = {
         "Atención — {day}, estás libre de {hf} a {ht} (aprobado).",
     "Heads up — {day}, you have partial time off (approved).":
         "Atención — {day}, tienes tiempo libre parcial (aprobado).",
+    "Saturday work reminder": "Recordatorio de trabajo del sábado",
+    "You are scheduled for {day}.": "Estás programado para {day}.",
+    "Scheduled hours: {hours}": "Horario programado: {hours}",
+    "Work area: {work_center}": "Área de trabajo: {work_center}",
+    "Work area: check with your supervisor.":
+        "Área de trabajo: consulta con tu supervisor.",
     # --- time off: landing ---
     "Time Off — {name}": "Tiempo libre — {name}",
     "Request Time Off": "Solicitar tiempo libre",
@@ -147,7 +159,43 @@ TRANSLATIONS: dict[str, str] = {
     "Request Submitted": "Solicitud enviada",
     "Your time-off request from {start} to {end} is pending approval.":
         "Tu solicitud de tiempo libre del {start} al {end} está pendiente de aprobación.",
+    # --- optional Saturday work ---
+    "Saturday Work Available": "Trabajo disponible el sábado",
+    "Can you work Saturday, {date}?": "¿Puedes trabajar el sábado {date}?",
+    "Respond by {deadline}.": "Responde antes de {deadline}.",
+    "Openings may fill before the deadline.": "Los lugares pueden llenarse antes de la fecha límite.",
+    "Yes": "Sí", "No": "No", "Decide later": "Decidir después",
+    "I can work only part of the shift": "Solo puedo trabajar parte del turno",
+    "Confirm your commitment": "Confirma tu compromiso",
+    "By confirming, you commit to work Saturday from {hours}.": "Al confirmar, te comprometes a trabajar el sábado de {hours}.",
+    "You may cancel until {deadline}.": "Puedes cancelar hasta {deadline}.",
+    "After that, contact a manager.": "Después de esa hora, habla con un gerente.",
+    "Your Saturday commitment": "Tu compromiso del sábado",
+    "Cancel Saturday commitment": "Cancelar compromiso del sábado",
+    "Contact a manager to make a change.": "Habla con un gerente para hacer un cambio.",
+    "This is a firm commitment.": "Este es un compromiso firme.",
+    "Start": "Inicio",
+    "End": "Fin",
+    "Availability must use 30-minute increments and stay within the Saturday shift.":
+        "La disponibilidad debe usar incrementos de 30 minutos y mantenerse dentro del turno del sábado.",
+    "That opening was just filled. You have not been scheduled.":
+        "Ese lugar se acaba de llenar. No has sido programado.",
 }
+
+LanguageMode = Literal["en", "es_primary"]
+
+
+def language_mode_for_person(person: dict | None) -> LanguageMode:
+    """Return the personalized Timeclock language mode for one employee."""
+    level = person.get("spanish_level") if person else None
+    if type(level) is int and level == 3:
+        return "es_primary"
+    return "en"
+
+
+def context_for_person(person: dict | None) -> dict[str, LanguageMode]:
+    """Return the template context needed for personalized language output."""
+    return {"timeclock_language": language_mode_for_person(person)}
 
 
 def _fill(template: str, kwargs: dict) -> Markup:
@@ -158,19 +206,55 @@ def _fill(template: str, kwargs: dict) -> Markup:
     return safe.format(**{k: escape(v) for k, v in kwargs.items()})
 
 
+_SPANISH_WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+_SPANISH_MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+
+def spanish_date_label(value: date | datetime) -> str:
+    return f"{_SPANISH_WEEKDAYS[value.weekday()]}, {value.day} de {_SPANISH_MONTHS[value.month - 1]}"
+
+
+def spanish_deadline_label(value: datetime) -> str:
+    """Format a database deadline in the plant's local timezone.
+
+    PostgreSQL TIMESTAMPTZ values arrive timezone-aware (normally UTC), while
+    employee-facing Saturday deadlines are always communicated in plant time.
+    """
+    value = value.astimezone(SITE_TZ)
+    clock = value.strftime("%I:%M %p").lstrip("0")
+    return f"{spanish_date_label(value)} a las {clock}"
+
+
+@pass_context
+def td(ctx, text: str, *, es: dict | None = None, en: dict | None = None) -> str | Markup:
+    """Translate text whose interpolated date/value also differs by language."""
+    english = _fill(text, en or {})
+    if ctx.get("timeclock_language", "en") != "es_primary":
+        return english
+    spanish = _fill(TRANSLATIONS.get(text, text), es if es is not None else (en or {}))
+    return Markup(
+        '<span class="k-bi k-bi-es-primary"><span class="k-es k-primary">{}</span>'
+        '<span class="k-en k-secondary">{}</span></span>'
+    ).format(spanish, english)
+
+
 @pass_context
 def t(ctx, text: str, **kwargs) -> str | Markup:
-    """Translate a UI string for the current render. English-only unless the
-    context flag `bilingual` is True; then English + Spanish stacked. Unknown
-    strings fall back to English."""
+    """Translate a UI string for the current render.
+
+    Spanish-primary output is available only for the explicit
+    ``timeclock_language`` context value. Unknown strings fall back to English.
+    """
     english = _fill(text, kwargs)
-    if not ctx.get("bilingual"):
+    if ctx.get("timeclock_language", "en") != "es_primary":
         return english
     spanish_tmpl = TRANSLATIONS.get(text)
     if not spanish_tmpl:
         return english  # graceful fallback — never blank
     spanish = _fill(spanish_tmpl, kwargs)
     return Markup(
-        '<span class="k-bi"><span class="k-en">{}</span>'
-        '<span class="k-es">{}</span></span>'
-    ).format(english, spanish)
+        '<span class="k-bi k-bi-es-primary">'
+        '<span class="k-es k-primary">{}</span>'
+        '<span class="k-en k-secondary">{}</span>'
+        '</span>'
+    ).format(spanish, english)

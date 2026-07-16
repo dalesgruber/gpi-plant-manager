@@ -1,13 +1,14 @@
 {% extends "timeclock_base.html" %}
 {% block title %}Clock In / Out{% endblock %}
 {% block content %}
-<div class="k-header">
+<div class="k-header k-header-home">
   {# Everyone shares this screen, so both languages always show (the
      per-person `bilingual` flag only applies after a name is picked). #}
-  <span>Tap your name to clock in or out
-    <span style="display:block;font-size:0.72em;font-weight:500;opacity:0.75">Toca tu nombre para marcar entrada o salida</span>
+  <span class="k-header-prompt">Tap your name to clock in or out
+    <span class="k-es" style="display:block;font-size:0.72em;font-weight:500;opacity:0.75">Toca tu nombre para marcar entrada o salida</span>
   </span>
-  <div style="display: flex; align-items: center; gap: 1rem;">
+  {% if saturday_banner %}<div class="saturday-home-banner" role="status"><strong>Saturday Work Available</strong><span class="k-es">Trabajo disponible el sábado</span><small>Respond by {{ saturday_banner.deadline_label }} · Openings may fill</small></div>{% else %}<span></span>{% endif %}
+  <div class="k-header-actions">
     {# Who's Out shortcut — opens the public calendar glance (10s idle-return). #}
     <a href="/timeclock/whos-out" class="k-icon-btn" aria-label="Who's Out" title="Who's Out">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"

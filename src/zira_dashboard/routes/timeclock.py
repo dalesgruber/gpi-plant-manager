@@ -53,14 +53,22 @@ from datetime import datetime, UTC
 from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import db, timeclock_sync, shift_config, staffing, attendance_state
-from .. import employee_notifications, time_off_reminder
+from .. import (
+    attendance_state,
+    db,
+    shift_config,
+    staffing,
+    saturday_recruiting_store,
+    timeclock_i18n,
+    timeclock_sync,
+)
+from .. import employee_notifications, saturday_work_reminder, time_off_reminder
 # Not called directly here, but the state-reconciliation tests patch
 # timeclock.live_cache.read_open_attendance through this module — keep it
 # importable as part of the module surface.
 from .. import live_cache  # noqa: F401
 from ..deps import templates
-from ..plant_day import today as plant_today
+from ..plant_day import now as plant_now, today as plant_today
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
@@ -162,7 +170,8 @@ def _verify_token(token: str) -> int | None:
 
 def _person_by_id(person_id: int) -> dict | None:
     rows = db.query(
-        "SELECT id, name, odoo_id, wage_type, spanish_speaker FROM people "
+        "SELECT id, name, odoo_id, wage_type, spanish_speaker, spanish_level "
+        "FROM people "
         "WHERE id = %s AND active = TRUE",
         (person_id,),
     )
@@ -405,6 +414,46 @@ def _expired_redirect(request: Request) -> RedirectResponse:
     return RedirectResponse(url="/timeclock?expired=1", status_code=303)
 
 
+def _saturday_banner_context() -> dict | None:
+    """Best-effort shared-home recruiting notice; never delay the kiosk."""
+    from .. import saturday_recruiting as sr
+
+    try:
+        banner = saturday_recruiting_store.home_banner(plant_now())
+    except Exception:
+        _log.exception("Saturday home banner lookup failed")
+        return None
+    if banner is None:
+        return None
+    return {
+        "day": banner.day.isoformat(),
+        "deadline_label": sr.format_deadline(banner.response_deadline),
+        "remaining_count": banner.remaining_count,
+    }
+
+
+def _saturday_commitment_context(person_id: int) -> dict | None:
+    """Best-effort commitment card data for an identified employee."""
+    from .. import saturday_recruiting as sr
+
+    try:
+        status = saturday_recruiting_store.commitment_for_person(person_id, plant_now())
+    except Exception:
+        _log.exception("Saturday commitment lookup failed for person %s", person_id)
+        return None
+    if status is None:
+        return None
+    return {
+        "day": status.day.isoformat(),
+        "day_label": f"{status.day.strftime('%A, %B')} {status.day.day}",
+        "day_label_es": timeclock_i18n.spanish_date_label(status.day),
+        "hours": sr.format_time_range(status.availability_start, status.availability_end),
+        "deadline_label": sr.format_deadline(status.response_deadline),
+        "deadline_label_es": timeclock_i18n.spanish_deadline_label(status.response_deadline),
+        "can_employee_cancel": status.can_employee_cancel,
+    }
+
+
 # ---------- routes ----------
 
 @router.get("/timeclock", response_class=HTMLResponse)
@@ -420,7 +469,8 @@ def timeclock_home(request: Request, expired: int = Query(default=0)):
     )
     return templates.TemplateResponse(
         request, "timeclock_home.html",
-        {"people": rows, "session_expired": bool(expired)},
+        {"people": rows, "session_expired": bool(expired),
+         "saturday_banner": _saturday_banner_context()},
     )
 
 
@@ -444,6 +494,17 @@ def kiosk_start(person_id: int):
     salaried = _time_off_redirect_if_salaried(p, person_id)
     if salaried:
         return salaried
+    # Recruiting is intentionally after notifications and salaried routing:
+    # neither can be bypassed merely by accepting an optional Saturday offer.
+    try:
+        offer = saturday_recruiting_store.offer_for_person(person_id, plant_now())
+    except Exception:
+        _log.exception("Saturday offer lookup failed for person %s", person_id)
+        offer = None
+    if offer is not None:
+        return RedirectResponse(
+            url=f"/timeclock/saturday/{_mint_token(person_id)}", status_code=303
+        )
     token = _mint_token(person_id)
     return RedirectResponse(
         url=f"/timeclock/dashboard/{token}", status_code=303
@@ -516,7 +577,8 @@ def timeclock_dashboard(request: Request, token: str):
             "sync_warning": sync_warning,
             "time_off_enabled": time_off_on,
             "pending_time_off_count": pending_time_off,
-            "bilingual": bool(p.get("spanish_speaker")),
+            "saturday_commitment": _saturday_commitment_context(person_id),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -538,7 +600,7 @@ def timeclock_notifications(request: Request, token: str):
             url=f"/timeclock/dashboard/{_mint_token(person_id)}",
             status_code=303)
     # The template renders each card's text via t() (keyed on kind) so it
-    # localizes for bilingual employees; it needs the formatted date span.
+    # localizes for Spanish-primary employees; it needs the formatted date span.
     for n in notes:
         n["span"] = employee_notifications.span_label(n)
     return templates.TemplateResponse(
@@ -548,7 +610,7 @@ def timeclock_notifications(request: Request, token: str):
             "person": p,
             "token": _mint_token(person_id),
             "notifications": notes,
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -598,7 +660,7 @@ def timeclock_pick_wc(
             "purpose": purpose,
             "scheduled": scheduled,
             "work_centers": _wc_list(),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -636,7 +698,7 @@ def kiosk_clock_in(
             "person": p,
             "message": f"Clocked in to {wc_name}",
             "time": _fmt_time(rounded_at),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
 
@@ -670,12 +732,21 @@ def kiosk_clock_out(
     # ~30s idle timer is still the backstop). Never block the clock-out on a
     # reminder lookup failure.
     time_off_reminder_card = None
+    saturday_reminder_card = None
     if employee_notifications.notifications_enabled():
         try:
             time_off_reminder_card = time_off_reminder.reminder_for_person(
                 odoo_id, plant_today())
         except Exception:
             _log.exception("time-off reminder lookup failed for %s", odoo_id)
+    try:
+        saturday_reminder_card = saturday_work_reminder.claim_for_person(
+            person_id, plant_today(), plant_now())
+    except Exception:
+        # The punch is already saved; this convenience reminder must never
+        # turn a successful clock-out into a kiosk error. This is independent
+        # of the time-off notification kill switch.
+        _log.exception("Saturday reminder claim failed for %s", person_id)
     return templates.TemplateResponse(
         request,
         "timeclock_success.html",
@@ -683,8 +754,9 @@ def kiosk_clock_out(
             "person": p,
             "message": "Clocked out",
             "time": _fmt_time(rounded_at),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
             "time_off_reminder": time_off_reminder_card,
+            "saturday_work_reminder": saturday_reminder_card,
         },
     )
 
@@ -719,6 +791,6 @@ def kiosk_transfer(
             "person": p,
             "message": f"Transferred to {new_wc_name}",
             "time": _fmt_time(in_rounded),
-            "bilingual": bool(p.get("spanish_speaker")),
+            **timeclock_i18n.context_for_person(p),
         },
     )
