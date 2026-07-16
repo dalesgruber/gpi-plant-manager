@@ -225,6 +225,53 @@ def get(day: date) -> RecruitmentBundle | None:
         return _load_bundle(cur, day)
 
 
+def serialize_bundle(bundle: RecruitmentBundle) -> dict:
+    """Adapt persisted recruiting state to the manager API's stable JSON shape."""
+    active = [item for item in bundle.commitments if item.status == "committed"]
+    coverage = sr.match_commitments(
+        bundle.openings,
+        [sr.Commitment(item.person_id, item.eligible_wc_ids) for item in active],
+    )
+    filled = coverage.filled_by_wc if coverage is not None else {}
+    return {
+        "recruitment": {
+            "day": bundle.recruitment.day.isoformat(),
+            "status": bundle.recruitment.status,
+            "shift_start": bundle.recruitment.shift_start.isoformat(timespec="minutes"),
+            "shift_end": bundle.recruitment.shift_end.isoformat(timespec="minutes"),
+            "response_deadline": bundle.recruitment.response_deadline.isoformat(),
+        },
+        "coverage": {
+            "total": len(active),
+            "requested": sum(item.requested_count for item in bundle.openings),
+            "openings": [
+                {
+                    "wc_id": item.wc_id,
+                    "wc_name": item.wc_name,
+                    "filled": filled.get(item.wc_id, 0),
+                    "requested": item.requested_count,
+                }
+                for item in bundle.openings
+            ],
+        },
+        "commitments": [
+            {
+                "person_id": item.person_id,
+                "person_name": item.person_name,
+                "availability_start": (
+                    item.availability_start.isoformat(timespec="minutes")
+                    if item.availability_start else None
+                ),
+                "availability_end": (
+                    item.availability_end.isoformat(timespec="minutes")
+                    if item.availability_end else None
+                ),
+            }
+            for item in active
+        ],
+    }
+
+
 def available_positions() -> tuple[AvailablePosition, ...]:
     """Return locally identified work centers that have required skills."""
     from . import db
@@ -573,6 +620,39 @@ def cancel_by_manager(
     with db.cursor() as cur:
         _lock_recruitment(cur, day)
         return _cancel(cur, day, person_id, now, actor, reason.strip())
+
+
+def cancel_recruitment(
+    day: date, actor: str | None, now: datetime
+) -> tuple[StoredCommitment, ...]:
+    """Cancel a whole Saturday and clear its live schedule atomically.
+
+    The committed people are retained as notification targets.  Repeating the
+    operation intentionally returns the same targets without touching the
+    original cancellation audit values.
+    """
+    from . import db
+
+    with db.cursor() as cur:
+        recruitment = _lock_recruitment(cur, day)
+        bundle = _load_bundle(cur, day)
+        assert bundle is not None
+        committed = tuple(item for item in bundle.commitments if item.status == "committed")
+        if recruitment.status == "cancelled":
+            return committed
+        cur.execute(
+            "UPDATE saturday_recruitments SET status = 'cancelled', "
+            "cancelled_by = %s, cancelled_at = %s, updated_at = %s "
+            "WHERE day = %s AND status <> 'cancelled'",
+            (actor, now, now, day),
+        )
+        cur.execute(
+            "UPDATE schedules SET published = FALSE, published_snapshot = NULL, "
+            "assignment_sources = '{}'::jsonb, updated_at = %s WHERE day = %s",
+            (now, day),
+        )
+        cur.execute("DELETE FROM schedule_assignments WHERE day = %s", (day,))
+        return committed
 
 
 def activate(

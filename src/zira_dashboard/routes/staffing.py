@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, saturday_recruiting as sr, saturday_recruiting_store, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -954,6 +954,51 @@ def staffing_page(
     hours_source = shift_config.scheduler_hours_source(d, sched.custom_hours is not None)
     eff_hours_label = f"{eff_start.strftime('%H:%M')}–{eff_end.strftime('%H:%M')}"
 
+    saturday_bundle = None
+    saturday_positions = []
+    saturday_coverage = None
+    saturday_commitments = []
+    saturday_deadline = None
+    if d.weekday() == 5:
+        try:
+            saturday_bundle = saturday_recruiting_store.get(d)
+            saturday_positions = saturday_recruiting_store.available_positions()
+            saturday_deadline = (
+                saturday_bundle.recruitment.response_deadline
+                if saturday_bundle else sr.response_deadline(
+                    d,
+                    schedule_store.current().work_weekdays,
+                    shift_config.configured_shift_start_for,
+                )
+            )
+            saturday_payload = (
+                saturday_recruiting_store.serialize_bundle(saturday_bundle)
+                if saturday_bundle else None
+            )
+            saturday_coverage = saturday_payload["coverage"] if saturday_payload else None
+            saturday_commitments = saturday_payload["commitments"] if saturday_payload else []
+        except Exception:
+            log.exception("Saturday recruiting context failed for %s", d)
+
+    saturday_context = {
+        "day_is_saturday": d.weekday() == 5,
+        "saturday_recruiting": saturday_bundle.recruitment if saturday_bundle else None,
+        "saturday_positions": saturday_positions,
+        "saturday_coverage": saturday_coverage,
+        "saturday_commitments": saturday_commitments,
+        "saturday_shift_start": (
+            saturday_bundle.recruitment.shift_start.strftime("%H:%M")
+            if saturday_bundle else eff_start.strftime("%H:%M")
+        ),
+        "saturday_shift_end": (
+            saturday_bundle.recruitment.shift_end.strftime("%H:%M")
+            if saturday_bundle else eff_end.strftime("%H:%M")
+        ),
+        "saturday_deadline_label": (
+            sr.format_deadline(saturday_deadline) if saturday_deadline else ""
+        ),
+    }
+
     # Forklift demand advisor (read-only; never blocks scheduling).
     try:
         from .. import app_settings, forklift_advisor, forklift_settings
@@ -1008,6 +1053,7 @@ def staffing_page(
             "staffing.html",
             {
                 "active": "plant",
+                **saturday_context,
                 **recycled_ctx,
                 "rotation_mode_help": _rotation_mode_help(
                     recycled_ctx["recycled_rotation_mode"]
