@@ -352,6 +352,7 @@ def test_work_center_row_click_toggles_only_noninteractive_row_space():
     assert "document.addEventListener('click', event => {" in js
     assert "const row = event.target.closest('tr[data-loc]');" in js
     assert "if (!row || isRowToggleInteractive(event.target) || savingAutoCenters) return;" in js
+    assert "if (__viewingPosted || (__isPublished && !__unlocked)) return;" in js
     assert "const cb = row.querySelector('.wc-auto-cb');" in js
     assert "cb.checked = !cb.checked;" in js
     assert "cb.dispatchEvent(new Event('change', { bubbles: true }));" in js

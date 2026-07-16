@@ -1694,6 +1694,7 @@
     document.addEventListener('click', event => {
       const row = event.target.closest('tr[data-loc]');
       if (!row || isRowToggleInteractive(event.target) || savingAutoCenters) return;
+      if (__viewingPosted || (__isPublished && !__unlocked)) return;
       const cb = row.querySelector('.wc-auto-cb');
       if (!cb || cb.disabled) return;
       cb.checked = !cb.checked;
