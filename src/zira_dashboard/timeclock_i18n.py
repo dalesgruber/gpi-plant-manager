@@ -147,6 +147,20 @@ TRANSLATIONS: dict[str, str] = {
     "Request Submitted": "Solicitud enviada",
     "Your time-off request from {start} to {end} is pending approval.":
         "Tu solicitud de tiempo libre del {start} al {end} está pendiente de aprobación.",
+    # --- optional Saturday work ---
+    "Saturday Work Available": "Trabajo disponible el sábado",
+    "Can you work Saturday, {date}?": "¿Puedes trabajar el sábado {date}?",
+    "Respond by {deadline}.": "Responde antes de {deadline}.",
+    "Openings may fill before the deadline.": "Los lugares pueden llenarse antes de la fecha límite.",
+    "Yes": "Sí", "No": "No", "Decide later": "Decidir después",
+    "I can work only part of the shift": "Solo puedo trabajar parte del turno",
+    "Confirm your commitment": "Confirma tu compromiso",
+    "By confirming, you commit to work Saturday from {hours}.": "Al confirmar, te comprometes a trabajar el sábado de {hours}.",
+    "You may cancel until {deadline}.": "Puedes cancelar hasta {deadline}.",
+    "After that, contact a manager.": "Después de esa hora, habla con un gerente.",
+    "Your Saturday commitment": "Tu compromiso del sábado",
+    "Cancel Saturday commitment": "Cancelar compromiso del sábado",
+    "Contact a manager to make a change.": "Habla con un gerente para hacer un cambio.",
 }
 
 LanguageMode = Literal["en", "es_primary"]

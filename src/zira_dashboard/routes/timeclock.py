@@ -58,6 +58,7 @@ from .. import (
     db,
     shift_config,
     staffing,
+    saturday_recruiting_store,
     timeclock_i18n,
     timeclock_sync,
 )
@@ -67,7 +68,7 @@ from .. import employee_notifications, time_off_reminder
 # importable as part of the module surface.
 from .. import live_cache  # noqa: F401
 from ..deps import templates
-from ..plant_day import today as plant_today
+from ..plant_day import now as plant_now, today as plant_today
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
@@ -412,6 +413,44 @@ def _expired_redirect(request: Request) -> RedirectResponse:
     return RedirectResponse(url="/timeclock?expired=1", status_code=303)
 
 
+def _saturday_banner_context() -> dict | None:
+    """Best-effort shared-home recruiting notice; never delay the kiosk."""
+    from .. import saturday_recruiting as sr
+
+    try:
+        banner = saturday_recruiting_store.home_banner(plant_now())
+    except Exception:
+        _log.exception("Saturday home banner lookup failed")
+        return None
+    if banner is None:
+        return None
+    return {
+        "day": banner.day.isoformat(),
+        "deadline_label": sr.format_deadline(banner.response_deadline),
+        "remaining_count": banner.remaining_count,
+    }
+
+
+def _saturday_commitment_context(person_id: int) -> dict | None:
+    """Best-effort commitment card data for an identified employee."""
+    from .. import saturday_recruiting as sr
+
+    try:
+        status = saturday_recruiting_store.commitment_for_person(person_id, plant_now())
+    except Exception:
+        _log.exception("Saturday commitment lookup failed for person %s", person_id)
+        return None
+    if status is None:
+        return None
+    return {
+        "day": status.day.isoformat(),
+        "day_label": f"{status.day.strftime('%A, %B')} {status.day.day}",
+        "hours": sr.format_time_range(status.availability_start, status.availability_end),
+        "deadline_label": sr.format_deadline(status.response_deadline),
+        "can_employee_cancel": status.can_employee_cancel,
+    }
+
+
 # ---------- routes ----------
 
 @router.get("/timeclock", response_class=HTMLResponse)
@@ -427,7 +466,8 @@ def timeclock_home(request: Request, expired: int = Query(default=0)):
     )
     return templates.TemplateResponse(
         request, "timeclock_home.html",
-        {"people": rows, "session_expired": bool(expired)},
+        {"people": rows, "session_expired": bool(expired),
+         "saturday_banner": _saturday_banner_context()},
     )
 
 
@@ -451,6 +491,17 @@ def kiosk_start(person_id: int):
     salaried = _time_off_redirect_if_salaried(p, person_id)
     if salaried:
         return salaried
+    # Recruiting is intentionally after notifications and salaried routing:
+    # neither can be bypassed merely by accepting an optional Saturday offer.
+    try:
+        offer = saturday_recruiting_store.offer_for_person(person_id, plant_now())
+    except Exception:
+        _log.exception("Saturday offer lookup failed for person %s", person_id)
+        offer = None
+    if offer is not None:
+        return RedirectResponse(
+            url=f"/timeclock/saturday/{_mint_token(person_id)}", status_code=303
+        )
     token = _mint_token(person_id)
     return RedirectResponse(
         url=f"/timeclock/dashboard/{token}", status_code=303
@@ -523,6 +574,7 @@ def timeclock_dashboard(request: Request, token: str):
             "sync_warning": sync_warning,
             "time_off_enabled": time_off_on,
             "pending_time_off_count": pending_time_off,
+            "saturday_commitment": _saturday_commitment_context(person_id),
             **timeclock_i18n.context_for_person(p),
         },
     )
