@@ -58,12 +58,13 @@ def test_non_saturday_activation_is_422():
 
 
 def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
-    """Scheduler activation derives openings from enabled centers, not the browser."""
+    """Scheduler activation uses the effective configured minimum, not min_ops."""
     seen = {}
     location = staffing.Location(
         "Repair 1", "Repair", "Bay", "Recycled", None, min_ops=2, max_ops=4,
     )
     monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: {"Repair 1"})
+    monkeypatch.setattr(routes.staffing_routes, "_effective_minimum", lambda _loc: 3)
     monkeypatch.setattr(routes.staffing, "LOCATIONS", (location,))
     monkeypatch.setattr(
         routes.store,
@@ -88,7 +89,7 @@ def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert seen["requested_counts"] == {REPAIR_ID: 2}
+    assert seen["requested_counts"] == {REPAIR_ID: 3}
     assert seen["shift_start"] == time(6)
     assert seen["shift_end"] == time(12)
 

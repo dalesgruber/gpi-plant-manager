@@ -115,15 +115,13 @@ async def activate_from_schedule(request: Request):
             position.wc_name: position.wc_id
             for position in store.available_positions()
         }
-        requested_counts = {
-            positions_by_name[location.name]: location.min_ops
-            for location in staffing.LOCATIONS
-            if (
-                location.name in enabled
-                and location.min_ops > 0
-                and location.name in positions_by_name
-            )
-        }
+        requested_counts = {}
+        for location in staffing.LOCATIONS:
+            if location.name not in enabled or location.name not in positions_by_name:
+                continue
+            minimum = staffing_routes._effective_minimum(location)
+            if minimum > 0:
+                requested_counts[positions_by_name[location.name]] = minimum
         if not requested_counts:
             raise HTTPException(
                 status_code=422,
