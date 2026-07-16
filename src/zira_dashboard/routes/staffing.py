@@ -917,11 +917,14 @@ def staffing_page(
         d,
         roster,
         sched.rotation_mode or "normal",
-        base_assignments=sched.assignments,
+        base_assignments=_auto_solver_base_assignments(
+            sched.assignments, enabled_auto_work_centers,
+        ),
         locked_assignments=_protected_locks(
             sched.assignment_sources,
             sched.assignments,
             allowed_centers=enabled_auto_work_centers,
+            include_saved_defaults=False,
         ),
         time_off_entries=time_off_entries,
         enabled_work_centers=enabled_auto_work_centers,

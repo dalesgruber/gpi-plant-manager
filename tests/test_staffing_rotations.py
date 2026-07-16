@@ -2047,7 +2047,16 @@ def test_enabled_auto_work_centers_use_saved_setting_without_history_query(monke
 # --------------------------------------------------------------------------- #
 
 
-def _render_staffing_page(monkeypatch, *, saved_schedule=None, day=None, smart_defaults=None):
+def _render_staffing_page(
+    monkeypatch,
+    *,
+    saved_schedule=None,
+    day=None,
+    smart_defaults=None,
+    auto_centers=None,
+    default_people=None,
+    recycled_context=None,
+):
     """Render the staffing page with all I/O stubbed, returning the captured
     template context. Mirrors the harness in test_staffing_trim_saw_defaults.
 
@@ -2065,7 +2074,11 @@ def _render_staffing_page(monkeypatch, *, saved_schedule=None, day=None, smart_d
     monkeypatch.setattr(staffing_routes._http_cache, "get_cached_response", lambda *a, **k: None)
     monkeypatch.setattr(staffing_routes._http_cache, "set_cache_headers", lambda *a, **k: None)
     monkeypatch.setattr(staffing_routes._http_cache, "store_cached_response", lambda *a, **k: None)
-    monkeypatch.setattr(staffing_routes.app_settings, "get_setting", lambda key: [])
+    monkeypatch.setattr(
+        staffing_routes.app_settings,
+        "get_setting",
+        lambda key: list(auto_centers or []),
+    )
     monkeypatch.setattr(cert_lookup, "load_person_certs", lambda: {})
     monkeypatch.setattr(staffing_mod, "load_roster", lambda: [])
     monkeypatch.setattr(
@@ -2083,12 +2096,18 @@ def _render_staffing_page(monkeypatch, *, saved_schedule=None, day=None, smart_d
     monkeypatch.setattr(staffing_routes.shift_config, "configured_shift_end_for", lambda d: time(15, 30))
     monkeypatch.setattr(staffing_routes.shift_config, "configured_breaks_for", lambda d: [])
     monkeypatch.setattr(staffing_routes.shift_config, "scheduler_hours_source", lambda d, custom: "weekday_default")
-    monkeypatch.setattr(staffing_routes.work_centers_store, "default_people", lambda loc: [])
+    monkeypatch.setattr(
+        staffing_routes.work_centers_store,
+        "default_people",
+        default_people or (lambda loc: []),
+    )
     monkeypatch.setattr(
         staffing_routes, "_smart_defaults_for_day",
         smart_defaults
         or (lambda d, roster, defaults, time_off, mode="normal", **kwargs: {k: list(v) for k, v in defaults.items()}),
     )
+    if recycled_context is not None:
+        monkeypatch.setattr(staffing_routes, "_recycled_context_for_day", recycled_context)
 
     def fake_build_staffing_bays(roster, sched, time_off_entries, publish_blocked):
         return {
@@ -2159,6 +2178,37 @@ def test_saved_staffing_day_context_hydrates_stored_mode(monkeypatch):
     )
     ctx = _render_staffing_page(monkeypatch, saved_schedule=sched)
     assert ctx["recycled_rotation_mode"] == "optimized"
+
+
+def test_staffing_context_does_not_treat_exact_default_as_duplicate_lock(monkeypatch):
+    captured = {}
+    schedule = staffing.Schedule(
+        day=TARGET_DAY,
+        assignments={"Repair 2": ["Default Green"]},
+        assignment_sources={"Repair 2": {"Default Green": "generated"}},
+    )
+
+    def fake_recycled_context(*args, **kwargs):
+        captured.update(kwargs)
+        return {
+            "recycled_rotation_mode": "normal",
+            "rotation_reasons": {},
+            "rotation_reason_codes": {},
+            "rotation_warnings": [],
+            "rotation_issues": [],
+            "active_training_blocks": [],
+        }
+
+    _render_staffing_page(
+        monkeypatch,
+        saved_schedule=schedule,
+        auto_centers={"Repair 1", "Repair 2"},
+        default_people=lambda loc: ["Default Green"] if loc.name == "Repair 1" else [],
+        recycled_context=fake_recycled_context,
+    )
+
+    assert captured["base_assignments"] == {}
+    assert captured["locked_assignments"] == {}
 
 
 def test_saved_day_hints_thread_stored_mode(monkeypatch):
