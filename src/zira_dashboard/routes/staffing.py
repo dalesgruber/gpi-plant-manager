@@ -1340,6 +1340,34 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
                     },
                     status_code=409,
                 )
+            if plant_now() < saturday_bundle.recruitment.response_deadline:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "Saturday recruiting stays open until "
+                        f"{sr.format_deadline(saturday_bundle.recruitment.response_deadline)}.",
+                    },
+                    status_code=409,
+                )
+            roster = staffing.load_roster()
+            people_by_name = {person.name: person for person in roster}
+            full_day_off_names = {
+                entry["name"]
+                for entry in _safe_time_off_entries(d)
+                if entry.get("hours") is None
+            }
+            saturday_reasons = sr.validate_publish(
+                saturday_bundle, restored_assignments, people_by_name, full_day_off_names,
+            )
+            if saturday_reasons:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "Publish blocked — Saturday commitments need attention.",
+                        "publish_block_reasons": saturday_reasons,
+                    },
+                    status_code=409,
+                )
         restored = staffing.Schedule(
             day=d,
             published=True,
@@ -1358,6 +1386,11 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
             },
         )
         staffing.save_schedule(restored)
+        if active_saturday_recruiting:
+            try:
+                saturday_recruiting_store.mark_published(d, plant_now())
+            except Exception:
+                log.exception("Could not mark restored Saturday recruiting as published for %s", d)
         _http_cache.invalidate_today_cache()
         if (request.headers.get("accept") or "").startswith("application/json"):
             return JSONResponse({"ok": True, "published": True, "discarded": True})
