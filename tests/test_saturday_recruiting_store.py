@@ -14,8 +14,10 @@ from zira_dashboard.shift_config import SITE_TZ
 
 
 SATURDAY = date(2026, 7, 25)
+NEXT_SATURDAY = date(2026, 8, 1)
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=SITE_TZ)
 DEADLINE = datetime(2026, 7, 24, 7, 0, tzinfo=SITE_TZ)
+NEXT_DEADLINE = datetime(2026, 7, 31, 7, 0, tzinfo=SITE_TZ)
 
 pytestmark = pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
 
@@ -23,14 +25,15 @@ WC_IDS = (910101, 910102, 910103)
 SKILL_IDS = (910101, 910102)
 PERSON_IDS = (910101, 910102, 910103, 910104)
 PERSON_ID = PERSON_IDS[0]
+RECRUITING_DAYS = (SATURDAY, NEXT_SATURDAY)
 
 
 @pytest.fixture(autouse=True)
 def _clean_recruiting_data():
     db.bootstrap_schema()
-    db.execute("DELETE FROM saturday_recruitments WHERE day = %s", (SATURDAY,))
-    db.execute("DELETE FROM schedule_assignments WHERE day = %s", (SATURDAY,))
-    db.execute("DELETE FROM schedules WHERE day = %s", (SATURDAY,))
+    db.execute("DELETE FROM saturday_recruitments WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
+    db.execute("DELETE FROM schedule_assignments WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
+    db.execute("DELETE FROM schedules WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
     db.execute("DELETE FROM work_center_required_skills WHERE wc_id = ANY(%s)", (list(WC_IDS),))
     db.execute("DELETE FROM person_skills WHERE person_id = ANY(%s)", (list(PERSON_IDS),))
     db.execute("DELETE FROM time_off_requests WHERE person_odoo_id = ANY(%s)", (list(PERSON_IDS),))
@@ -60,9 +63,9 @@ def _clean_recruiting_data():
         "(910104, 910104, 'Saturday Test Unqualified Person', 'hourly')"
     )
     yield
-    db.execute("DELETE FROM saturday_recruitments WHERE day = %s", (SATURDAY,))
-    db.execute("DELETE FROM schedule_assignments WHERE day = %s", (SATURDAY,))
-    db.execute("DELETE FROM schedules WHERE day = %s", (SATURDAY,))
+    db.execute("DELETE FROM saturday_recruitments WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
+    db.execute("DELETE FROM schedule_assignments WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
+    db.execute("DELETE FROM schedules WHERE day = ANY(%s)", (list(RECRUITING_DAYS),))
     db.execute("DELETE FROM work_center_required_skills WHERE wc_id = ANY(%s)", (list(WC_IDS),))
     db.execute("DELETE FROM person_skills WHERE person_id = ANY(%s)", (list(PERSON_IDS),))
     db.execute("DELETE FROM time_off_requests WHERE person_odoo_id = ANY(%s)", (list(PERSON_IDS),))
@@ -271,6 +274,27 @@ def test_decline_suppresses_future_offer_for_same_saturday():
 
     assert declined.status == "declined"
     assert store.offer_for_person(PERSON_ID, NOW) is None
+
+
+@pytest.mark.parametrize("earlier_response", ["declined", "cancelled"])
+def test_earlier_saturday_response_does_not_suppress_later_offer(earlier_response):
+    _qualify(PERSON_ID, 910101)
+    _activate(requested_counts={910101: 1})
+    _activate(
+        day=NEXT_SATURDAY,
+        response_deadline=NEXT_DEADLINE,
+        requested_counts={910101: 1},
+    )
+    if earlier_response == "declined":
+        store.decline(SATURDAY, PERSON_ID, NOW)
+    else:
+        store.commit(SATURDAY, PERSON_ID, time(6, 0), time(12, 0), NOW)
+        store.cancel_by_employee(SATURDAY, PERSON_ID, NOW + timedelta(hours=1))
+
+    offer = store.offer_for_person(PERSON_ID, NOW + timedelta(hours=2))
+
+    assert offer is not None
+    assert offer.day == NEXT_SATURDAY
 
 
 def test_later_keeps_offer_and_reserves_no_capacity():

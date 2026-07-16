@@ -387,27 +387,28 @@ def offer_for_person(person_id: int, now: datetime) -> Offer | None:
     with db.cursor() as cur:
         cur.execute(
             "SELECT day FROM saturday_recruitments "
-            "WHERE status = 'recruiting' AND response_deadline > %s ORDER BY day LIMIT 1",
+            "WHERE status = 'recruiting' AND response_deadline > %s ORDER BY day",
             (now,),
         )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        bundle = _load_bundle(cur, row["day"])
-        assert bundle is not None
-        existing = next((item for item in bundle.commitments if item.person_id == person_id), None)
-        if existing is not None and existing.status in {"declined", "committed", "cancelled"}:
-            return None
-        eligible_wc_ids = _eligible_wc_ids_for_person(cur, person_id, bundle.openings, bundle.recruitment.day)
-        if not eligible_wc_ids or _coverage_with_candidate(bundle, person_id, eligible_wc_ids) is None:
-            return None
-        return Offer(
-            bundle.recruitment.day,
-            bundle.recruitment.shift_start,
-            bundle.recruitment.shift_end,
-            bundle.recruitment.response_deadline,
-            eligible_wc_ids,
-        )
+        for row in cur.fetchall():
+            bundle = _load_bundle(cur, row["day"])
+            assert bundle is not None
+            existing = next((item for item in bundle.commitments if item.person_id == person_id), None)
+            if existing is not None and existing.status in {"declined", "committed", "cancelled"}:
+                continue
+            eligible_wc_ids = _eligible_wc_ids_for_person(
+                cur, person_id, bundle.openings, bundle.recruitment.day
+            )
+            if not eligible_wc_ids or _coverage_with_candidate(bundle, person_id, eligible_wc_ids) is None:
+                continue
+            return Offer(
+                bundle.recruitment.day,
+                bundle.recruitment.shift_start,
+                bundle.recruitment.shift_end,
+                bundle.recruitment.response_deadline,
+                eligible_wc_ids,
+            )
+        return None
 
 
 def home_banner(now: datetime) -> HomeBanner | None:
