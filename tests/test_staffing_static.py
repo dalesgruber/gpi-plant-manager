@@ -17,6 +17,18 @@ def _print_css():
     return Path("src/zira_dashboard/static/staffing-print.css").read_text()
 
 
+def test_staffing_schedule_uses_compact_assigned_labels_and_balanced_columns():
+    html = _template()
+    css = _style()
+
+    assert "{% macro scheduled_operator_name(name) %}" in html
+    assert "{{ scheduled_operator_name(a.name) }}" in html
+    assert 'value="{{ p.name }}"' in html
+    assert "table.sched tbody td.station { min-width: 13rem; }" in css
+    assert "table.sched thead th.sched-col    { width: 40%; }" in css
+    assert "table.sched thead th.wc-note-col  { width: 23%; }" in css
+
+
 def test_staffing_bay_cells_keep_panel_background_across_work_center_states():
     css = _style()
 

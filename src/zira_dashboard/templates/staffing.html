@@ -286,6 +286,10 @@
     </div>
     {% endif %}
 
+    {% macro scheduled_operator_name(name) %}
+      {%- set parts = name.split() -%}
+      {{- parts[0] if parts|length == 1 else parts[0] ~ ' ' ~ parts[-1][0] ~ '.' -}}
+    {%- endmacro %}
     <table class="sched">
       <thead>
         <tr>
@@ -360,7 +364,7 @@
                 <summary>
                   <span class="dd-summary-text">
                     {% if visible_assigned %}
-                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ a.name }}{{ cert_badges(a.name, person_certs) }}{{ goat_badges(a.name, goat_holders()) }}{% if saturday_availability_by_name and a.name in saturday_availability_by_name %}<span class="saturday-availability-badge">{{ saturday_availability_by_name[a.name] }}</span>{% endif %}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ a.name }}" title="Click to clear this partial for {{ a.name }} — they actually worked through it" aria-label="Clear partial time off for {{ a.name }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }} ✕</button>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
+                      {% for a in visible_assigned %}<span class="lvl-{{ a.level }}{% if late_names_set and a.name in late_names_set %} att-late-flag{% endif %}"{% if late_names_set and a.name in late_names_set %} title="Not clocked in — more than 15 min past shift start"{% endif %}>{% if late_names_set and a.name in late_names_set %}<span class="att-late-icon" aria-hidden="true">⚠</span>{% endif %}{{ scheduled_operator_name(a.name) }}{{ cert_badges(a.name, person_certs) }}{{ goat_badges(a.name, goat_holders()) }}{% if saturday_availability_by_name and a.name in saturday_availability_by_name %}<span class="saturday-availability-badge">{{ saturday_availability_by_name[a.name] }}</span>{% endif %}{% if partial_hours_by_name and a.name in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ a.name }}" title="Click to clear this partial for {{ a.name }} — they actually worked through it" aria-label="Clear partial time off for {{ a.name }}">{{ partial_range_by_name.get(a.name) or (partial_hours_by_name[a.name] ~ 'h') }} ✕</button>{% endif %}</span>{% if not loop.last or _wc_attribs_for_row %}<span class="sep">, </span>{% endif %}{% endfor %}
                     {% endif %}
                     {% if _wc_attribs_for_row %}
                       {% for attrib in _wc_attribs_for_row %}<span class="lvl-attribution" title="Worked {{ attrib.first_label }}–{{ attrib.last_label }} (click ✕ to remove)">{{ attrib.person_name }}{{ cert_badges(attrib.person_name, person_certs) }}{{ goat_badges(attrib.person_name, goat_holders()) }}{% if attrib.time_range %}<span class="attribution-range">{{ attrib.time_range }}</span>{% endif %}<button type="button" class="attribution-clear" data-attribution-id="{{ attrib.id }}" data-name="{{ attrib.person_name }}" title="Remove this attribution — Jose Luis actually didn't work here" aria-label="Remove attribution for {{ attrib.person_name }}">✕</button></span>{% if not loop.last %}<span class="sep">, </span>{% endif %}{% endfor %}
@@ -486,9 +490,9 @@
   window.PARTIAL_RANGE_BY_NAME = {{ partial_range_by_name|tojson }};
   window.PARTIAL_HOURS_BY_NAME = {{ partial_hours_by_name|tojson }};
   window.TIME_OFF_NAMES = {{ time_off_names|tojson }};
-  window.SATURDAY_RECRUITING = {{ is_saturday_recruiting|tojson }};
-  window.SATURDAY_COMMITTED_NAMES = {{ saturday_availability_by_name.keys()|list|tojson }};
-  window.SATURDAY_AVAILABILITY_BY_NAME = {{ saturday_availability_by_name|tojson }};
+  window.SATURDAY_RECRUITING = {{ is_saturday_recruiting|default(false, true)|tojson }};
+  window.SATURDAY_COMMITTED_NAMES = {{ (saturday_availability_by_name|default({}, true)).keys()|list|tojson }};
+  window.SATURDAY_AVAILABILITY_BY_NAME = {{ saturday_availability_by_name|default({}, true)|tojson }};
   window.FORKLIFT_LIVE_MODEL = {{ forklift_live_model|tojson }};
   window.TRAINING_PROTOCOLS = {{ active_training_blocks|tojson }};
   window.TRAINING_PROTOCOL_PEOPLE = {{ training_protocol_people|tojson }};
