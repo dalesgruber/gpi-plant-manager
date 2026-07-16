@@ -358,6 +358,19 @@ def test_work_center_row_click_toggles_only_noninteractive_row_space():
     assert "cb.dispatchEvent(new Event('change', { bubbles: true }));" in js
 
 
+def test_auto_center_shared_save_restores_checkbox_when_schedule_is_locked():
+    js = _script()
+    save_auto = js.split("async function saveAutoCenters(changedCb) {", 1)[1].split(
+        "// Reconcile every enabled Auto picker's checkboxes", 1
+    )[0]
+
+    lock_guard = "if (__viewingPosted || (__isPublished && !__unlocked)) {"
+    assert lock_guard in save_auto
+    guard_body = save_auto.split(lock_guard, 1)[1].split("    }", 1)[0]
+    assert "changedCb.checked = !changedCb.checked;" in guard_body
+    assert guard_body.index("changedCb.checked = !changedCb.checked;") < guard_body.index("return;")
+
+
 def test_clear_schedule_remains_a_distinct_local_autosave_action():
     html = _template()
     js = _script()

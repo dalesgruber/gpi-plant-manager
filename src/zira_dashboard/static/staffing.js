@@ -1556,7 +1556,10 @@
     }
 
     async function saveAutoCenters(changedCb) {
-      if (__viewingPosted) return;
+      if (__viewingPosted || (__isPublished && !__unlocked)) {
+        changedCb.checked = !changedCb.checked;
+        return;
+      }
       if (savingAutoCenters) return;
       const requestedWorkCenters = selectedAutoCenters();
       // Browser checkbox changes are optimistic by default.  Put this one
