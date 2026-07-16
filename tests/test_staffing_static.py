@@ -196,25 +196,34 @@ def test_posted_auto_toggle_reloads_draft_and_delivery_owns_revision_window():
     save_auto = js.split("async function saveAutoCenters() {", 1)[1].split(
         "// Ordinary rebuilds", 1,
     )[0]
-    delivery = js.split("let localDeliveryInFlight = false;", 1)[1].split(
+    delivery = js.split("let localDeliveryInFlight = 0;", 1)[1].split(
         "// ---------- Rotation goal", 1,
     )[0]
     live_poll = js.split("async function checkLiveRevision() {", 1)[1].split(
         "// ---------- Rotation goal", 1,
     )[0]
+    slack_delivery = js.split("async function postToSlack(btn) {", 1)[1].split(
+        "async function refreshScheduleRevision()", 1,
+    )[0]
 
     assert "if (window.SCHEDULE_PUBLISHED) {" in save_auto
     assert "window.location.reload();" in save_auto
-    assert "let localDeliveryInFlight = false;" in js
-    assert delivery.count("localDeliveryInFlight = true;") == 2
-    assert delivery.count("localDeliveryInFlight = false;") == 2
+    assert "let localDeliveryInFlight = 0;" in js
+    assert delivery.count("localDeliveryInFlight += 1;") == 2
+    assert delivery.count("localDeliveryInFlight -= 1;") == 2
     assert delivery.index("await refreshScheduleRevision();") < delivery.index(
-        "localDeliveryInFlight = false;"
+        "localDeliveryInFlight -= 1;"
     )
     assert delivery.rindex("await refreshScheduleRevision();") < delivery.rindex(
-        "localDeliveryInFlight = false;"
+        "localDeliveryInFlight -= 1;"
     )
-    assert "if (localDeliveryInFlight) return;" in live_poll
+    assert "let slackDeliveryInFlight = false;" in slack_delivery
+    assert slack_delivery.index("localDeliveryInFlight += 1;") < slack_delivery.index(
+        "slackDeliveryInFlight = true;"
+    )
+    assert "if (slackDeliveryInFlight) localDeliveryInFlight -= 1;" in slack_delivery
+    assert "if (localDeliveryInFlight > 0) return;" in live_poll
+    assert "|| localDeliveryInFlight > 0) return;" in live_poll
 
 
 def test_staffing_slack_post_button_exposes_busy_state():

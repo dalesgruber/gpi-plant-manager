@@ -1116,7 +1116,7 @@
   })();
 
   let pendingPrintButton = null;
-  let localDeliveryInFlight = false;
+  let localDeliveryInFlight = 0;
 
   function printSchedule(button) {
     if (!window.SCHEDULE_POSTED_VERSION) return;
@@ -1128,7 +1128,7 @@
     const button = pendingPrintButton;
     pendingPrintButton = null;
     if (!button || !window.SCHEDULE_POSTED_VERSION) return;
-    localDeliveryInFlight = true;
+    localDeliveryInFlight += 1;
     try {
       const url = '/staffing/mark-printed?day=' + encodeURIComponent(window.SCHEDULE_DAY)
         + '&version=' + encodeURIComponent(window.SCHEDULE_POSTED_VERSION);
@@ -1145,7 +1145,7 @@
     } catch (error) {
       showToast(error.message || 'Print status was not saved', null, 'error');
     } finally {
-      localDeliveryInFlight = false;
+      localDeliveryInFlight -= 1;
     }
   });
 
@@ -1298,6 +1298,7 @@
 
   async function postToSlack(btn) {
     if (!window.SCHEDULE_POSTED_VERSION) return;
+    let slackDeliveryInFlight = false;
     const originalContent = btn.innerHTML;
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
@@ -1310,7 +1311,8 @@
         return;
       }
 
-      localDeliveryInFlight = true;
+      localDeliveryInFlight += 1;
+      slackDeliveryInFlight = true;
       const url = '/staffing/share-to-slack?day=' + encodeURIComponent(day)
         + '&version=' + encodeURIComponent(window.SCHEDULE_POSTED_VERSION);
       const r = await fetch(url, {
@@ -1327,7 +1329,7 @@
     } catch (e) {
       showToast(e.message || 'Slack post failed', null, 'error');
     } finally {
-      if (localDeliveryInFlight) localDeliveryInFlight = false;
+      if (slackDeliveryInFlight) localDeliveryInFlight -= 1;
       btn.disabled = false;
       btn.setAttribute('aria-busy', 'false');
       btn.innerHTML = originalContent;
@@ -1345,12 +1347,12 @@
 
   async function checkLiveRevision() {
     if (document.visibilityState !== 'visible' || !window.SCHEDULE_DAY) return;
-    if (localDeliveryInFlight) return;
+    if (localDeliveryInFlight > 0) return;
     const response = await fetch('/staffing/live?day=' + encodeURIComponent(window.SCHEDULE_DAY), {
       headers: {'Accept': 'application/json', 'Cache-Control': 'no-cache'},
     });
     const data = await response.json();
-    if (!response.ok || !data.revision || data.revision === window.SCHEDULE_REVISION || localDeliveryInFlight) return;
+    if (!response.ok || !data.revision || data.revision === window.SCHEDULE_REVISION || localDeliveryInFlight > 0) return;
     if (window.schedulerAutosaveBusy) return;
     showToast('Schedule updated by another user — refreshed just now.');
     window.location.reload();
