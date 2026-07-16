@@ -17,6 +17,21 @@ def _person(monkeypatch):
     monkeypatch.setattr(timeclock_saturday, "_person_by_id", lambda _pid: PERSON)
 
 
+def test_person_lookup_queries_people_table(monkeypatch):
+    captured = {}
+
+    def query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [PERSON]
+
+    monkeypatch.setattr(timeclock.db, "query", query)
+
+    assert timeclock._person_by_id(1) == PERSON
+    assert "FROM people" in captured["sql"]
+    assert captured["params"] == (1,)
+
+
 def test_home_shows_bilingual_banner_with_deadline(monkeypatch):
     monkeypatch.setattr(timeclock.db, "query", lambda *_args: [])
     monkeypatch.setattr(timeclock.saturday_recruiting_store, "home_banner", lambda _now: HomeBanner(OFFER.day, OFFER.response_deadline, 1))

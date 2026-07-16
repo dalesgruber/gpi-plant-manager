@@ -21,6 +21,8 @@ from typing import Literal
 from jinja2 import pass_context
 from markupsafe import Markup, escape
 
+from .shift_config import SITE_TZ
+
 # English UI string -> Spanish. Keys must match the template literals exactly.
 TRANSLATIONS: dict[str, str] = {
     # --- navigation ---
@@ -213,6 +215,12 @@ def spanish_date_label(value: date | datetime) -> str:
 
 
 def spanish_deadline_label(value: datetime) -> str:
+    """Format a database deadline in the plant's local timezone.
+
+    PostgreSQL TIMESTAMPTZ values arrive timezone-aware (normally UTC), while
+    employee-facing Saturday deadlines are always communicated in plant time.
+    """
+    value = value.astimezone(SITE_TZ)
     clock = value.strftime("%I:%M %p").lstrip("0")
     return f"{spanish_date_label(value)} a las {clock}"
 

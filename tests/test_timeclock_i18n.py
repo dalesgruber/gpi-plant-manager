@@ -1,6 +1,8 @@
 """Kiosk t() helper: approved English and Spanish-primary render modes."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from zira_dashboard import timeclock_i18n
@@ -62,6 +64,15 @@ def test_substituted_value_is_escaped():
     out = str(_render("Since {time}", "es_primary", time="<x>"))
     assert "<x>" not in out
     assert "&lt;x&gt;" in out
+
+
+def test_spanish_deadline_label_converts_utc_to_plant_time():
+    deadline_utc = datetime(2026, 7, 24, 12, tzinfo=UTC)
+
+    assert (
+        timeclock_i18n.spanish_deadline_label(deadline_utc)
+        == "viernes, 24 de julio a las 7:00 AM"
+    )
 
 
 def test_every_translation_value_is_nonempty():
