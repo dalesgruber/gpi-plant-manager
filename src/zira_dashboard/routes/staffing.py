@@ -127,6 +127,25 @@ def _known_work_center_names() -> set[str]:
     return {loc.name for loc in staffing.LOCATIONS}
 
 
+def _saturday_response_summary(bundle) -> dict[str, list[str]]:
+    """Group live Saturday responses for the compact Scheduler status line."""
+    summary = {"yes": [], "no": [], "deciding": []}
+    if bundle is None or bundle.recruitment.status == "cancelled":
+        return summary
+    for item in bundle.commitments:
+        if item.status == "cancelled":
+            continue
+        key = (
+            "yes" if item.status == "committed"
+            else "no" if item.status == "declined"
+            else "deciding"
+        )
+        summary[key].append(item.person_name)
+    for names in summary.values():
+        names.sort(key=str.lower)
+    return summary
+
+
 def _effective_minimum(loc) -> int:
     """Read the authoritative configured minimum for a work center."""
     return work_centers_store.min_ops(loc)
@@ -1046,10 +1065,17 @@ def staffing_page(
     saturday_commitments = []
     saturday_staffing_commitments = None
     saturday_deadline = None
+    saturday_recruit_enabled_count = 0
+    saturday_response_summary = {"yes": [], "no": [], "deciding": []}
     if d.weekday() == 5:
         try:
             saturday_bundle = saturday_recruiting_store.get(d)
             saturday_positions = saturday_recruiting_store.available_positions()
+            enabled_saturday_centers = set(enabled_auto_work_centers)
+            saturday_recruit_enabled_count = sum(
+                location.name in enabled_saturday_centers
+                for location in staffing.LOCATIONS
+            )
             saturday_deadline = (
                 saturday_bundle.recruitment.response_deadline
                 if saturday_bundle else sr.response_deadline(
@@ -1064,6 +1090,7 @@ def staffing_page(
             )
             saturday_coverage = saturday_payload["coverage"] if saturday_payload else None
             saturday_commitments = saturday_payload["commitments"] if saturday_payload else []
+            saturday_response_summary = _saturday_response_summary(saturday_bundle)
             if saturday_bundle is None or saturday_bundle.recruitment.status == "cancelled":
                 saturday_staffing_commitments = {}
             else:
@@ -1083,6 +1110,8 @@ def staffing_page(
     saturday_context = {
         "day_is_saturday": d.weekday() == 5,
         "saturday_recruiting": saturday_bundle.recruitment if saturday_bundle else None,
+        "saturday_recruit_enabled_count": saturday_recruit_enabled_count,
+        "saturday_response_summary": saturday_response_summary,
         "saturday_positions": saturday_positions,
         "saturday_coverage": saturday_coverage,
         "saturday_commitments": saturday_commitments,

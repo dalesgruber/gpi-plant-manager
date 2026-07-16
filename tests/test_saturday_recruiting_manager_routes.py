@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from zira_dashboard import db, saturday_recruiting_store as store
+from zira_dashboard import db, saturday_recruiting_store as store, staffing
 from zira_dashboard import employee_notifications
 from zira_dashboard.app import app
 from zira_dashboard.routes import saturday_recruiting as routes
@@ -19,6 +19,7 @@ from zira_dashboard.shift_config import SITE_TZ
 client = TestClient(app)
 SATURDAY = date(2026, 7, 25)
 NOW = datetime(2026, 7, 20, 12, tzinfo=SITE_TZ)
+REPAIR_ID = 17
 
 
 def _bundle(status: str = "recruiting") -> store.RecruitmentBundle:
@@ -54,6 +55,54 @@ def test_non_saturday_activation_is_422():
         "requested_counts": {"17": 1},
     })
     assert response.status_code == 422
+
+
+def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
+    """Scheduler activation derives openings from enabled centers, not the browser."""
+    seen = {}
+    location = staffing.Location(
+        "Repair 1", "Repair", "Bay", "Recycled", None, min_ops=2, max_ops=4,
+    )
+    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: {"Repair 1"})
+    monkeypatch.setattr(routes.staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(
+        routes.store,
+        "available_positions",
+        lambda: (store.AvailablePosition(REPAIR_ID, "Repair 1", ("Repair",)),),
+    )
+    monkeypatch.setattr(routes.store, "activate", lambda **kw: seen.update(kw) or _bundle())
+    monkeypatch.setattr(routes.sr, "response_deadline", lambda *_args: NOW)
+    monkeypatch.setattr(
+        routes.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(routes.shift_config, "configured_shift_start_for", lambda _day: time(6))
+    monkeypatch.setattr(routes.shift_config, "configured_shift_end_for", lambda _day: time(12))
+    monkeypatch.setattr(routes, "plant_now", lambda: NOW - timedelta(days=1))
+    monkeypatch.setattr(routes.staffing_routes, "_bust_after_mutation", lambda: None)
+
+    response = client.post(
+        "/api/staffing/saturday-recruiting/activate-from-schedule",
+        json={"day": "2026-07-25"},
+    )
+
+    assert response.status_code == 200
+    assert seen["requested_counts"] == {REPAIR_ID: 2}
+    assert seen["shift_start"] == time(6)
+    assert seen["shift_end"] == time(12)
+
+
+def test_activate_from_schedule_rejects_no_enabled_centers(monkeypatch):
+    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: set())
+
+    response = client.post(
+        "/api/staffing/saturday-recruiting/activate-from-schedule",
+        json={"day": "2026-07-25"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Turn on at least one work center before recruiting."
 
 
 def test_openings_can_add_a_new_requested_work_center_while_recruiting(monkeypatch):

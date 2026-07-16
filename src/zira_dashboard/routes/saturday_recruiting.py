@@ -88,6 +88,72 @@ async def activate(request: Request):
     return JSONResponse({"ok": True, "recruitment": store.serialize_bundle(bundle)})
 
 
+@router.post("/activate-from-schedule")
+async def activate_from_schedule(request: Request):
+    """Start Saturday recruiting from the Scheduler's enabled centers.
+
+    The browser intentionally supplies only the day.  Requested openings are
+    the configured minimum crew for each center currently turned on in the
+    Scheduler.
+    """
+    body = await _body(request)
+    try:
+        day = date.fromisoformat(str(body["day"]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="A Saturday date is required") from exc
+    if day.weekday() != 5:
+        raise HTTPException(status_code=422, detail="Saturday recruiting requires a Saturday")
+
+    try:
+        enabled = set(staffing_routes._enabled_auto_work_centers(day))
+        if not enabled:
+            raise HTTPException(
+                status_code=422,
+                detail="Turn on at least one work center before recruiting.",
+            )
+        positions_by_name = {
+            position.wc_name: position.wc_id
+            for position in store.available_positions()
+        }
+        requested_counts = {
+            positions_by_name[location.name]: location.min_ops
+            for location in staffing.LOCATIONS
+            if (
+                location.name in enabled
+                and location.min_ops > 0
+                and location.name in positions_by_name
+            )
+        }
+        if not requested_counts:
+            raise HTTPException(
+                status_code=422,
+                detail="Turn on at least one work center before recruiting.",
+            )
+        deadline = sr.response_deadline(
+            day,
+            schedule_store.current().work_weekdays,
+            shift_config.configured_shift_start_for,
+        )
+        bundle = store.activate(
+            day=day,
+            shift_start=shift_config.configured_shift_start_for(day),
+            shift_end=shift_config.configured_shift_end_for(day),
+            response_deadline=deadline,
+            requested_counts=requested_counts,
+            actor=_actor(request),
+            now=plant_now(),
+        )
+    except store.SaturdayRecruitingError as exc:
+        raise _conflict(exc) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Could not activate Saturday recruiting from schedule for %s", day)
+        raise HTTPException(status_code=500, detail="Could not update Saturday recruiting") from None
+    staffing_routes._bust_after_mutation()
+    return JSONResponse({"ok": True, "recruitment": store.serialize_bundle(bundle)})
+
+
 @router.post("/openings")
 async def openings(request: Request):
     body = await _body(request)

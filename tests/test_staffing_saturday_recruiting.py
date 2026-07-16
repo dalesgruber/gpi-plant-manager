@@ -143,6 +143,29 @@ def _repair_only_bundle(*, status="closed"):
     )
 
 
+def test_scheduler_response_summary_groups_live_responses_and_omits_cancelled():
+    bundle = recruiting_store.RecruitmentBundle(
+        recruiting_store.Recruitment(
+            SATURDAY, "recruiting", time(6), time(12),
+            datetime(2026, 7, 24, 7, tzinfo=SITE_TZ),
+        ),
+        (),
+        (
+            recruiting_store.StoredCommitment(1, 101, "zoe", "committed", time(6), time(12), frozenset()),
+            recruiting_store.StoredCommitment(2, 102, "Ana", "committed", time(6), time(12), frozenset()),
+            recruiting_store.StoredCommitment(3, 103, "Bob", "declined", None, None, frozenset()),
+            recruiting_store.StoredCommitment(4, 104, "Cara", "later", None, None, frozenset()),
+            recruiting_store.StoredCommitment(5, 105, "Drew", "cancelled", None, None, frozenset()),
+        ),
+    )
+
+    assert staffing_routes._saturday_response_summary(bundle) == {
+        "yes": ["Ana", "zoe"],
+        "no": ["Bob"],
+        "deciding": ["Cara"],
+    }
+
+
 def test_publish_requires_commitments_and_requested_coverage():
     reasons = sr.validate_publish(_bundle(), {"Repair 1": ["Ana"]}, _people(), set())
 
