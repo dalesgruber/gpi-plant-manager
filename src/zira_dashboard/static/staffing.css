@@ -464,6 +464,8 @@
   .ops-range-min { display: none; }
   tr.work-center-off { opacity: 0.58; }
   tr.work-center-off td { background: var(--panel-2); }
+  tr[data-loc][data-on="true"] td.bay,
+  tr.work-center-off td.bay { background: var(--panel-3); }
   tr.work-center-off .dept { padding: 0; color: transparent; font-size: 0; }
   tr.work-center-off .sched-cell,
   tr.work-center-off .wc-note-cell { padding: 0; }

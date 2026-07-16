@@ -17,6 +17,21 @@ def _print_css():
     return Path("src/zira_dashboard/static/staffing-print.css").read_text()
 
 
+def test_staffing_bay_cells_keep_panel_background_across_work_center_states():
+    css = _style()
+
+    active = 'tr[data-loc][data-on="true"] td { background: var(--accent-dim); }'
+    inactive = 'tr.work-center-off td { background: var(--panel-2); }'
+    bay_override = (
+        'tr[data-loc][data-on="true"] td.bay,\n'
+        '  tr.work-center-off td.bay { background: var(--panel-3); }'
+    )
+
+    assert bay_override in css
+    assert css.index(bay_override) > css.index(active)
+    assert css.index(bay_override) > css.index(inactive)
+
+
 def test_staffing_partial_time_off_controls_name_the_person():
     html = _template()
     js = _script()
