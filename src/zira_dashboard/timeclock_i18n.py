@@ -154,7 +154,8 @@ LanguageMode = Literal["en", "es_primary"]
 
 def language_mode_for_person(person: dict | None) -> LanguageMode:
     """Return the personalized Timeclock language mode for one employee."""
-    if person and person.get("spanish_level") == 3:
+    level = person.get("spanish_level") if person else None
+    if type(level) is int and level == 3:
         return "es_primary"
     return "en"
 

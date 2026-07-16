@@ -23,7 +23,7 @@ def test_level_three_selects_spanish_primary():
     )
 
 
-@pytest.mark.parametrize("value", [None, 0, 1, 2, 4, "3"])
+@pytest.mark.parametrize("value", [None, 0, 1, 2, 3.0, 4, "3", True])
 def test_every_other_value_selects_english(value):
     assert (
         timeclock_i18n.language_mode_for_person({"spanish_level": value})
