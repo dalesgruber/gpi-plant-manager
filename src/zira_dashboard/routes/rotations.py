@@ -420,11 +420,20 @@ async def save_auto_work_centers(request: Request):
         if suggestion is None:
             return _error("Could not verify daily staffing coverage.", 503)
         enabled = staffing_route._save_enabled_auto_work_centers(enabled)
+        minimum_crew_balance = staffing_route._minimum_crew_balance_payload(
+            staffing_route._minimum_crew_balance_for_day(
+                roster=roster,
+                schedule=sched,
+                time_off_entries=time_off,
+                enabled_centers=enabled,
+            )
+        )
         _http_cache.invalidate_today_cache()
         _http_cache.invalidate_stable_cache()
         return JSONResponse({
             "ok": True,
             "enabled_work_centers": enabled,
+            "minimum_crew_balance": minimum_crew_balance,
             "warnings": list(suggestion.warnings),
             "coverage": _coverage_payload(suggestion),
             "placement": _placement_payload(
@@ -618,6 +627,7 @@ async def rebuild_rotation(request: Request):
             exact_defaults=exact_defaults,
             group_defaults=group_defaults,
             user_group_centers=user_group_centers,
+            minimum_only=True,
         )
         if suggestion is None:
             return _error("Could not rebuild the schedule.", 503)

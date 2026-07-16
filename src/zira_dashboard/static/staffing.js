@@ -826,6 +826,7 @@
     refreshPickerVisibility();
 
     // Kick autosave on every selection change.
+    document.dispatchEvent(new Event('staffing:selection-changed'));
     kickAutosave();
   });
 
@@ -1470,21 +1471,71 @@
       return autoCbs.filter(cb => cb.checked).map(cb => cb.dataset.loc).filter(Boolean);
     }
 
-    function renderAutoSummary() {
+    function renderMinimumCrewBalance(balance) {
       const summary = document.getElementById('rotation-auto-summary');
       if (!summary) return;
-      const unscheduled = document.querySelectorAll(
-        '.section.unscheduled ul li:not(.empty)',
-      ).length;
-      const autoOn = autoCbs.filter(cb => cb.checked).length;
-      const delta = autoOn - unscheduled;
-      const deltaEl = document.getElementById('rotation-auto-delta');
-      const unscheduledEl = document.getElementById('rotation-unscheduled-count');
-      const autoOnEl = document.getElementById('rotation-auto-on-count');
-      summary.dataset.unscheduledCount = String(unscheduled);
-      if (deltaEl) deltaEl.textContent = `${delta > 0 ? '+' : ''}${delta}`;
-      if (unscheduledEl) unscheduledEl.textContent = String(unscheduled);
-      if (autoOnEl) autoOnEl.textContent = String(autoOn);
+      const waiting = Number(balance?.unassigned_people || 0);
+      const slots = Number(balance?.open_minimum_slots || 0);
+      const count = Number(balance?.center_count || 0);
+      summary.dataset.minimumCrewBalance = JSON.stringify(balance || {});
+      const waitingEl = document.getElementById('minimum-crew-waiting');
+      const slotsEl = document.getElementById('minimum-crew-slots');
+      const actionEl = document.getElementById('minimum-crew-action');
+      if (waitingEl) waitingEl.textContent = `${waiting} people waiting`;
+      if (slotsEl) slotsEl.textContent = `${slots} minimum crew slots open`;
+      if (actionEl) {
+        if (balance?.direction === 'ready') actionEl.textContent = 'Ready to schedule';
+        else actionEl.textContent = `Turn ${count} work center${count === 1 ? '' : 's'} ${balance?.direction === 'turn_on' ? 'on' : 'off'}`;
+      }
+    }
+
+    function renderMinimumCrewBalanceFromGrid() {
+      const waiting = document.querySelectorAll('.section.unscheduled ul li:not(.empty)').length;
+      const rows = [...document.querySelectorAll('tr[data-loc][data-minimum]')];
+      const centerSlots = new Map(rows.map(row => {
+        const minimum = Number(row.dataset.minimum || 0);
+        const assigned = row.querySelectorAll('.sched-dd input[type=checkbox]:checked').length;
+        return [row.dataset.loc, row.dataset.on === 'true' ? Math.max(0, minimum - assigned) : minimum];
+      }));
+      const enabled = rows.filter(row => row.dataset.on === 'true').map(row => row.dataset.loc);
+      const open = enabled.reduce((sum, name) => sum + (centerSlots.get(name) || 0), 0);
+      const delta = open - waiting;
+      const candidates = rows.filter(row => delta > 0 ? row.dataset.on === 'true' : row.dataset.on !== 'true');
+      const ordered = candidates
+        .filter(row => (centerSlots.get(row.dataset.loc) || 0) > 0)
+        .sort((a, b) => delta > 0
+          ? (centerSlots.get(a.dataset.loc) - centerSlots.get(b.dataset.loc))
+          : (centerSlots.get(b.dataset.loc) - centerSlots.get(a.dataset.loc)));
+      let covered = 0;
+      let count = 0;
+      for (const row of ordered) {
+        count += 1;
+        covered += centerSlots.get(row.dataset.loc) || 0;
+        if (covered >= Math.abs(delta)) break;
+      }
+      renderMinimumCrewBalance({
+        unassigned_people: waiting, open_minimum_slots: open,
+        direction: delta === 0 ? 'ready' : (delta > 0 ? 'turn_off' : 'turn_on'),
+        center_count: delta === 0 ? 0 : count,
+      });
+    }
+
+    function clearStaleAutoWarnings() {
+      const issues = (window.ROTATION_ISSUES || []).filter(issue =>
+        !['person_unplaced', 'center_minimum_unmet'].includes(issue.code));
+      const warnings = (window.ROTATION_WARNINGS || []).filter(warning =>
+        !warning.includes('could not be placed in an enabled Auto work center')
+        && !warning.includes('below its minimum Auto staffing level'));
+      renderCoverageIssues(warnings, issues);
+    }
+
+    function setWorkCenterOnState(name, enabled) {
+      const row = document.querySelector(`tr[data-loc="${CSS.escape(name)}"]`);
+      if (!row) return;
+      row.dataset.on = enabled ? 'true' : 'false';
+      row.classList.toggle('work-center-off', !enabled);
+      const label = row.querySelector('.wc-on-off-label');
+      if (label) label.textContent = enabled ? 'On' : 'Off';
     }
 
     function applyEnabledCenters(names) {
@@ -1492,8 +1543,9 @@
       window.AUTO_SCHEDULE_WC_NAMES = [...enabled];
       autoCbs.forEach(cb => {
         cb.checked = enabled.has(cb.dataset.loc);
+        setWorkCenterOnState(cb.dataset.loc, cb.checked);
       });
-      renderAutoSummary();
+      renderMinimumCrewBalanceFromGrid();
     }
 
     function postAutoCenters(workCenters, turnOff) {
@@ -1528,6 +1580,7 @@
         }
         applyEnabledCenters(data.enabled_work_centers);
         renderCoverageIssues(data.warnings, data.coverage?.issues || []);
+        renderMinimumCrewBalance(data.minimum_crew_balance);
         if (window.showToast) showToast('Auto work centers saved');
       } catch (err) {
         const message = 'Auto toggle failed: ' + (err.message || 'network error');
@@ -1567,7 +1620,7 @@
         [...(data.coverage?.issues || []), ...partialPlacementIssues(data)],
       );
       syncLeftRailWithSchedule();
-      renderAutoSummary();
+      renderMinimumCrewBalanceFromGrid();
       refreshPickerVisibility();
     }
 
@@ -1643,7 +1696,11 @@
     autoCbs.forEach(cb => {
       cb.addEventListener('change', () => saveAutoCenters(cb));
     });
-    renderAutoSummary();
+    document.addEventListener('staffing:selection-changed', () => {
+      clearStaleAutoWarnings();
+      renderMinimumCrewBalanceFromGrid();
+    });
+    renderMinimumCrewBalanceFromGrid();
   })();
 
   // ---------- Unified training protocol setup + lifecycle ----------

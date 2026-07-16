@@ -224,11 +224,11 @@
                 data-rotation-mode="training" aria-pressed="{{ (recycled_rotation_mode == 'training')|tojson }}"
                 aria-label="Training schedule goal" title="Training: develop operator skills">🎓</button>
         <p class="hint rotation-mode-help" id="rotation-mode-help">{{ rotation_mode_help }}</p>
-        <output class="rotation-auto-summary" id="rotation-auto-summary"
-                data-unscheduled-count="{{ rotation_auto_summary.unscheduled_count }}">
-          <span class="rotation-auto-label">Auto mode</span>
-          <strong id="rotation-auto-delta">{% if rotation_auto_summary.delta > 0 %}+{% endif %}{{ rotation_auto_summary.delta }}</strong>
-          <span><span id="rotation-unscheduled-count">{{ rotation_auto_summary.unscheduled_count }}</span> unscheduled / <span id="rotation-auto-on-count">{{ rotation_auto_summary.auto_on_count }}</span> Auto On</span>
+        <output class="rotation-auto-summary minimum-crew-balance" id="rotation-auto-summary"
+                data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'>
+          <strong id="minimum-crew-waiting">{{ minimum_crew_balance.unassigned_people }} people waiting</strong>
+          <span id="minimum-crew-slots">{{ minimum_crew_balance.open_minimum_slots }} minimum crew slots open</span>
+          <span id="minimum-crew-action"></span>
         </output>
       </div>
       <div class="rotation-warning" id="rotation-warnings" role="alert"
@@ -279,7 +279,8 @@
           {% set _wc_attribs_for_row = attributions_by_wc.get(row.loc.name, []) if attributions_by_wc else [] %}
           {% set _attrib_names_for_row = _wc_attribs_for_row | map(attribute='person_name') | list %}
           {% set visible_assigned = row.present_assigned | rejectattr('name', 'in', _attrib_names_for_row) | list %}
-          <tr>
+          {% set _center_on = row.loc.name in auto_schedule_enabled_wc_names %}
+          <tr class="{% if not _center_on %}work-center-off{% endif %}" data-loc="{{ row.loc.name }}" data-on="{{ _center_on|tojson }}" data-minimum="{{ row.min_ops }}">
             {% if loop.first %}
               <td class="bay" rowspan="{{ bay.rows|length }}">
                 <div>{{ bay.name }}</div>
@@ -314,8 +315,8 @@
                 {% if auto_scheduler_available %}
                 <label class="wc-auto-toggle" title="Include this work center when automatic scheduling runs">
                   <input type="checkbox" class="wc-auto-cb" data-loc="{{ row.loc.name }}"
-                         {% if row.loc.name in auto_schedule_enabled_wc_names %}checked{% endif %}>
-                  Auto
+                         {% if _center_on %}checked{% endif %}>
+                  <span class="wc-on-off-label">{{ 'On' if _center_on else 'Off' }}</span>
                 </label>
                 {% endif %}
               </div>

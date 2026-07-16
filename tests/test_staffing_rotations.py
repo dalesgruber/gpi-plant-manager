@@ -917,7 +917,11 @@ def test_rebuild_generates_and_reports_reasons(monkeypatch):
     assert resp.status_code == 200
     body = resp.json()
     generated = {n for names in body["assignments"].values() for n in names}
-    assert {"Green One", "Green Two"} <= generated
+    # A goal rebuild staffs only the enabled centers' minimums. Extra people
+    # remain in the unassigned list so the operator can turn another center on.
+    assert len(generated) == 1
+    assert generated <= {"Green One", "Green Two"}
+    assert len(body["unplaced"]) == 1
     # Every generated placement carries a source. Green/proficient placements
     # intentionally do not render a redundant visible reason badge.
     for wc, sources in body["sources"].items():
@@ -1532,11 +1536,13 @@ def test_staffing_has_rotation_mode_controls_without_automated_person_notes():
     assert "data.unplaced" in js
     assert "could not be placed in an enabled Auto work center" in js
     assert 'id="rotation-auto-summary"' in html
-    assert 'data-unscheduled-count="{{ rotation_auto_summary.unscheduled_count }}"' in html
-    assert 'id="rotation-auto-delta"' in html
-    assert "function renderAutoSummary()" in js
-    assert "renderAutoSummary();" in js
-    assert ".rotation-auto-summary" in css
+    assert "data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'" in html
+    assert 'id="minimum-crew-waiting"' in html
+    assert 'class="wc-on-off-label"' in html
+    assert "function renderMinimumCrewBalance(balance)" in js
+    assert "function renderMinimumCrewBalanceFromGrid()" in js
+    assert "function clearStaleAutoWarnings()" in js
+    assert ".work-center-off" in css
 
 
 def test_skills_matrix_exposes_scheduling_preferences_without_training_controls():

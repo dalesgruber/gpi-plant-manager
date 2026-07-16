@@ -53,6 +53,26 @@ def test_engine_assigns_every_available_nonreserve_person():
     assert result.assigned_people == {"Cross", "Repair A", "Repair B"}
 
 
+def test_minimum_only_reserves_exact_default_and_leaves_extra_person_waiting():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Default", True, False, {"Repair": 3}),
+            staffing.Person("Extra", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        exact_defaults={"Repair 1": ("Default",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 2},
+        minimum_only=True,
+    )
+
+    assert result.assignments["Repair 1"] == ["Default"]
+    assert result.unused_people == ("Extra",)
+
+
 def test_group_default_rotates_over_qualified_enabled_members():
     history = RecycledHistory(
         center_counts={("Ana", "Repair 1"): 2, ("Ana", "Repair 2"): 1},

@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, app_settings, attendance, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -130,6 +130,60 @@ def _known_work_center_names() -> set[str]:
 def _effective_minimum(loc) -> int:
     """Read the authoritative configured minimum for a work center."""
     return work_centers_store.min_ops(loc)
+
+
+def _minimum_crew_balance_for_day(*, roster, schedule, time_off_entries, enabled_centers):
+    """Compare people waiting with enabled work centers' open minimum slots."""
+    enabled = _ordered_work_center_names(enabled_centers)
+    enabled_set = set(enabled)
+    absent = rotation_suggestions._full_day_time_off_names(time_off_entries or [])
+    by_name = {person.name: person for person in roster}
+    assigned = {
+        name for center, names in (schedule.assignments or {}).items()
+        if center != staffing.TIME_OFF_KEY for name in (names or [])
+    }
+    waiting = sum(
+        person.active and not person.reserve and person.name not in absent
+        and person.name not in assigned
+        for person in roster
+    )
+    slots = {}
+    for loc in staffing.LOCATIONS:
+        try:
+            minimum = max(0, _effective_minimum(loc))
+        except Exception:
+            # The balance is advisory; a Settings read failure must not make
+            # the scheduler page unavailable.
+            minimum = max(0, int(loc.min_ops))
+        if loc.name not in enabled_set:
+            slots[loc.name] = minimum
+            continue
+        qualified = sum(
+            person is not None and person.active and not person.reserve
+            and person.name not in absent
+            and all(person.level(skill) >= 1 for skill in staffing.required_skills_for(loc))
+            for name in (schedule.assignments or {}).get(loc.name, ())
+            for person in (by_name.get(name),)
+        )
+        slots[loc.name] = max(0, minimum - qualified)
+    return auto_schedule_capacity.analyze_minimum_crew_balance(
+        unassigned_people=waiting,
+        enabled_centers=enabled,
+        disabled_centers=[loc.name for loc in staffing.LOCATIONS if loc.name not in enabled_set],
+        open_minimum_slots_by_center=slots,
+        center_order=_location_order(),
+    )
+
+
+def _minimum_crew_balance_payload(balance) -> dict[str, object]:
+    return {
+        "unassigned_people": balance.unassigned_people,
+        "open_minimum_slots": balance.open_minimum_slots,
+        "direction": balance.direction,
+        "center_count": balance.center_count,
+        "slot_delta": balance.slot_delta,
+        "recommended_centers": list(balance.recommended_centers),
+    }
 
 
 def _publish_shortages(assignments: dict[str, list[str]]) -> list[str]:
@@ -441,6 +495,7 @@ def _recycled_suggestion_for_day(
     enabled_work_centers=None, assignment_sources=None,
     center_minimums=None, center_capacities=None,
     exact_defaults=None, group_defaults=None, user_group_centers=None,
+    minimum_only: bool = False,
 ):
     """Compute the pure Recycled suggestion for ``d``, or ``None`` on any failure.
 
@@ -500,6 +555,7 @@ def _recycled_suggestion_for_day(
             exact_defaults=exact_defaults,
             group_defaults=group_defaults,
             user_group_centers=user_group_centers,
+            minimum_only=minimum_only,
         )
         return suggestion
     except Exception:
@@ -863,6 +919,14 @@ def staffing_page(
         "auto_on_count": auto_on_count,
         "delta": auto_on_count - unscheduled_count,
     }
+    minimum_crew_balance = _minimum_crew_balance_payload(
+        _minimum_crew_balance_for_day(
+            roster=roster,
+            schedule=sched,
+            time_off_entries=time_off_entries,
+            enabled_centers=enabled_auto_work_centers,
+        )
+    )
     raw_defaults_by_loc = bay_model.get("defaults_by_loc") or {}
     if sched.assignments and auto_scheduler_available:
         # A saved day keeps its stored mode so the empty-slot fill hints agree
@@ -953,6 +1017,7 @@ def staffing_page(
                 "auto_schedule_enabled_wc_names": enabled_auto_work_centers,
                 "auto_schedule_available_wc_names": [loc.name for loc in staffing.LOCATIONS],
                 "rotation_auto_summary": rotation_auto_summary,
+                "minimum_crew_balance": minimum_crew_balance,
                 "recycled_wc_names": _recycled_wc_names(),
                 "training_protocol_people": sorted(
                     (person.name for person in roster if person.active), key=str.lower

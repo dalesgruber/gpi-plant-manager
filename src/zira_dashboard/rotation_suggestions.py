@@ -376,6 +376,7 @@ def _recycled_history_from_rows(
     rows: Sequence[dict],
     group_locations: dict[str, Sequence[str]],
     user_group_centers: Mapping[str, Sequence[str]] | None = None,
+    minimum_only: bool = False,
 ) -> RecycledHistory:
     """Aggregate bounded Recycled history across every managed center.
 
@@ -957,6 +958,7 @@ def suggest_recycled_assignments(
     exact_defaults: Mapping[str, Sequence[str]] | None = None,
     group_defaults: Mapping[str, Sequence[str]] | None = None,
     user_group_centers: Mapping[str, Sequence[str]] | None = None,
+    minimum_only: bool = False,
 ) -> RecycledSuggestion:
     """Suggest safe Recycled assignments for the Dismantler/Repair/Trim Saw groups.
 
@@ -1432,6 +1434,8 @@ def suggest_recycled_assignments(
     for name in solver_people:
         person = by_name[name]
         for center in sorted(allowed_centers, key=str.lower):
+            if minimum_only and name in exact_target_by_person and exact_target_by_person[name] != center:
+                continue
             group = center_group.get(center)
             if group is None:
                 continue
@@ -1517,13 +1521,18 @@ def suggest_recycled_assignments(
         )
         coupled = group == TRIM_SAW_SKILL or needs_green_partner
         crew_options: tuple[schedule_solver.CrewOption, ...] = ()
-        if coupled and remaining_capacity:
+        if coupled and remaining_capacity and (not minimum_only or remaining_minimum or needs_green_partner):
             options = []
             minimum_generated = max(remaining_minimum, int(needs_green_partner))
             maximum_generated = min(
                 remaining_capacity,
                 len(edges_by_center.get(center, ())),
             )
+            if minimum_only:
+                maximum_generated = min(
+                    maximum_generated,
+                    max(remaining_minimum, int(needs_green_partner)),
+                )
             for size in range(max(1, minimum_generated), maximum_generated + 1):
                 for crew in combinations(edges_by_center.get(center, ()), size):
                     if _coverage_crew_is_safe(
@@ -1568,7 +1577,10 @@ def suggest_recycled_assignments(
     preference_order = {"primary": 0, "regular": 1, "occasional": 2, "never": 3}
     selected: list[schedule_solver.AssignmentDecision] = []
     selected_people: set[str] = set()
-    remaining_capacity = {center.center: center.capacity for center in complete_centers}
+    remaining_capacity = {
+        center.center: (min(center.capacity, center.minimum) if minimum_only else center.capacity)
+        for center in complete_centers
+    }
     for center in sorted(
         (item for item in complete_centers if item.crew_options),
         key=lambda item: item.center.lower(),
@@ -1599,12 +1611,20 @@ def suggest_recycled_assignments(
             selected_people.add(edge.person)
             remaining_capacity[center.center] -= 1
 
-    for name in sorted(solver_people, key=str.lower):
+    for name in sorted(
+        solver_people,
+        key=lambda candidate: (
+            minimum_only and candidate not in exact_target_by_person,
+            candidate.lower(),
+        ),
+    ):
         if name in selected_people:
             continue
         choices = [
             edge for edge in direct_candidates
-            if edge.person == name and remaining_capacity.get(edge.center, 0) > 0
+            if edge.person == name
+            and (not minimum_only or remaining_minimum_by_center.get(edge.center, 0) > 0)
+            and remaining_capacity.get(edge.center, 0) > 0
         ]
         if not choices:
             continue
@@ -1625,6 +1645,8 @@ def suggest_recycled_assignments(
         ))
         selected_people.add(choice.person)
         remaining_capacity[choice.center] -= 1
+        if minimum_only:
+            remaining_minimum_by_center[choice.center] -= 1
 
     complete_result = schedule_solver.CompleteScheduleResult(
         complete=len(selected_people) == len(solver_people),
