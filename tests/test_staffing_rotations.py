@@ -1656,6 +1656,7 @@ def test_auto_work_centers_persists_selection_on_saturday(monkeypatch):
         "_save_enabled_auto_work_centers",
         lambda centers: saved.append(tuple(centers)) or list(centers),
     )
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "get", lambda day: None)
     monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
 
@@ -1667,7 +1668,76 @@ def test_auto_work_centers_persists_selection_on_saturday(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["enabled_work_centers"] == ["Repair 1"]
+    assert response.json()["saturday_recruiting"] is None
     assert saved == [("Repair 1",)]
+
+
+def test_auto_work_centers_updates_open_saturday_recruiting_demand(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch)
+    bundle = SimpleNamespace(
+        recruitment=SimpleNamespace(status="recruiting", shift_start=time(6), shift_end=time(12)),
+    )
+    updated = []
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "get", lambda day: bundle)
+    monkeypatch.setattr(rotations.staffing_route, "_saturday_recruit_requested_counts", lambda enabled: {17: 2, 18: 1})
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "update_openings", lambda **kwargs: updated.append(kwargs) or bundle)
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "serialize_bundle", lambda bundle: {"updated": True})
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [])
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda d: staffing.Schedule(day=d))
+    monkeypatch.setattr(rotations.scheduler_time_off, "time_off_entries_for_day", lambda d: [])
+    monkeypatch.setattr(rotations.staffing_route, "_save_enabled_auto_work_centers", lambda centers: list(centers))
+    monkeypatch.setattr(rotations.staffing_route, "_minimum_crew_balance_for_day", lambda **kwargs: ())
+    monkeypatch.setattr(rotations.staffing_route, "_minimum_crew_balance_payload", lambda balance: {})
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
+
+    response = client.post("/api/rotations/auto-work-centers", json={
+        "day": "2026-07-18", "work_centers": ["Repair 1", "Repair 2"], "turn_off": [],
+    })
+
+    assert response.status_code == 200
+    assert updated[0]["requested_counts"] == {17: 2, 18: 1}
+    assert updated[0]["shift_start"] == time(6)
+    assert response.json()["saturday_recruiting"] == {"updated": True}
+
+
+def test_auto_work_centers_rejects_saturday_toggle_that_breaks_commitments(monkeypatch):
+    client, rotations = _rotations_client(monkeypatch, raise_server_exceptions=False)
+    saved = []
+    bundle = SimpleNamespace(
+        recruitment=SimpleNamespace(status="recruiting", shift_start=time(6), shift_end=time(12)),
+    )
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "get", lambda day: bundle)
+    monkeypatch.setattr(rotations.saturday_recruiting_store, "serialize_bundle", lambda bundle: {"updated": True})
+    monkeypatch.setattr(rotations.staffing_route, "_saturday_recruit_requested_counts", lambda enabled: {})
+    monkeypatch.setattr(rotations.staffing, "load_roster", lambda: [])
+    monkeypatch.setattr(rotations.staffing, "load_schedule", lambda d: staffing.Schedule(day=d))
+    monkeypatch.setattr(rotations.scheduler_time_off, "time_off_entries_for_day", lambda d: [])
+    monkeypatch.setattr(
+        rotations.staffing_route,
+        "_save_enabled_auto_work_centers",
+        lambda centers: saved.append(centers) or list(centers),
+    )
+    monkeypatch.setattr(rotations.staffing_route, "_minimum_crew_balance_for_day", lambda **kwargs: ())
+    monkeypatch.setattr(rotations.staffing_route, "_minimum_crew_balance_payload", lambda balance: {})
+    monkeypatch.setattr(rotations._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(rotations._http_cache, "invalidate_stable_cache", lambda: None)
+    monkeypatch.setattr(
+        rotations.saturday_recruiting_store, "update_openings",
+        lambda **kwargs: (_ for _ in ()).throw(
+            rotations.saturday_recruiting_store.LifecycleConflict(
+                "Requested openings cannot drop below committed Saturday coverage"
+            )
+        ),
+    )
+
+    response = client.post("/api/rotations/auto-work-centers", json={
+        "day": "2026-07-18", "work_centers": [], "turn_off": [],
+    })
+
+    assert response.status_code == 409
+    assert "committed Saturday coverage" in response.json()["error"]
+    assert saved == []
 
 
 def test_rebuild_persists_schedule_on_saturday(monkeypatch):
