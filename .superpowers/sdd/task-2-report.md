@@ -86,4 +86,4 @@ content, restoring it to its pre-commit untracked state:
 
 - `docs/superpowers/specs/2026-07-16-scheduler-draft-posted-delivery-lifecycle-design.md`
 
-Final scoped commit: current `HEAD` — `feat: show live Saturday recruiting demand`.
+Final scoped commit: `feat: show live Saturday recruiting demand`.
