@@ -2092,6 +2092,14 @@ def test_staffing_has_rotation_mode_controls_without_automated_person_notes():
     assert "tr.work-center-off .sched-cell > *," in css
     assert "tr.work-center-off .wc-note-cell > * { display: none; }" in css
     assert "tr.work-center-off .dept," not in css
+    assert ".day-context .rotation-controls {" in css
+    assert "position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20;" in css
+    assert "box-shadow: 0 16px 36px rgba(31, 41, 55, 0.18);" in css
+    assert "background: linear-gradient(135deg, var(--panel), color-mix(in srgb, var(--accent-dim) 32%, var(--panel)));" in css
+    assert ".day-context .rotation-mode-label::before" in css
+    assert "content: '•';" in css
+    assert "@media (max-width: 1100px)" in css
+    assert ".day-context .rotation-controls { position: static; width: auto; }" in css
 
 
 def test_staffing_keeps_automation_controls_in_the_notes_sidebar():
@@ -2120,7 +2128,7 @@ def test_staffing_notes_sidebar_is_sticky_and_mobile_safe():
 
     assert ".day-context { min-width: 0; position: sticky;" in css
     assert "top: 1rem; align-self: start;" in css
-    assert ".sidebar-schedule-actions { display: flex; gap: 0.45rem; }" in css
+    assert ".sidebar-schedule-actions { display: flex; gap: 0.45rem; margin-top: 0.6rem; }" in css
     assert ".sidebar-schedule-actions .clear-btn { flex: 1 1 0; }" in css
     assert "@media (max-width: 1100px)" in css
     assert ".day-context { order: 3; position: static; }" in css
