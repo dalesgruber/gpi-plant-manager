@@ -652,8 +652,8 @@
     margin: 0 0 0.85rem;
   }
   .rotation-mode {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
-    border: 1px solid var(--border); border-radius: 8px;
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 0.4rem;
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
     padding: 0.4rem 0.7rem; margin: 0; min-width: 0;
     background: var(--panel-2);
   }
@@ -690,7 +690,7 @@
     text-transform: uppercase;
   }
   .rotation-auto-summary strong { color: var(--fg); font-size: 0.9rem; }
-  .minimum-crew-balance { gap: 0.45rem; }
+  .minimum-crew-balance { gap: 0.45rem; margin-left: auto; }
   .minimum-crew-balance #minimum-crew-action {
     color: var(--warn); font-weight: 750;
   }

@@ -1537,11 +1537,18 @@ def test_staffing_has_rotation_mode_controls_without_automated_person_notes():
     assert "could not be placed in an enabled Auto work center" in js
     assert 'id="rotation-auto-summary"' in html
     assert "data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'" in html
-    assert 'id="minimum-crew-waiting"' in html
+    assert 'id="minimum-crew-waiting"' not in html
+    assert 'id="minimum-crew-slots"' not in html
+    assert 'id="minimum-crew-action"' in html
     assert 'class="wc-on-off-label"' in html
     assert "function renderMinimumCrewBalance(balance)" in js
     assert "function renderMinimumCrewBalanceFromGrid()" in js
+    assert "const waitingEl = document.getElementById('minimum-crew-waiting');" not in js
+    assert "const slotsEl = document.getElementById('minimum-crew-slots');" not in js
     assert "function clearStaleAutoWarnings()" in js
+    assert ".rotation-mode {\n    display: flex; flex-wrap: nowrap;" in css
+    assert "width: 100%;" in css
+    assert ".minimum-crew-balance { gap: 0.45rem; margin-left: auto; }" in css
     assert ".work-center-off" in css
     assert '<span class="ops-range">min {{ row.min_ops }} · max {{ row.max_ops_label }}</span>' in html
     assert "tr.work-center-off td { background: var(--panel-2); }" in css

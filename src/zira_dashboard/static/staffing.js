@@ -1474,15 +1474,9 @@
     function renderMinimumCrewBalance(balance) {
       const summary = document.getElementById('rotation-auto-summary');
       if (!summary) return;
-      const waiting = Number(balance?.unassigned_people || 0);
-      const slots = Number(balance?.open_minimum_slots || 0);
       const count = Number(balance?.center_count || 0);
       summary.dataset.minimumCrewBalance = JSON.stringify(balance || {});
-      const waitingEl = document.getElementById('minimum-crew-waiting');
-      const slotsEl = document.getElementById('minimum-crew-slots');
       const actionEl = document.getElementById('minimum-crew-action');
-      if (waitingEl) waitingEl.textContent = `${waiting} people waiting`;
-      if (slotsEl) slotsEl.textContent = `${slots} minimum crew slots open`;
       if (actionEl) {
         if (balance?.direction === 'ready') actionEl.textContent = 'Ready to schedule';
         else actionEl.textContent = `Turn ${count} work center${count === 1 ? '' : 's'} ${balance?.direction === 'turn_on' ? 'on' : 'off'}`;

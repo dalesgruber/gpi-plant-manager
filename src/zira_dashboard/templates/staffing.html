@@ -226,8 +226,6 @@
         <p class="hint rotation-mode-help" id="rotation-mode-help">{{ rotation_mode_help }}</p>
         <output class="rotation-auto-summary minimum-crew-balance" id="rotation-auto-summary"
                 data-minimum-crew-balance='{{ minimum_crew_balance|default({}, true)|tojson }}'>
-          <strong id="minimum-crew-waiting">{{ minimum_crew_balance.unassigned_people }} people waiting</strong>
-          <span id="minimum-crew-slots">{{ minimum_crew_balance.open_minimum_slots }} minimum crew slots open</span>
           <span id="minimum-crew-action"></span>
         </output>
       </div>
