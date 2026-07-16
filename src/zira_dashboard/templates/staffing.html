@@ -211,6 +211,19 @@
               <path fill="#E01E5A" d="M14 18a2 2 0 0 1 0-4h6a2 2 0 0 1 0 4z"/>
             </svg>
           </button>
+          {% if day_is_saturday and not saturday_recruiting and saturday_recruit_enabled_count %}
+            <button type="button" class="save-button saturday-recruit-button"
+                    data-saturday-action="activate-from-schedule" data-day="{{ day }}">
+              Recruit for {{ saturday_recruit_enabled_count }} work centers
+            </button>
+          {% elif day_is_saturday and saturday_recruiting and saturday_recruiting.status != 'cancelled' %}
+            <div class="saturday-response-summary" aria-label="Saturday recruiting responses">
+              {% for key, label in [('yes', 'yes'), ('no', 'no'), ('deciding', 'still deciding')] %}
+                <span class="saturday-response-count" tabindex="0"
+                      title="{{ saturday_response_summary[key]|join(', ') or 'None' }}">{{ saturday_response_summary[key]|length }} {{ label }}</span>{% if not loop.last %} · {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
           {% if saturday_publish_locked %}
             <span id="saturday-publish-lock" class="save-block">{{ saturday_publish_lock_message }}</span>
           {% endif %}
@@ -221,31 +234,31 @@
       </div>
     </div>
 
-    {% include "_saturday_recruiting_panel.html" %}
-
     <div class="rotation-warning" id="rotation-warnings" role="alert"
          {% if not rotation_warnings and not rotation_issues %}hidden{% endif %}>
-      <ul id="rotation-warning-list">
-        {% for issue in rotation_issues %}
-          <li class="coverage-issue" data-issue-code="{{ issue.code }}">
-            <span>{{ issue.message }}</span>
-            {% if issue.rejections %}
-              <details class="coverage-why">
-                <summary>Why?</summary>
-                <ul>
-                  {% for rejection in issue.rejections %}
-                    <li><strong>{{ rejection.person }}</strong>: {{ rejection.detail }}</li>
-                  {% endfor %}
-                </ul>
-              </details>
+        <ul id="rotation-warning-list">
+          {% for issue in rotation_issues %}
+            <li class="coverage-issue" data-issue-code="{{ issue.code }}">
+              <span>{{ issue.message }}</span>
+              {% if issue.rejections %}
+                <details class="coverage-why">
+                  <summary>Why?</summary>
+                  <ul>
+                    {% for rejection in issue.rejections %}
+                      <li><strong>{{ rejection.person }}</strong>: {{ rejection.detail }}</li>
+                    {% endfor %}
+                  </ul>
+                </details>
+              {% endif %}
+            </li>
+          {% endfor %}
+          {% set issue_messages = rotation_issues | map(attribute='message') | list %}
+          {% for warning in rotation_warnings %}
+            {% if warning not in issue_messages %}
+              <li>{{ warning }}</li>
             {% endif %}
-          </li>
-        {% endfor %}
-        {% set issue_messages = rotation_issues | map(attribute='message') | list %}
-        {% for warning in rotation_warnings %}
-          {% if warning not in issue_messages %}<li>{{ warning }}</li>{% endif %}
-        {% endfor %}
-      </ul>
+          {% endfor %}
+        </ul>
     </div>
 
     {% macro scheduled_operator_name(name) %}

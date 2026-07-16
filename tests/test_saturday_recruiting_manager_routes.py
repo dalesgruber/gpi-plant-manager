@@ -9,16 +9,17 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from zira_dashboard import db, saturday_recruiting_store as store
+from zira_dashboard import db, saturday_recruiting_store as store, staffing
 from zira_dashboard import employee_notifications
 from zira_dashboard.app import app
-from zira_dashboard.routes import saturday_recruiting as routes
+from zira_dashboard.routes import saturday_recruiting as routes, timeclock
 from zira_dashboard.shift_config import SITE_TZ
 
 
 client = TestClient(app)
 SATURDAY = date(2026, 7, 25)
 NOW = datetime(2026, 7, 20, 12, tzinfo=SITE_TZ)
+REPAIR_ID = 17
 
 
 def _bundle(status: str = "recruiting") -> store.RecruitmentBundle:
@@ -54,6 +55,55 @@ def test_non_saturday_activation_is_422():
         "requested_counts": {"17": 1},
     })
     assert response.status_code == 422
+
+
+def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
+    """Scheduler activation uses the effective configured minimum, not min_ops."""
+    seen = {}
+    location = staffing.Location(
+        "Repair 1", "Repair", "Bay", "Recycled", None, min_ops=2, max_ops=4,
+    )
+    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: {"Repair 1"})
+    monkeypatch.setattr(routes.staffing_routes, "_effective_minimum", lambda _loc: 3)
+    monkeypatch.setattr(routes.staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(
+        routes.store,
+        "available_positions",
+        lambda: (store.AvailablePosition(REPAIR_ID, "Repair 1", ("Repair",)),),
+    )
+    monkeypatch.setattr(routes.store, "activate", lambda **kw: seen.update(kw) or _bundle())
+    monkeypatch.setattr(routes.sr, "response_deadline", lambda *_args: NOW)
+    monkeypatch.setattr(
+        routes.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(routes.shift_config, "configured_shift_start_for", lambda _day: time(6))
+    monkeypatch.setattr(routes.shift_config, "configured_shift_end_for", lambda _day: time(12))
+    monkeypatch.setattr(routes, "plant_now", lambda: NOW - timedelta(days=1))
+    monkeypatch.setattr(routes.staffing_routes, "_bust_after_mutation", lambda: None)
+
+    response = client.post(
+        "/api/staffing/saturday-recruiting/activate-from-schedule",
+        json={"day": "2026-07-25"},
+    )
+
+    assert response.status_code == 200
+    assert seen["requested_counts"] == {REPAIR_ID: 3}
+    assert seen["shift_start"] == time(6)
+    assert seen["shift_end"] == time(12)
+
+
+def test_activate_from_schedule_rejects_no_enabled_centers(monkeypatch):
+    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: set())
+
+    response = client.post(
+        "/api/staffing/saturday-recruiting/activate-from-schedule",
+        json={"day": "2026-07-25"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Turn on at least one work center before recruiting."
 
 
 def test_openings_can_add_a_new_requested_work_center_while_recruiting(monkeypatch):
@@ -152,3 +202,61 @@ def test_full_cancel_unpublishes_and_clears_assignments_atomically(monkeypatch):
     assert db.query("SELECT status FROM saturday_recruitments WHERE day = %s", (SATURDAY,))[0]["status"] == "cancelled"
     assert db.query("SELECT published FROM schedules WHERE day = %s", (SATURDAY,))[0]["published"] is False
     assert db.query("SELECT * FROM schedule_assignments WHERE day = %s", (SATURDAY,)) == []
+
+
+@pytestmark_db
+def test_schedule_activation_makes_timeclock_banner_live(monkeypatch, request):
+    """The Scheduler's live recruiting round is the Timeclock banner source."""
+    work_center_id = 910118
+    skill_id = 910118
+    work_center_name = "Live Banner Test"
+    location = staffing.Location(
+        work_center_name, "Repair", "Bay", "Recycled", None, min_ops=2, max_ops=4,
+    )
+
+    def clear_test_data():
+        db.execute("DELETE FROM saturday_recruitments WHERE day = %s", (SATURDAY,))
+        db.execute("DELETE FROM schedule_assignments WHERE day = %s", (SATURDAY,))
+        db.execute("DELETE FROM schedules WHERE day = %s", (SATURDAY,))
+        db.execute("DELETE FROM work_center_required_skills WHERE wc_id = %s", (work_center_id,))
+        db.execute("DELETE FROM work_centers WHERE id = %s", (work_center_id,))
+        db.execute("DELETE FROM skills WHERE id = %s", (skill_id,))
+
+    db.bootstrap_schema()
+    clear_test_data()
+    request.addfinalizer(clear_test_data)
+    db.execute(
+        "INSERT INTO work_centers (id, name, category) VALUES (%s, %s, 'Repair')",
+        (work_center_id, work_center_name),
+    )
+    db.execute(
+        "INSERT INTO skills (id, name, skill_type) VALUES (%s, 'Live banner skill', 'Certification')",
+        (skill_id,),
+    )
+    db.execute(
+        "INSERT INTO work_center_required_skills (wc_id, skill_id) VALUES (%s, %s)",
+        (work_center_id, skill_id),
+    )
+    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: {work_center_name})
+    monkeypatch.setattr(routes.staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(
+        routes.schedule_store,
+        "current",
+        lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
+    )
+    monkeypatch.setattr(routes.shift_config, "configured_shift_start_for", lambda _day: time(6))
+    monkeypatch.setattr(routes.shift_config, "configured_shift_end_for", lambda _day: time(12))
+    monkeypatch.setattr(routes, "plant_now", lambda: NOW)
+    monkeypatch.setattr(timeclock, "plant_now", lambda: NOW)
+    monkeypatch.setattr(routes.staffing_routes, "_bust_after_mutation", lambda: None)
+
+    response = client.post(
+        "/api/staffing/saturday-recruiting/activate-from-schedule",
+        json={"day": SATURDAY.isoformat()},
+    )
+
+    assert response.status_code == 200
+    banner = timeclock._saturday_banner_context()
+    assert banner is not None
+    assert banner["day"] == SATURDAY.isoformat()
+    assert banner["remaining_count"] == 2
