@@ -239,34 +239,28 @@ def fetch_skills_for(
     return out
 
 
-def fetch_spanish_speaker_ids(
+def fetch_spanish_skill_level_ids(
     execute_fn: Callable[..., Any],
     unwrap_m2o_fn: Callable[[Any], Any],
-) -> set[int]:
-    """Odoo employee ids who have a 'Spanish' skill (Languages type) at a
-    non-zero level — i.e. level 1-3 in Odoo's Languages rating.
-
-    Matches the skill by name (ilike 'Spanish') so it works regardless of
-    skill-type wiring, and filters on hr.employee.skill.level_progress > 0
-    so a level-0 / unrated entry doesn't count. Used to flag bilingual
-    kiosk users; deliberately separate from fetch_skills_for so it never
-    adds Languages columns to the production skills matrix.
-    """
+) -> dict[int, int]:
+    """Map each employee Odoo id to their Spanish skill-level Odoo id."""
     skills = execute_fn(
         "hr.skill", "search_read",
         [("name", "ilike", "Spanish")],
         fields=["id", "name"],
     )
-    skill_ids = [s["id"] for s in skills]
+    skill_ids = [int(row["id"]) for row in skills]
     if not skill_ids:
-        return set()
+        return {}
     rows = execute_fn(
         "hr.employee.skill", "search_read",
-        [("skill_id", "in", skill_ids), ("level_progress", ">", 0)],
-        fields=["employee_id"],
+        [("skill_id", "in", skill_ids)],
+        fields=["employee_id", "skill_level_id"],
     )
-    out: set[int] = set()
-    for r in rows:
-        eid = r["employee_id"]
-        out.add(unwrap_m2o_fn(eid))
+    out: dict[int, int] = {}
+    for row in rows:
+        employee_id = unwrap_m2o_fn(row.get("employee_id"))
+        level_id = unwrap_m2o_fn(row.get("skill_level_id"))
+        if employee_id and level_id:
+            out[int(employee_id)] = int(level_id)
     return out

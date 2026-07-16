@@ -151,7 +151,7 @@ def sync(force: bool = False) -> SyncResult:
         employees = odoo_client.fetch_employees()
         emp_ids = [e["id"] for e in employees]
         emp_skills = odoo_client.fetch_skills_for(emp_ids)
-        spanish_ids = odoo_client.fetch_spanish_speaker_ids()
+        spanish_level_ids = odoo_client.fetch_spanish_skill_level_ids()
         columns_meta = odoo_client.fetch_skill_columns_with_types()
         buckets = odoo_client.fetch_skill_level_buckets()
         departments = odoo_client.fetch_departments()
@@ -235,21 +235,23 @@ def sync(force: bool = False) -> SyncResult:
             seen_employee_ids.add(emp["id"])
             # Odoo selection fields return False when unset; normalize to None.
             wage_type = emp.get("wage_type") or None
-            spanish_speaker = emp["id"] in spanish_ids
+            spanish_level = int(buckets.get(spanish_level_ids.get(emp["id"]), 0))
+            spanish_speaker = spanish_level > 0
             is_flex = _m2o_id(emp.get("resource_calendar_id")) in flex_cal_ids
             cur.execute(
                 "INSERT INTO people (odoo_id, name, active, wage_type, spanish_speaker, "
-                "resource_calendar_id, is_flexible, last_pulled_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+                "spanish_level, resource_calendar_id, is_flexible, last_pulled_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (odoo_id) DO UPDATE SET name = EXCLUDED.name, "
                 "active = EXCLUDED.active, wage_type = EXCLUDED.wage_type, "
                 "spanish_speaker = EXCLUDED.spanish_speaker, "
+                "spanish_level = EXCLUDED.spanish_level, "
                 "resource_calendar_id = EXCLUDED.resource_calendar_id, "
                 "is_flexible = EXCLUDED.is_flexible, "
                 "last_pulled_at = EXCLUDED.last_pulled_at",
                 (emp["id"], _short_name(emp["name"]), bool(emp.get("active", True)),
-                 wage_type, spanish_speaker, _m2o_id(emp.get("resource_calendar_id")),
-                 is_flex, pulled_at),
+                 wage_type, spanish_speaker, spanish_level,
+                 _m2o_id(emp.get("resource_calendar_id")), is_flex, pulled_at),
             )
         # Deactivate Odoo-mapped people who disappeared from the response —
         # i.e., archived (or deleted) in Odoo. fetch_employees() searches
