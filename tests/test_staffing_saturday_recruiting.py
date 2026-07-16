@@ -211,6 +211,29 @@ def test_publish_before_deadline_is_blocked(monkeypatch):
     assert saved[0].published is False
 
 
+def test_recruiting_saturday_can_save_a_draft_before_publish_deadline(monkeypatch):
+    bundle = _bundle(status="recruiting")
+    saved = []
+    repair = staffing.Location("Repair 1", "Repair", "Bay 1", "Recycled", None, min_ops=1, max_ops=2)
+    dismantle = staffing.Location("Dismantle", "Dismantle", "Bay 1", "Recycled", None, min_ops=1, max_ops=2)
+    monkeypatch.setattr(staffing_routes.staffing, "LOCATIONS", (repair, dismantle))
+    monkeypatch.setattr(staffing_routes.work_centers_store, "min_ops", lambda loc: loc.min_ops)
+    monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: staffing.Schedule(day=SATURDAY, assignments={}))
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: bundle)
+    monkeypatch.setattr(staffing_routes, "plant_now", lambda: datetime(2026, 7, 23, 8, tzinfo=SITE_TZ))
+
+    response = staffing_routes._staffing_save_work(
+        SimpleNamespace(headers={}), SATURDAY, 0,
+        FormData([("action", "save"), ("loc__Repair 1", "Ana"), ("loc__Dismantle", "Bob")]),
+    )
+
+    assert response.headers["location"] == f"/staffing?day={SATURDAY.isoformat()}"
+    assert len(saved) == 1
+    assert saved[0].published is False
+
+
 def test_post_deadline_publish_uses_only_requested_saturday_positions(monkeypatch):
     bundle = _repair_only_bundle()
     saved = []

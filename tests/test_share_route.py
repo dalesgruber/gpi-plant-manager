@@ -137,6 +137,8 @@ def test_share_returns_500_when_pdf_render_fails(monkeypatch):
 
 def test_share_returns_502_on_slack_error(monkeypatch):
     monkeypatch.setenv("SLACK_CHANNEL_ID", "C123")
+    record_delivery = MagicMock()
+    monkeypatch.setattr(staffing, "record_delivery", record_delivery)
 
     fake_html_response = MagicMock()
     fake_html_response.body = b"<html>fake</html>"
@@ -158,6 +160,7 @@ def test_share_returns_502_on_slack_error(monkeypatch):
     body = resp.json()
     assert body["ok"] is False
     assert "not_in_channel" in body["error"]
+    record_delivery.assert_not_called()
 
 
 def test_share_returns_json_502_when_slack_upload_hits_network_error(monkeypatch):

@@ -8,6 +8,22 @@ from zira_dashboard import db, staffing
 from zira_dashboard.app import app
 
 
+@pytest.mark.parametrize("day", [date(2026, 7, 15), date(2026, 7, 18), date(2026, 7, 19)])
+def test_every_day_uses_the_same_draft_and_posted_transition(day):
+    posted = staffing.Schedule(
+        day=day,
+        published=True,
+        assignments={"Repair 1": ["Jordan"]},
+        published_delivery={"version": "v1"},
+    )
+
+    draft = staffing.draft_from_posted(posted)
+
+    assert draft.published is False
+    assert draft.published_delivery == {}
+    assert draft.published_snapshot["published_delivery"]["version"] == "v1"
+
+
 @pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
 def test_record_delivery_updates_only_matching_current_version():
     day = date(2099, 12, 30)
