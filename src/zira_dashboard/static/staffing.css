@@ -703,11 +703,11 @@
     background: linear-gradient(135deg, var(--panel), color-mix(in srgb, var(--accent-dim) 32%, var(--panel)));
     box-shadow: 0 16px 36px rgba(31, 41, 55, 0.18);
   }
-  .day-context .rotation-mode { flex-wrap: nowrap; width: auto; padding: 0; border: 0; background: transparent; }
+  .day-context .rotation-mode { flex-wrap: wrap; width: auto; padding: 0; border: 0; background: transparent; }
   .day-context .rotation-mode-label { display: flex; align-items: center; gap: 0.35rem; margin-right: auto; }
   .day-context .rotation-mode-label::before { content: '•'; color: var(--accent); font-size: 1rem; line-height: 1; }
   .day-context .rotation-mode-help.hint { display: none; }
-  .day-context .minimum-crew-balance { display: block; margin: 0.55rem 0 0; white-space: normal; }
+  .day-context .minimum-crew-balance { display: block; flex: 0 0 100%; margin: 0.55rem 0 0; white-space: normal; }
   .sidebar-schedule-actions { display: flex; gap: 0.45rem; margin-top: 0.6rem; }
   .sidebar-schedule-actions .clear-btn { flex: 1 1 0; }
   .rotation-warning {

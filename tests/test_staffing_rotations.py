@@ -2096,6 +2096,8 @@ def test_staffing_has_rotation_mode_controls_without_automated_person_notes():
     assert "position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 20;" in css
     assert "box-shadow: 0 16px 36px rgba(31, 41, 55, 0.18);" in css
     assert "background: linear-gradient(135deg, var(--panel), color-mix(in srgb, var(--accent-dim) 32%, var(--panel)));" in css
+    assert ".day-context .rotation-mode { flex-wrap: wrap; width: auto; padding: 0; border: 0; background: transparent; }" in css
+    assert ".day-context .minimum-crew-balance { display: block; flex: 0 0 100%; margin: 0.55rem 0 0; white-space: normal; }" in css
     assert ".day-context .rotation-mode-label::before" in css
     assert "content: '•';" in css
     assert "@media (max-width: 1100px)" in css
