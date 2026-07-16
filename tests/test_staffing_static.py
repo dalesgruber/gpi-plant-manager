@@ -215,6 +215,18 @@ def test_staffing_print_balances_schedule_columns_and_keeps_fitting_name_pairs_i
     assert "white-space: nowrap;" in css
 
 
+def test_staffing_print_scopes_driving_label_to_transportation_bay_only():
+    html = _template()
+    screen_css = _style()
+    print_css = _print_css()
+
+    assert "<div class=\"bay-screen-label\">{{ bay.name }}</div>" in html
+    assert "{% if bay.name == 'Transportation' %}<div class=\"bay-print-label\">Driving</div>{% endif %}" in html
+    assert ".bay-print-label { display: none; }" in screen_css
+    assert ".bay-screen-label { display: none !important; }" in print_css
+    assert ".bay-print-label { display: block !important; }" in print_css
+
+
 def test_forklift_live_recalc_hooks_assignment_changes():
     js = _script()
 

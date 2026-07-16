@@ -10,11 +10,11 @@ def test_known_work_centers_map_to_static_departments():
     assert staffing.department_for_wc("Work Orders") == "Maintenance"
 
 
-def test_truck_driver_keeps_transportation_department_but_uses_driving_bay():
+def test_truck_driver_keeps_transportation_department_and_bay():
     location = staffing.location_by_name("Truck Driver")
 
     assert location is not None
-    assert location.bay == "Driving"
+    assert location.bay == "Transportation"
     assert location.department == "Transportation"
 
 
