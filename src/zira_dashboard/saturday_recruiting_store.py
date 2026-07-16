@@ -562,7 +562,7 @@ def commit(
                 and existing["availability_end"] == end
             ):
                 return _result(cur, day, "committed")
-            if existing["status"] != "later":
+            if existing["status"] not in {"later", "cancelled"}:
                 raise LifecycleConflict("Your Saturday response has already been finalized")
         bundle = _load_bundle(cur, day)
         assert bundle is not None
