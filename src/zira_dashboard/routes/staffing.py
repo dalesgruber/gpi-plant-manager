@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, UTC
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
+from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, schedule_solver, schedule_store, shift_config, staffing, staffing_view, time_format, work_centers_store
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
@@ -130,6 +130,48 @@ def _known_work_center_names() -> set[str]:
 def _effective_minimum(loc) -> int:
     """Read the authoritative configured minimum for a work center."""
     return work_centers_store.min_ops(loc)
+
+
+def _current_minimum_coverage_issues(
+    *, roster, assignments, time_off_entries, enabled_centers,
+) -> tuple[schedule_solver.PlacementIssue, ...]:
+    """Report minimum shortages in the saved schedule currently on screen."""
+    enabled = set(_ordered_work_center_names(enabled_centers))
+    absent = rotation_suggestions._full_day_time_off_names(time_off_entries or [])
+    by_name = {person.name: person for person in roster}
+    issues = []
+    for loc in staffing.LOCATIONS:
+        if loc.name not in enabled:
+            continue
+        try:
+            minimum = max(0, _effective_minimum(loc))
+        except Exception:
+            minimum = max(0, int(loc.min_ops))
+        try:
+            required = tuple(work_centers_store.required_skills(loc))
+        except Exception:
+            required = staffing.required_skills_for(loc)
+        safe_names = {
+            name
+            for name in (assignments or {}).get(loc.name, ())
+            if (
+                (person := by_name.get(name)) is not None
+                and person.active
+                and not person.reserve
+                and name not in absent
+                and all(person.level(skill) >= 1 for skill in required)
+            )
+        }
+        if len(safe_names) < minimum:
+            issues.append(schedule_solver.PlacementIssue(
+                code="center_minimum_unmet",
+                centers=(loc.name,),
+                message=(
+                    f"{loc.name} is below its minimum staffing level: "
+                    f"{len(safe_names)} qualified and present, minimum {minimum}."
+                ),
+            ))
+    return tuple(issues)
 
 
 def _minimum_crew_balance_for_day(*, roster, schedule, time_off_entries, enabled_centers):

@@ -474,6 +474,103 @@ def _stub_recommendation_inputs(monkeypatch):
     return staffing_route
 
 
+def test_current_minimum_coverage_uses_displayed_safe_assignments(monkeypatch):
+    from zira_dashboard.routes import staffing as staffing_route
+
+    minimums = {"Loading/Jockeying": 1, "Tablets": 4}
+    required = {
+        "Loading/Jockeying": ("Loading", "CPUs/VDOs", "Trailer Jockeying"),
+        "Tablets": ("Tablets",),
+    }
+    monkeypatch.setattr(
+        staffing_route,
+        "_effective_minimum",
+        lambda loc: minimums.get(loc.name, loc.min_ops),
+    )
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "required_skills",
+        lambda loc: list(required.get(loc.name, staffing.required_skills_for(loc))),
+    )
+    roster = [
+        staffing.Person(
+            "Jesus Moreno",
+            skills={"Loading": 1, "CPUs/VDOs": 1, "Trailer Jockeying": 1},
+        ),
+        *[
+            staffing.Person(name, skills={"Tablets": 1})
+            for name in (
+                "Trent Iverson",
+                "Francisco Ramirez",
+                "Iban Penaloza",
+                "Isidro Moctezuma",
+                "Lauro Benitez",
+            )
+        ],
+    ]
+
+    issues = staffing_route._current_minimum_coverage_issues(
+        roster=roster,
+        assignments={
+            "Loading/Jockeying": ["Jesus Moreno"],
+            "Tablets": [
+                "Trent Iverson",
+                "Francisco Ramirez",
+                "Iban Penaloza",
+                "Isidro Moctezuma",
+                "Lauro Benitez",
+            ],
+        },
+        time_off_entries=[],
+        enabled_centers={"Loading/Jockeying", "Tablets"},
+    )
+
+    assert issues == ()
+
+
+def test_current_minimum_coverage_excludes_people_who_cannot_cover(monkeypatch):
+    from zira_dashboard.routes import staffing as staffing_route
+
+    monkeypatch.setattr(
+        staffing_route,
+        "_effective_minimum",
+        lambda loc: 5 if loc.name == "Repair 1" else loc.min_ops,
+    )
+    monkeypatch.setattr(
+        staffing_route.work_centers_store,
+        "required_skills",
+        lambda loc: ["Repair"] if loc.name == "Repair 1" else list(
+            staffing.required_skills_for(loc)
+        ),
+    )
+    roster = [
+        staffing.Person("Qualified", skills={"Repair": 1}),
+        staffing.Person("Inactive", active=False, skills={"Repair": 3}),
+        staffing.Person("Reserve", reserve=True, skills={"Repair": 3}),
+        staffing.Person("Unqualified", skills={"Repair": 0}),
+        staffing.Person("Absent", skills={"Repair": 3}),
+    ]
+
+    issues = staffing_route._current_minimum_coverage_issues(
+        roster=roster,
+        assignments={
+            "Repair 1": [
+                "Qualified", "Inactive", "Reserve", "Unqualified", "Absent", "Unknown",
+            ],
+        },
+        time_off_entries=[{"name": "Absent", "hours": None}],
+        enabled_centers={"Repair 1"},
+    )
+
+    assert len(issues) == 1
+    assert issues[0].code == "center_minimum_unmet"
+    assert issues[0].centers == ("Repair 1",)
+    assert issues[0].message == (
+        "Repair 1 is below its minimum staffing level: "
+        "1 qualified and present, minimum 5."
+    )
+
+
 def test_rebuild_infeasible_applies_empty_partial_schedule_and_reports_unplaced(monkeypatch):
     client, rotations = _rotations_client(monkeypatch)
     staffing_route = _stub_recommendation_inputs(monkeypatch)
