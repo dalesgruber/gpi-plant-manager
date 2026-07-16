@@ -1177,6 +1177,11 @@ def staffing_page(
             time_off_entries=time_off_entries,
             publish_blocked=publish_blocked,
             saturday_commitments=saturday_staffing_commitments or {},
+            saturday_shift=(
+                (saturday_bundle.recruitment.shift_start, saturday_bundle.recruitment.shift_end)
+                if saturday_bundle and saturday_bundle.recruitment.status != "cancelled"
+                else None
+            ),
         )
 
     # Forklift demand advisor (read-only; never blocks scheduling).

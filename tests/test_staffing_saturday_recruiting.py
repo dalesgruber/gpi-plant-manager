@@ -54,10 +54,12 @@ def test_only_commitments_enter_saturday_unassigned(patch_wcs):
             "Ana": {"start": time(6, 0), "end": time(12, 0)},
             "Bob": {"start": time(7, 0), "end": time(11, 30)},
         },
+        saturday_shift=(time(6), time(12)),
     )
 
     assert model["unassigned"] == ["Ana", "Bob"]
     assert model["off"] == ["Cara"]
+    assert "Ana" not in model["saturday_availability_by_name"]
     assert model["saturday_availability_by_name"]["Bob"] == "7:00 AM–11:30 AM"
     assert model["is_saturday_recruiting"] is True
 
@@ -96,6 +98,7 @@ def test_partial_commitment_keeps_availability_after_assignment(patch_wcs):
         roster=[_person("Bob", Repair=2)],
         sched=_sched({"Repair 1": ["Bob"]}), time_off_entries=[], publish_blocked=0,
         saturday_commitments={"Bob": {"start": time(7, 0), "end": time(11, 30)}},
+        saturday_shift=(time(6), time(12)),
     )
 
     assert model["unassigned"] == []
