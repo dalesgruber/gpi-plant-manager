@@ -301,6 +301,7 @@ def build_staffing_bays(
         "partial_clear_by_name": partial_clear_by_name,
         "unassigned": sorted(unassigned),
         "off": sorted(off),
+        "saturday_committed_names": sorted(committed_names),
         "saturday_availability_by_name": saturday_availability_by_name,
         "is_saturday_recruiting": is_saturday_recruiting,
         "reserves": sorted(reserves),

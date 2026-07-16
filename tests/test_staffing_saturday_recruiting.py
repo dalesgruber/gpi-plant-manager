@@ -59,6 +59,7 @@ def test_only_commitments_enter_saturday_unassigned(patch_wcs):
 
     assert model["unassigned"] == ["Ana", "Bob"]
     assert model["off"] == ["Cara"]
+    assert model["saturday_committed_names"] == ["Ana", "Bob"]
     assert "Ana" not in model["saturday_availability_by_name"]
     assert model["saturday_availability_by_name"]["Bob"] == "7:00 AM–11:30 AM"
     assert model["is_saturday_recruiting"] is True
@@ -345,6 +346,7 @@ def test_staffing_template_has_saturday_off_availability_and_publish_lock():
     assert 'disabled aria-describedby="saturday-publish-lock"' in template
     assert "window.SATURDAY_RECRUITING" in template
     assert "window.SATURDAY_COMMITTED_NAMES" in template
+    assert "window.SATURDAY_COMMITTED_NAMES = {{ saturday_committed_names|default([], true)|tojson }};" in template
     assert "const __saturdayRecruiting = window.SATURDAY_RECRUITING;" in script
     assert "if (__saturdayRecruiting && !__saturdayCommittedNames.has(name)) return;" in script
     assert "background: var(--warn-dim);" in badge_css
