@@ -7,7 +7,22 @@
   <span class="k-header-prompt">Tap your name to clock in or out
     <span class="k-es" style="display:block;font-size:0.72em;font-weight:500;opacity:0.75">Toca tu nombre para marcar entrada o salida</span>
   </span>
-  {% if saturday_banner %}<div class="saturday-home-banner" role="status"><strong>Saturday Work Available</strong><span class="k-es">Trabajo disponible el sábado</span><small>Respond by {{ saturday_banner.deadline_label }} · Openings may fill</small></div>{% else %}<span></span>{% endif %}
+  {% if saturday_banner %}
+    {% if saturday_banner.phase == "available" %}
+    <div class="saturday-home-banner" role="status">
+      <strong>Saturday Work Available</strong>
+      <span class="k-es">Trabajo disponible el sábado</span>
+      <small>Respond by {{ saturday_banner.deadline_label }} · Openings may fill</small>
+    </div>
+    {% else %}
+    <button type="button" id="saturday-schedule-trigger"
+            class="saturday-home-banner saturday-home-plan"
+            aria-haspopup="dialog" aria-controls="saturday-schedule-modal">
+      <strong>Saturday planned for {{ saturday_banner.phase }}</strong>
+      <small>{{ saturday_banner.day_label }} · {{ saturday_banner.shift_label }}</small>
+    </button>
+    {% endif %}
+  {% else %}<span></span>{% endif %}
   <div class="k-header-actions">
     {# Who's Out shortcut — opens the public calendar glance (10s idle-return). #}
     <a href="/timeclock/whos-out" class="k-icon-btn" aria-label="Who's Out" title="Who's Out">
@@ -22,6 +37,28 @@
     {% include "_timeclock_brand.html" %}
   </div>
 </div>
+{% if saturday_banner and saturday_banner.phase != "available" %}
+<div id="saturday-schedule-modal" class="k-modal-overlay" hidden>
+  <div class="k-modal-card saturday-schedule-card" role="dialog" aria-modal="true"
+       aria-labelledby="saturday-schedule-title">
+    <h2 id="saturday-schedule-title">Saturday schedule</h2>
+    <p>{{ saturday_banner.day_label }} · {{ saturday_banner.shift_label }}</p>
+    {% if saturday_banner.published %}
+      {% for assignment in saturday_banner.assignments %}
+      <section class="saturday-schedule-assignment">
+        <h3>{{ assignment.work_center }}</h3>
+        <p>{{ assignment.people|join(", ") }}</p>
+      </section>
+      {% else %}
+      <p>No work-center assignments are listed.</p>
+      {% endfor %}
+    {% else %}
+    <p>Saturday schedule has not been published yet.</p>
+    {% endif %}
+    <button type="button" class="k-btn secondary" id="saturday-schedule-close">Close</button>
+  </div>
+</div>
+{% endif %}
 <div class="k-main" style="padding-top: 0;">
   {% if session_expired %}
   <div class="k-warning" style="max-width: 720px; text-align: center; margin: 1rem auto 0;">
@@ -66,5 +103,32 @@
       btn.style.display = (!q || name.indexOf(q) >= 0) ? '' : 'none';
     });
   });
+
+  (function() {
+    var scheduleTrigger = document.getElementById('saturday-schedule-trigger');
+    var scheduleModal = document.getElementById('saturday-schedule-modal');
+    var scheduleClose = document.getElementById('saturday-schedule-close');
+    if (!scheduleTrigger || !scheduleModal || !scheduleClose) return;
+
+    function closeSchedule() {
+      scheduleModal.hidden = true;
+      document.removeEventListener('keydown', onScheduleKeydown);
+      scheduleTrigger.focus();
+    }
+
+    function onScheduleKeydown(event) {
+      if (event.key === 'Escape') closeSchedule();
+    }
+
+    scheduleTrigger.addEventListener('click', function() {
+      scheduleModal.hidden = false;
+      scheduleClose.focus();
+      document.addEventListener('keydown', onScheduleKeydown);
+    });
+    scheduleClose.addEventListener('click', closeSchedule);
+    scheduleModal.addEventListener('click', function(event) {
+      if (event.target === scheduleModal) closeSchedule();
+    });
+  })();
 </script>
 {% endblock %}

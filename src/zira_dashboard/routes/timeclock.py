@@ -447,22 +447,49 @@ def _expired_redirect(request: Request) -> RedirectResponse:
     return RedirectResponse(url="/timeclock?expired=1", status_code=303)
 
 
+def _published_schedule_assignments(day) -> tuple[bool, list[dict[str, object]]]:
+    """Return the active official schedule or its preserved posted version."""
+    schedule = staffing.load_schedule(day)
+    if schedule.published:
+        assignments = schedule.assignments or {}
+    elif schedule.published_snapshot:
+        assignments = schedule.published_snapshot.get("assignments") or {}
+    else:
+        return False, []
+    return True, [
+        {"work_center": name, "people": list(names or [])}
+        for name, names in assignments.items()
+        if names
+    ]
+
+
 def _saturday_banner_context() -> dict | None:
-    """Best-effort shared-home recruiting notice; never delay the kiosk."""
+    """Best-effort shared-home recruiting or planned-Saturday notice."""
     from .. import saturday_recruiting as sr
 
     try:
         banner = saturday_recruiting_store.home_banner(plant_now())
+        if banner is None:
+            return None
+        if banner.phase == "available":
+            return {
+                "phase": banner.phase,
+                "day": banner.day.isoformat(),
+                "deadline_label": sr.format_deadline(banner.response_deadline),
+                "remaining_count": banner.remaining_count,
+            }
+        published, assignments = _published_schedule_assignments(banner.day)
+        return {
+            "phase": banner.phase,
+            "day": banner.day.isoformat(),
+            "day_label": f"{banner.day.strftime('%A, %B')} {banner.day.day}",
+            "shift_label": sr.format_time_range(banner.shift_start, banner.shift_end),
+            "published": published,
+            "assignments": assignments,
+        }
     except Exception:
         _log.exception("Saturday home banner lookup failed")
         return None
-    if banner is None:
-        return None
-    return {
-        "day": banner.day.isoformat(),
-        "deadline_label": sr.format_deadline(banner.response_deadline),
-        "remaining_count": banner.remaining_count,
-    }
 
 
 def _saturday_commitment_context(person_id: int) -> dict | None:

@@ -4,12 +4,18 @@ from fastapi.testclient import TestClient
 
 from zira_dashboard.app import app
 from zira_dashboard.routes import timeclock, timeclock_saturday
-from zira_dashboard import employee_notifications
+from zira_dashboard import employee_notifications, staffing
 from zira_dashboard.saturday_recruiting_store import HomeBanner, Offer
 
 client = TestClient(app)
 PERSON = {"id": 1, "name": "Ana", "odoo_id": 11, "wage_type": "hourly", "spanish_level": 3}
 OFFER = Offer(date(2026, 7, 25), time(7), time(12), datetime(2026, 7, 24, 7), frozenset({1}))
+AVAILABLE_BANNER = HomeBanner(
+    OFFER.day, OFFER.response_deadline, 1, "available", time(7), time(12)
+)
+PLANNED_BANNER = HomeBanner(
+    OFFER.day, OFFER.response_deadline, 0, "tomorrow", time(7), time(12)
+)
 
 
 def _person(monkeypatch):
@@ -34,7 +40,9 @@ def test_person_lookup_queries_people_table(monkeypatch):
 
 def test_home_shows_bilingual_banner_with_deadline(monkeypatch):
     monkeypatch.setattr(timeclock.db, "query", lambda *_args: [])
-    monkeypatch.setattr(timeclock.saturday_recruiting_store, "home_banner", lambda _now: HomeBanner(OFFER.day, OFFER.response_deadline, 1))
+    monkeypatch.setattr(
+        timeclock.saturday_recruiting_store, "home_banner", lambda _now: AVAILABLE_BANNER
+    )
     response = client.get("/timeclock")
     assert "Saturday Work Available" in response.text
     assert "Trabajo disponible el sábado" in response.text
@@ -42,6 +50,51 @@ def test_home_shows_bilingual_banner_with_deadline(monkeypatch):
     assert (response.text.index('<span class="k-header-prompt"')
             < response.text.index('<div class="saturday-home-banner"')
             < response.text.index('<div class="k-header-actions"'))
+
+
+def test_home_shows_tomorrow_plan_and_only_published_assignments(monkeypatch):
+    monkeypatch.setattr(timeclock.db, "query", lambda *_args: [])
+    monkeypatch.setattr(
+        timeclock.saturday_recruiting_store, "home_banner", lambda _now: PLANNED_BANNER
+    )
+    monkeypatch.setattr(
+        timeclock.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(
+            OFFER.day, published=True, assignments={"Repair 1": ["Ana", "Bob"]}
+        ),
+    )
+
+    response = client.get("/timeclock")
+
+    assert "Saturday planned for tomorrow" in response.text
+    assert "Repair 1" in response.text
+    assert "Ana" in response.text and "Bob" in response.text
+    assert "Saturday Work Available" not in response.text
+
+
+def test_home_uses_posted_snapshot_and_never_exposes_draft_assignments(monkeypatch):
+    monkeypatch.setattr(timeclock.db, "query", lambda *_args: [])
+    monkeypatch.setattr(
+        timeclock.saturday_recruiting_store, "home_banner", lambda _now: PLANNED_BANNER
+    )
+    monkeypatch.setattr(
+        timeclock.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(
+            OFFER.day,
+            published=False,
+            assignments={"Draft WC": ["Draft Person"]},
+            published_snapshot={"assignments": {"Posted WC": ["Posted Person"]}},
+        ),
+    )
+
+    response = client.get("/timeclock")
+
+    assert "Posted WC" in response.text
+    assert "Posted Person" in response.text
+    assert "Draft WC" not in response.text
+    assert "Draft Person" not in response.text
 
 
 def test_name_tap_routes_eligible_employee_to_offer(monkeypatch):

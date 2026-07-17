@@ -35,6 +35,12 @@
   .saturday-home-banner { justify-self:center; display:flex; flex-direction:column; align-items:center; text-align:center; color:#92400e; }
   .saturday-home-banner strong { font-size:1.05rem; }
   .saturday-home-banner small { font-size:.72rem; font-weight:600; margin-top:.2rem; }
+  .saturday-home-plan {
+    border:0; background:transparent; cursor:pointer; font:inherit; padding:0;
+  }
+  .saturday-home-plan:focus-visible {
+    outline:3px solid #2563eb; outline-offset:4px; border-radius:.5rem;
+  }
   .saturday-choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; width:min(100%, 800px); }
   .saturday-choice-grid .k-btn { width:100%; min-width:0; }
   .saturday-partial-link { display:block; margin:1rem auto 0; width:max-content; font-size:.85rem; color:#64748b; }
@@ -148,6 +154,18 @@
   }
   .k-modal-actions {
     display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .saturday-schedule-card {
+    max-width:760px; max-height:min(70vh, 620px); overflow-y:auto;
+  }
+  .saturday-schedule-assignment {
+    border-top:1px solid #e2e8f0; padding:1rem 0; text-align:left;
+  }
+  .saturday-schedule-assignment h3 {
+    margin:0 0 .35rem; color:#1e3a8a; font-size:1.3rem;
+  }
+  .saturday-schedule-assignment p {
+    margin:0; font-size:1.1rem;
   }
 
   /* htmx fragment swap: subtle fade so screen-to-screen transitions

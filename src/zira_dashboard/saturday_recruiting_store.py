@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from . import saturday_recruiting as sr
 
@@ -74,6 +74,9 @@ class HomeBanner:
     day: date
     response_deadline: datetime
     remaining_count: int
+    phase: str
+    shift_start: time
+    shift_end: time
 
 
 @dataclass(frozen=True)
@@ -461,22 +464,54 @@ def offer_for_person(person_id: int, now: datetime) -> Offer | None:
 
 
 def home_banner(now: datetime) -> HomeBanner | None:
-    """Return the next recruiting Saturday while at least one slot remains."""
+    """Return the nearest visible Saturday recruiting or plan banner."""
     from . import db
 
+    local_now = now.astimezone(sr.SITE_TZ)
     with db.cursor() as cur:
         cur.execute(
             "SELECT day FROM saturday_recruitments "
-            "WHERE status = 'recruiting' AND response_deadline > %s ORDER BY day",
-            (now,),
+            "WHERE status <> 'cancelled' AND day >= %s ORDER BY day",
+            (local_now.date(),),
         )
         for row in cur.fetchall():
             bundle = _load_bundle(cur, row["day"])
             assert bundle is not None
-            remaining_count = _remaining_count(bundle)
-            if remaining_count > 0:
+            recruitment = bundle.recruitment
+            shift_end = datetime.combine(
+                recruitment.day, recruitment.shift_end, tzinfo=sr.SITE_TZ
+            )
+            if recruitment.day == local_now.date():
+                if local_now >= shift_end:
+                    continue
                 return HomeBanner(
-                    bundle.recruitment.day, bundle.recruitment.response_deadline, remaining_count
+                    recruitment.day,
+                    recruitment.response_deadline,
+                    0,
+                    "today",
+                    recruitment.shift_start,
+                    recruitment.shift_end,
+                )
+            if local_now < recruitment.response_deadline and recruitment.status == "recruiting":
+                remaining_count = _remaining_count(bundle)
+                if remaining_count > 0:
+                    return HomeBanner(
+                        recruitment.day,
+                        recruitment.response_deadline,
+                        remaining_count,
+                        "available",
+                        recruitment.shift_start,
+                        recruitment.shift_end,
+                    )
+                continue
+            if recruitment.day == local_now.date() + timedelta(days=1):
+                return HomeBanner(
+                    recruitment.day,
+                    recruitment.response_deadline,
+                    0,
+                    "tomorrow",
+                    recruitment.shift_start,
+                    recruitment.shift_end,
                 )
         return None
 
@@ -650,7 +685,8 @@ def cancel_recruitment(
         )
         cur.execute(
             "UPDATE schedules SET published = FALSE, published_snapshot = NULL, "
-            "assignment_sources = '{}'::jsonb, updated_at = %s WHERE day = %s",
+            "assignment_sources = '{}'::jsonb, saturday_availability_overrides = '{}'::jsonb, "
+            "updated_at = %s WHERE day = %s",
             (now, day),
         )
         cur.execute("DELETE FROM schedule_assignments WHERE day = %s", (day,))

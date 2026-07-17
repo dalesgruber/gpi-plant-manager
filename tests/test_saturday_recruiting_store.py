@@ -340,10 +340,35 @@ def test_employee_cancel_before_cutoff_reopens_capacity():
     assert cancelled.status == "cancelled"
     assert before is None
     assert after is not None
+    assert after.phase == "available"
     assert after.remaining_count == 1
     assert store.offer_for_person(PERSON_ID, NOW + timedelta(hours=1)) == store.Offer(
         SATURDAY, time(6, 0), time(12, 0), DEADLINE, frozenset({910101})
     )
+
+
+def test_home_banner_becomes_tomorrow_plan_at_the_response_deadline():
+    _activate(requested_counts={910101: 1})
+
+    assert store.home_banner(DEADLINE) == store.HomeBanner(
+        SATURDAY, DEADLINE, 0, "tomorrow", time(6), time(12)
+    )
+
+
+def test_home_banner_becomes_today_plan_until_the_snapshotted_shift_ends():
+    _activate(requested_counts={910101: 1})
+
+    assert store.home_banner(
+        datetime(2026, 7, 25, 11, 59, tzinfo=SITE_TZ)
+    ) == store.HomeBanner(SATURDAY, DEADLINE, 0, "today", time(6), time(12))
+    assert store.home_banner(datetime(2026, 7, 25, 12, 0, tzinfo=SITE_TZ)) is None
+
+
+def test_home_banner_never_shows_a_cancelled_saturday():
+    _activate(requested_counts={910101: 1})
+    store.cancel_recruitment(SATURDAY, "manager@gruberpallets.com", DEADLINE)
+
+    assert store.home_banner(datetime(2026, 7, 24, 8, tzinfo=SITE_TZ)) is None
 
 
 def test_cancelled_employee_can_recommit_partial_availability_before_deadline():
