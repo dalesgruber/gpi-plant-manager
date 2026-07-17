@@ -1,11 +1,16 @@
 from pathlib import Path
 
 
-def test_work_center_settings_render_default_auto_toggle_for_each_location():
+def test_work_center_settings_render_auto_checkbox_column():
     html = Path("src/zira_dashboard/templates/settings.html").read_text()
-    assert 'name="default_auto_work_centers"' in html
-    assert "default_auto_work_centers" in html
-    assert "Default Auto Work Centers" in html
+
+    assert "<th>Auto</th>" in html
+    assert '<input type="hidden" name="default_auto_work_centers_present" value="1">' in html
+    assert html.index("<th>Auto</th>") < html.index("<th>Bay</th>")
+    checkbox = 'name="default_auto_work_centers" value="{{ r.name }}"'
+    assert checkbox in html
+    assert html.index(checkbox) > html.index("{% for r in wc_rows %}")
+    assert "default-auto-centers-grid" not in html
 
 
 def test_work_center_settings_save_writes_default_not_daily_state(monkeypatch):
