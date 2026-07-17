@@ -261,20 +261,6 @@
   .saturday-availability-swap:hover,
   .saturday-availability-swap:focus-visible { background: var(--accent-dim); }
   .saturday-availability-swap:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .saturday-availability-confirm {
-    width: min(23rem, calc(100vw - 2rem));
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1rem;
-    color: var(--text);
-    background: var(--panel);
-  }
-  .saturday-availability-confirm::backdrop { background: rgba(15, 23, 42, 0.28); }
-  .saturday-availability-confirm h2 { margin: 0; font-size: 1rem; }
-  .saturday-availability-confirm p { margin: 0.6rem 0; }
-  #saturday-availability-confirm-error { min-height: 1.1rem; color: var(--danger, #b91c1c); font-size: 0.8rem; }
-  .saturday-availability-confirm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
-  .saturday-availability-confirm-actions button { min-height: 2rem; padding: 0.3rem 0.7rem; }
   .side .section h3 .count {
     display: inline-block;
     margin-left: 0.4rem;

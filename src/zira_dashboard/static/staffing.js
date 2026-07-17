@@ -502,13 +502,6 @@
   const __saturdayRecruiting = window.SATURDAY_RECRUITING;
   const __saturdayCommittedNames = new Set(window.SATURDAY_COMMITTED_NAMES || []);
   const __saturdayAvailabilityByName = window.SATURDAY_AVAILABILITY_BY_NAME || {};
-  const __saturdayAvailabilityDialog = document.getElementById('saturday-availability-confirm');
-  const __saturdayAvailabilityForm = document.getElementById('saturday-availability-confirm-form');
-  const __saturdayAvailabilityMessage = document.getElementById('saturday-availability-confirm-message');
-  const __saturdayAvailabilityError = document.getElementById('saturday-availability-confirm-error');
-  const __saturdayAvailabilitySave = document.getElementById('saturday-availability-confirm-save');
-  const __saturdayAvailabilityCancel = document.getElementById('saturday-availability-confirm-cancel');
-  let __saturdayAvailabilityState = null;
 
   function _saturdaySection(destination) {
     return document.querySelector(destination === 'unassigned' ? '.section.unscheduled' : '.section.saturday-off');
@@ -549,59 +542,33 @@
     _refreshSaturdayAvailabilityCount('off', counts.off_count);
   }
 
-  function _openSaturdayAvailabilityConfirm(button) {
-    if (!__saturdayAvailabilityDialog || !__saturdayAvailabilityForm || __viewingPosted) return;
+  async function _saveSaturdayAvailability(button) {
+    if (__viewingPosted || button.disabled) return;
     const { name, destination } = button.dataset;
     if (!name || !destination) return;
-    const label = destination === 'unassigned' ? 'Unassigned' : 'Off';
-    __saturdayAvailabilityState = { name, destination, trigger: button };
-    __saturdayAvailabilityMessage.textContent = `Move ${name} to ${label}?`;
-    __saturdayAvailabilityError.textContent = '';
-    __saturdayAvailabilitySave.disabled = false;
-    __saturdayAvailabilityDialog.showModal();
-    __saturdayAvailabilitySave.focus();
-  }
-
-  if (__saturdayAvailabilityCancel) {
-    __saturdayAvailabilityCancel.addEventListener('click', () => __saturdayAvailabilityDialog?.close());
-  }
-  if (__saturdayAvailabilityDialog) {
-    __saturdayAvailabilityDialog.addEventListener('close', () => {
-      const trigger = __saturdayAvailabilityState?.trigger;
-      __saturdayAvailabilityState = null;
-      if (trigger && document.contains(trigger)) trigger.focus();
-    });
-  }
-  if (__saturdayAvailabilityForm) {
-    __saturdayAvailabilityForm.addEventListener('submit', async event => {
-      event.preventDefault();
-      const state = __saturdayAvailabilityState;
-      if (!state) return;
-      __saturdayAvailabilitySave.disabled = true;
-      __saturdayAvailabilityError.textContent = '';
-      try {
-        const response = await fetch('/api/staffing/saturday-availability', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            day: window.SCHEDULE_DAY,
-            name: state.name,
-            destination: state.destination,
-          }),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error || 'Could not update Saturday availability.');
-        _moveSaturdayAvailabilityRow(state.name, state.destination, data);
-        __saturdayAvailabilityDialog.close();
-      } catch (error) {
-        __saturdayAvailabilityError.textContent = error.message || 'Could not update Saturday availability.';
-        __saturdayAvailabilitySave.disabled = false;
-      }
-    });
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/staffing/saturday-availability', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          day: window.SCHEDULE_DAY,
+          name,
+          destination,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Could not update Saturday availability.');
+      _moveSaturdayAvailabilityRow(name, destination, data);
+    } catch (error) {
+      showToast(error.message || 'Could not update Saturday availability.', null, 'error');
+    } finally {
+      button.disabled = false;
+    }
   }
   document.addEventListener('click', event => {
     const button = event.target.closest('.saturday-availability-swap');
-    if (button && __saturdayRecruiting) _openSaturdayAvailabilityConfirm(button);
+    if (button && __saturdayRecruiting) _saveSaturdayAvailability(button);
   });
 
   // Partial-day off labels (name -> "arrives 11:30am" / "gone 10am–12pm" /
