@@ -682,6 +682,61 @@ def save_schedule(schedule: Schedule) -> None:
             )
 
 
+def create_schedule_if_absent(schedule: Schedule) -> bool:
+    """Create a complete schedule only if its day has no persisted row.
+
+    The row and its assignments are written in one transaction.  ``False``
+    means another request already owns that day's draft, which callers must
+    reload rather than overwrite.
+    """
+    from . import db
+
+    assignment_sources = _validate_assignment_sources(schedule.assignment_sources)
+    inserted = False
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO schedules (day, published, testing_day, notes, "
+            "custom_hours, published_snapshot, published_delivery, recycled_rotation_mode, assignment_sources, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb, now()) "
+            "ON CONFLICT (day) DO NOTHING RETURNING day",
+            (
+                schedule.day,
+                schedule.published,
+                bool(schedule.testing_day),
+                schedule.notes or "",
+                json.dumps(schedule.custom_hours) if schedule.custom_hours else None,
+                json.dumps(schedule.published_snapshot) if schedule.published_snapshot else None,
+                json.dumps(_delivery_mapping(schedule.published_delivery)),
+                schedule.rotation_mode or "normal",
+                json.dumps(assignment_sources),
+            ),
+        )
+        if cur.fetchone() is not None:
+            inserted = True
+            for wc_name, names in (schedule.assignments or {}).items():
+                if wc_name == TIME_OFF_KEY:
+                    continue
+                for i, n in enumerate(names or []):
+                    cur.execute(
+                        "INSERT INTO schedule_assignments (day, wc_id, person_id, sort_order) "
+                        "SELECT %s, wc.id, pe.id, %s FROM work_centers wc, people pe "
+                        "WHERE wc.name = %s AND pe.name = %s",
+                        (schedule.day, i, wc_name, n),
+                    )
+            for wc_name, note in (schedule.wc_notes or {}).items():
+                if not note:
+                    continue
+                cur.execute(
+                    "INSERT INTO schedule_wc_notes (day, wc_id, note) "
+                    "SELECT %s, wc.id, %s FROM work_centers wc WHERE wc.name = %s",
+                    (schedule.day, note, wc_name),
+                )
+    # A caller may have loaded and cached an empty schedule immediately before
+    # losing the conditional insert race, so invalidate for both outcomes.
+    _invalidate_schedule_cache(schedule.day)
+    return inserted
+
+
 def schedule_revision(day: date) -> str | None:
     from . import db
     rows = db.query(

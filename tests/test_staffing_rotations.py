@@ -2686,10 +2686,13 @@ def _render_staffing_page(
     schedule_revision="test",
     roster=None,
     time_off_entries=None,
+    strict_time_off_entries=None,
+    schedule_loader=None,
     default_inputs=None,
     center_capacities=None,
     history=None,
     saved_schedules=None,
+    conditional_create=None,
     smart_defaults=None,
     auto_centers=None,
     default_people=None,
@@ -2727,10 +2730,19 @@ def _render_staffing_page(
     monkeypatch.setattr(staffing_mod, "load_roster", lambda: list(roster or []))
     monkeypatch.setattr(
         staffing_mod, "load_schedule",
-        lambda d: saved_schedule or staffing_mod.Schedule(day=d, published=False, assignments={}),
+        schedule_loader or (lambda d: saved_schedule or staffing_mod.Schedule(day=d, published=False, assignments={})),
     )
-    monkeypatch.setattr(staffing_mod, "schedule_revision", lambda _day: schedule_revision)
+    monkeypatch.setattr(
+        staffing_mod,
+        "schedule_revision",
+        lambda d: schedule_revision(d) if callable(schedule_revision) else schedule_revision,
+    )
     monkeypatch.setattr(staffing_routes, "_safe_time_off_entries", lambda _day: list(time_off_entries or []))
+    monkeypatch.setattr(
+        staffing_routes,
+        "_time_off_entries_cached",
+        strict_time_off_entries or (lambda _day: list(time_off_entries or [])),
+    )
     monkeypatch.setattr(staffing_routes, "_default_inputs", default_inputs or (lambda strict=False: ({}, {}, {})))
     monkeypatch.setattr(
         staffing_routes,
@@ -2747,6 +2759,14 @@ def _render_staffing_page(
         "save_schedule",
         lambda schedule: saved_schedules.append(schedule) if saved_schedules is not None else None,
     )
+    def create_schedule_if_absent(schedule):
+        if conditional_create is not None:
+            return conditional_create(schedule)
+        if saved_schedules is not None:
+            saved_schedules.append(schedule)
+        return True
+
+    monkeypatch.setattr(staffing_mod, "create_schedule_if_absent", create_schedule_if_absent)
     monkeypatch.setattr(
         staffing_routes, "_safe_attendance",
         lambda d, sched, today: {"by_name": {}, "name_to_id": {}},
@@ -2908,6 +2928,75 @@ def test_future_draft_is_not_overwritten_when_revision_lookup_fails(monkeypatch)
         [],
         [],
     ) is blank
+
+
+def test_first_future_staffing_view_does_not_seed_when_time_off_read_fails(monkeypatch):
+    saved = []
+
+    ctx = _render_staffing_page(
+        monkeypatch,
+        schedule_revision=None,
+        roster=[_person("Pinned", 1)],
+        auto_centers={"Repair 1"},
+        default_inputs=lambda strict=False: ({"Repair 1": ("Pinned",)}, {}, {}),
+        strict_time_off_entries=lambda _day: (_ for _ in ()).throw(RuntimeError("time off unavailable")),
+        saved_schedules=saved,
+    )
+
+    assert saved == []
+    assert ctx["sched"].assignments == {}
+
+
+def test_first_future_staffing_view_returns_existing_draft_after_create_conflict(monkeypatch):
+    blank = staffing.Schedule(day=TARGET_DAY, published=False, assignments={})
+    existing = staffing.Schedule(
+        day=TARGET_DAY,
+        published=False,
+        assignments={"Repair 1": ["Existing"]},
+        notes="manager draft",
+        assignment_sources={"Repair 1": {"Existing": "manual"}},
+    )
+    load_count = 0
+
+    def schedule_loader(_day):
+        nonlocal load_count
+        load_count += 1
+        return blank if load_count == 1 else existing
+
+    ctx = _render_staffing_page(
+        monkeypatch,
+        schedule_revision=None,
+        schedule_loader=schedule_loader,
+        roster=[_person("Pinned", 1)],
+        auto_centers={"Repair 1"},
+        default_inputs=lambda strict=False: ({"Repair 1": ("Pinned",)}, {}, {}),
+        conditional_create=lambda _schedule: False,
+    )
+
+    assert ctx["sched"] is existing
+    assert ctx["sched"].assignments == {"Repair 1": ["Existing"]}
+    assert ctx["sched"].notes == "manager draft"
+    assert ctx["sched"].assignment_sources == {"Repair 1": {"Existing": "manual"}}
+
+
+def test_staffing_page_renders_blank_draft_when_display_revision_read_fails(monkeypatch):
+    blank = staffing.Schedule(day=TARGET_DAY, published=False, assignments={})
+    reads = iter(("saved", RuntimeError("database unavailable")))
+
+    def schedule_revision(_day):
+        result = next(reads)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    ctx = _render_staffing_page(
+        monkeypatch,
+        saved_schedule=blank,
+        schedule_revision=schedule_revision,
+    )
+
+    assert ctx["sched"] is blank
+    assert ctx["sched"].assignments == {}
 
 
 @pytest.mark.parametrize("day", [

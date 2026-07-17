@@ -18,7 +18,7 @@ from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db
 from .._http_cache import invalidate_today_cache
 from ..deps import templates
 from ..plant_day import today as plant_today, now as plant_now
-from ..staffing_attendance import _late_emp_ids, _safe_attendance, _safe_time_off_entries
+from ..staffing_attendance import _late_emp_ids, _safe_attendance, _safe_time_off_entries, _time_off_entries_cached
 
 log = logging.getLogger(__name__)
 
@@ -909,7 +909,7 @@ def _seed_new_future_draft(
     roster: Sequence[staffing.Person],
     time_off_entries,
 ) -> staffing.Schedule:
-    if day <= today:
+    if day <= today or time_off_entries is None:
         return sched
     try:
         if staffing.schedule_revision(day) is not None:
@@ -946,9 +946,10 @@ def _seed_new_future_draft(
         rotation_mode=sched.rotation_mode,
         assignment_sources=sources,
     )
-    staffing.save_schedule(seeded)
-    _http_cache.invalidate_today_cache()
-    return seeded
+    if staffing.create_schedule_if_absent(seeded):
+        _http_cache.invalidate_today_cache()
+        return seeded
+    return staffing.load_schedule(day)
 
 
 @router.get("/staffing", response_class=HTMLResponse)
@@ -1008,15 +1009,22 @@ def staffing_page(
         f_certs = pool.submit(cert_lookup.load_person_certs)
         f_roster = pool.submit(staffing.load_roster)
         f_sched = pool.submit(staffing.load_schedule, d)
-        f_time_off_entries = pool.submit(_safe_time_off_entries, d)
+        f_time_off_entries = pool.submit(_time_off_entries_cached, d)
         # Independent of schedule/roster — fire immediately.
         f_assignments_todo = pool.submit(_safe_assignments_todo)
         f_assignments_done = pool.submit(_safe_assignments_done)
         person_certs = f_certs.result()
         roster = f_roster.result()
         sched = f_sched.result()
-        time_off_entries = f_time_off_entries.result()
+        try:
+            time_off_entries = f_time_off_entries.result()
+        except Exception:
+            log.exception("Could not load time off for future-draft initialization on %s", d)
+            time_off_entries = None
     sched = _seed_new_future_draft(d, today, sched, roster, time_off_entries)
+    # A failed authoritative read must not create a draft, but the display
+    # remains best-effort and can render its time-off panel as empty.
+    time_off_entries = time_off_entries or []
     # If this day has both a current draft and a posted snapshot, the user may want
     # to view the posted version. Swap the visible fields in from the snapshot.
     has_snapshot = bool(sched.published_snapshot) and not sched.published
@@ -1338,6 +1346,11 @@ def staffing_page(
         dict(sched.published_delivery or {}) if (sched.published or viewing_posted) else {}
     )
     posted_version = posted_delivery.get("version")
+    try:
+        display_schedule_revision = staffing.schedule_revision(d)
+    except Exception:
+        log.exception("Could not load schedule revision for %s", d)
+        display_schedule_revision = None
 
     with _Phase(phases, "render"):
         response = templates.TemplateResponse(
@@ -1369,7 +1382,7 @@ def staffing_page(
                 "published": sched.published,
                 "posted_delivery": posted_delivery,
                 "posted_version": posted_version,
-                "schedule_revision": staffing.schedule_revision(d),
+                "schedule_revision": display_schedule_revision,
                 "notes": sched.notes or "",
                 "testing_day": bool(sched.testing_day),
                 # Pure per-WC render model + left-rail lists (bays,
