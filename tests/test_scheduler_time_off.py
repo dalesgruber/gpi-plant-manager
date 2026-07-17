@@ -3,6 +3,14 @@ from zira_dashboard import scheduler_time_off as sto
 
 
 def _fake_db(monkeypatch, rows):
+    rows = [{
+        "request_id": index,
+        "date_from": date(2026, 6, 1),
+        "date_to": date(2026, 6, 1),
+        "odoo_leave_id": 1,
+        "local_record": False,
+        **row,
+    } for index, row in enumerate(rows, start=1)]
     monkeypatch.setattr(sto.db, "query", lambda sql, params=None: rows)
     # time_off_entries_for_day also queries cleared_partials_by_name (via
     # late_report). With the broad db.query stub above, that query would
@@ -17,6 +25,23 @@ def _fake_db(monkeypatch, rows):
     monkeypatch.setattr(late_report, "absent_names_for_day", lambda day: set())
 
 
+def test_scheduler_entry_exposes_editor_metadata_without_note(monkeypatch):
+    monkeypatch.setattr(sto, "_cleared_partial_names", lambda _day: set())
+    monkeypatch.setattr(sto, "_rows_for_day", lambda _day: [{
+        "request_id": 91, "name": "Jose Luis", "shape": "midday_gap",
+        "hour_from": 9.0, "hour_to": 11.0, "state": "validate",
+        "date_from": date(2026, 7, 17), "date_to": date(2026, 7, 17),
+        "odoo_leave_id": 701, "local_record": False, "note": "private",
+        "pay_type": "Vacation",
+    }])
+    entry = sto.time_off_entries_for_day(date(2026, 7, 17))[0]
+    assert entry["request_id"] == 91
+    assert entry["date_from"] == "2026-07-17"
+    assert entry["hour_to"] == 11.0
+    assert entry["editable"] is True
+    assert "note" not in entry
+
+
 def test_full_day_entry_is_not_partial(monkeypatch):
     _fake_db(monkeypatch, [{
         "name": "Adrian Aragon", "shape": "full_day",
@@ -28,7 +53,7 @@ def test_full_day_entry_is_not_partial(monkeypatch):
     assert out[0]["hours"] is None
     assert out[0]["pending"] is False
     assert out[0]["pay_type"] == "Paid Time Off"
-    assert "request_id" not in out[0]
+    assert out[0]["request_id"] == 1
 
 
 def test_late_arrival_is_partial_with_time_range(monkeypatch):

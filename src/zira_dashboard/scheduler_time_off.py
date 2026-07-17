@@ -51,8 +51,9 @@ def _timing_label(r: dict) -> str:
 
 def _rows_for_day(day: _date) -> list[dict]:
     return db.query(
-        "SELECT p.name AS name, r.shape AS shape, "
+        "SELECT r.id AS request_id, p.name AS name, r.shape AS shape, "
         "r.hour_from AS hour_from, r.hour_to AS hour_to, r.state AS state, "
+        "r.date_from, r.date_to, r.odoo_leave_id, r.local_record, "
         "COALESCE(lt.name, 'Time Off') AS pay_type "
         "FROM time_off_requests r "
         "JOIN people p ON p.odoo_id = r.person_odoo_id "
@@ -96,14 +97,20 @@ def time_off_entries_for_day(day: _date) -> list[dict]:
             hours = round(ht - hf, 2)
             time_range = f"{fmt_decimal_hour(hf)}–{fmt_decimal_hour(ht)}"
         out.append({
+            "request_id": int(r["request_id"]),
             "name": r["name"],
+            "date_from": r["date_from"].isoformat(),
+            "date_to": r["date_to"].isoformat(),
             "hours": hours,
+            "hour_from": float(r["hour_from"]) if r["hour_from"] is not None else None,
+            "hour_to": float(r["hour_to"]) if r["hour_to"] is not None else None,
             "pay_type": r["pay_type"],
             "time_range": time_range,
             "timing_label": _timing_label(r),
             "derived": False,
             "manual_absent": False,
             "pending": r["state"] != _APPROVED,
+            "editable": bool(r["odoo_leave_id"]) and not bool(r["local_record"]),
         })
     cleared = _cleared_partial_names(day)
     if cleared:
