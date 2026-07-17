@@ -19,6 +19,16 @@ def _print_css():
     return Path("src/zira_dashboard/static/staffing-print.css").read_text()
 
 
+def test_printed_scheduler_hides_saturday_off_and_time_off_rails():
+    css = _print_css()
+
+    hidden_sections = css.split(".section.reserves,", 1)[1].split("{", 1)[0]
+
+    assert ".section.saturday-off," in hidden_sections
+    assert ".section.timeoff," in hidden_sections
+    assert "display: none !important;" in css
+
+
 def test_scheduler_time_off_rows_expose_editor_data_and_dialog():
     html = _template()
 
