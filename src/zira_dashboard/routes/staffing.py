@@ -2186,25 +2186,36 @@ def _stage_supervisor_time_off_edit(
     hour_to: float | None,
     shape: str,
     holiday_status_id: int,
-) -> None:
-    """Stage a supervisor edit without changing its leave type or Odoo id."""
-    db.execute(
+    day: date,
+) -> bool:
+    """Stage an edit only while the row remains scheduler-editable."""
+    rows = db.query(
         "UPDATE time_off_requests SET shape = %s, date_from = %s, date_to = %s, "
         "hour_from = %s, hour_to = %s, state = 'draft_edit', "
         "synced_to_odoo = FALSE, sync_error = NULL, updated_at = now() "
-        "WHERE id = %s AND holiday_status_id = %s",
-        (shape, date_from, date_to, hour_from, hour_to, request_id, holiday_status_id),
+        "WHERE id = %s AND holiday_status_id = %s "
+        "AND odoo_leave_id IS NOT NULL AND NOT local_record "
+        "AND state = ANY(%s) AND date_from <= %s AND date_to >= %s "
+        "RETURNING id",
+        (
+            shape, date_from, date_to, hour_from, hour_to, request_id,
+            holiday_status_id, list(scheduler_time_off._VISIBLE_STATES), day, day,
+        ),
     )
+    return bool(rows)
 
 
-def _stage_supervisor_time_off_cancel(request_id: int) -> None:
-    """Stage cancellation of an Odoo-backed leave for the sync worker."""
-    db.execute(
+def _stage_supervisor_time_off_cancel(request_id: int, day: date) -> bool:
+    """Stage cancellation only while the row remains scheduler-editable."""
+    rows = db.query(
         "UPDATE time_off_requests SET state = 'draft_cancel', "
         "synced_to_odoo = FALSE, sync_error = NULL, updated_at = now() "
-        "WHERE id = %s",
-        (request_id,),
+        "WHERE id = %s AND odoo_leave_id IS NOT NULL AND NOT local_record "
+        "AND state = ANY(%s) AND date_from <= %s AND date_to >= %s "
+        "RETURNING id",
+        (request_id, list(scheduler_time_off._VISIBLE_STATES), day, day),
     )
+    return bool(rows)
 
 
 def _scheduler_shift_bounds(day: date) -> tuple[float, float]:
@@ -2253,7 +2264,7 @@ def _edit_scheduler_time_off(
     if error:
         return JSONResponse({"ok": False, "error": error}, status_code=422)
 
-    _stage_supervisor_time_off_edit(
+    staged = _stage_supervisor_time_off_edit(
         request_id=request_id,
         date_from=date_from,
         date_to=date_to,
@@ -2261,7 +2272,10 @@ def _edit_scheduler_time_off(
         hour_to=hour_to,
         shape=row["shape"],
         holiday_status_id=row["holiday_status_id"],
+        day=day,
     )
+    if not staged:
+        return JSONResponse({"ok": False, "error": "time off request not found"}, status_code=404)
     invalidate_today_cache()
     if background_tasks is None:
         _queue_time_off_push(request_id)
@@ -2281,7 +2295,8 @@ def _cancel_scheduler_time_off(
         return JSONResponse({"ok": False, "error": "invalid date"}, status_code=422)
     if _editable_time_off_for_day(request_id, day) is None:
         return JSONResponse({"ok": False, "error": "time off request not found"}, status_code=404)
-    _stage_supervisor_time_off_cancel(request_id)
+    if not _stage_supervisor_time_off_cancel(request_id, day):
+        return JSONResponse({"ok": False, "error": "time off request not found"}, status_code=404)
     invalidate_today_cache()
     if background_tasks is None:
         _queue_time_off_push(request_id)
