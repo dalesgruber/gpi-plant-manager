@@ -1410,6 +1410,7 @@
     let debounceTimer = null;
     let inFlight = null;
     let queued = false;
+    let lastAutosaveError = null;
 
     function setState(state) {
       window.schedulerAutosaveBusy = state !== 'clean';
@@ -1438,6 +1439,7 @@
           return r.json();
         })
         .then(data => {
+          lastAutosaveError = null;
           if (data.revision) window.SCHEDULE_REVISION = data.revision;
           inFlight = null;
           if (queued) {
@@ -1451,6 +1453,7 @@
         })
         .catch(err => {
           inFlight = null;
+          lastAutosaveError = err;
           setState('dirty');
           if (window.showToast) {
             showToast('Autosave failed: ' + (err.message || 'unknown'), null, 'error');
@@ -1476,13 +1479,14 @@
     form.addEventListener('input', onEdit);
     form.addEventListener('change', onEdit);
 
-    window.flushAutosave = function () {
+    window.flushAutosave = async function () {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
         if (!inFlight) fireSave();
       }
-      return inFlight || Promise.resolve();
+      await (inFlight || Promise.resolve());
+      if (lastAutosaveError) throw lastAutosaveError;
     };
   })();
 

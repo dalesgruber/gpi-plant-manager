@@ -594,6 +594,101 @@ def test_flush_autosave_waits_for_a_queued_save_before_resolving():
     assert result.returncode == 0, result.stderr
 
 
+def test_flush_autosave_rejects_when_a_manual_save_fails():
+    """A center toggle must not reconcile over a manual edit that failed to save."""
+    js = _script()
+    controller = js.split("  // ---------- Autosave controller ----------", 1)[1].split(
+        "  // ---------- Publish submit busy state ----------", 1
+    )[0]
+    harness = textwrap.dedent(
+        f"""
+        const controller = {controller!r};
+        const listeners = {{}};
+        const form = {{
+          addEventListener(type, listener) {{ listeners[type] = listener; }},
+          getAttribute() {{ return '/staffing'; }},
+        }};
+        let rejectFetch;
+        global.window = {{}};
+        global.document = {{
+          getElementById(id) {{ return id === 'staffing-form' ? form : null; }},
+        }};
+        global.FormData = class FormData {{ set() {{}} }};
+        global.fetch = () => new Promise((resolve, reject) => {{ rejectFetch = reject; }});
+        const __viewingPosted = false;
+        eval(controller);
+
+        listeners.change();
+        const drained = window.flushAutosave();
+        rejectFetch(new Error('network offline'));
+        try {{
+          await drained;
+          throw new Error('flush resolved after the autosave failure');
+        }} catch (error) {{
+          if (error.message === 'flush resolved after the autosave failure') throw error;
+          if (error.message !== 'network offline') throw error;
+        }}
+        """
+    )
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", harness],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_work_center_toggle_stops_before_reconciling_when_autosave_drain_fails():
+    js = _script()
+    save_auto = js.split("async function saveAutoCenters(turnOff = [])", 1)[1].split(
+        "// Ordinary rebuilds", 1
+    )[0]
+    harness = textwrap.dedent(
+        f"""
+        const saveAuto = {('async function saveAutoCenters(turnOff = [])' + save_auto)!r};
+        const picker = {{ checked: true }};
+        const locks = [];
+        let savingAutoCenters = false;
+        let postCalls = 0;
+        let reconciliations = 0;
+        const __viewingPosted = false;
+        const window = {{
+          AUTO_SCHEDULE_WC_NAMES: ['Repair 1'],
+          flushAutosave: async () => {{ throw new Error('network offline'); }},
+          showToast: () => {{}},
+        }};
+        function setAutoCentersSaving(saving) {{ savingAutoCenters = saving; locks.push(saving); }}
+        function selectedAutoCenters() {{ return ['Repair 1']; }}
+        function postAutoCenters() {{ postCalls += 1; }}
+        function applyEnabledCenters() {{}}
+        function applyAutoCenterAssignments() {{ reconciliations += 1; picker.checked = false; }}
+        function renderSaturdayRecruitingDemand() {{}}
+        function clearStaleAutoWarnings() {{}}
+        function renderMinimumCrewBalance() {{}}
+        function renderCoverageFailure() {{}}
+        function showToast() {{}}
+        const saveAutoCenters = eval('(' + saveAuto + ')');
+
+        await saveAutoCenters(['Work Orders']);
+        if (postCalls !== 0) throw new Error('toggle posted after autosave failure');
+        if (reconciliations !== 0 || !picker.checked) throw new Error('toggle reconciled over manual picker state');
+        if (savingAutoCenters || locks.join(',') !== 'true,false') throw new Error('toggle lock was not released');
+        """
+    )
+
+    result = subprocess.run(
+        ["node", "--input-type=module", "--eval", harness],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_work_center_toggle_drains_autosave_and_locks_picker_edits_in_flight():
     js = _script()
     save_auto = js.split("async function saveAutoCenters(turnOff = []) {", 1)[1].split(
