@@ -3151,6 +3151,33 @@ def test_first_future_staffing_view_does_not_seed_when_time_off_read_fails(monke
     assert ctx["sched"].assignments == {}
 
 
+def test_first_future_staffing_view_reloads_day_created_before_seeding(monkeypatch):
+    blank = staffing.Schedule(day=TARGET_DAY, published=False, assignments={})
+    persisted = staffing.Schedule(
+        day=TARGET_DAY,
+        published=False,
+        assignments={"Repair 3": ["Existing"]},
+        auto_enabled_work_centers=["Repair 3"],
+    )
+    load_count = 0
+
+    def schedule_loader(_day):
+        nonlocal load_count
+        load_count += 1
+        return blank if load_count == 1 else persisted
+
+    ctx = _render_staffing_page(
+        monkeypatch,
+        schedule_loader=schedule_loader,
+        schedule_revision="created-before-seed",
+        auto_centers={"Repair 1", "Repair 2"},
+    )
+
+    assert load_count >= 2
+    assert ctx["sched"] is persisted
+    assert ctx["auto_schedule_enabled_wc_names"] == ["Repair 3"]
+
+
 def test_first_future_staffing_view_returns_existing_draft_after_create_conflict(monkeypatch):
     blank = staffing.Schedule(day=TARGET_DAY, published=False, assignments={})
     existing = staffing.Schedule(

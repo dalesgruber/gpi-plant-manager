@@ -940,7 +940,7 @@ def _seed_new_future_draft(
         return sched
     try:
         if staffing.schedule_revision(day) is not None:
-            return sched
+            return staffing.load_schedule(day)
         exact_defaults, group_defaults, user_group_centers = _default_inputs(strict=True)
         enabled_centers = _default_auto_work_centers(day)
         center_capacities = _configured_center_capacities(enabled_centers, strict=True)
