@@ -356,6 +356,7 @@ class Schedule:
     # Recycled smart-rotation metadata. Old schedules default to normal/manual-free.
     rotation_mode: str = "normal"
     assignment_sources: dict[str, dict[str, str]] = field(default_factory=dict)
+    auto_enabled_work_centers: list[str] = field(default_factory=list)
     # Manager corrections to Saturday recruiting availability. Missing names use
     # their recorded employee recruiting response.
     saturday_availability_overrides: dict[str, str] = field(default_factory=dict)
@@ -449,6 +450,15 @@ def _json_saturday_availability_overrides(value) -> dict[str, str]:
         return {}
 
 
+def _normalize_auto_enabled_work_centers(value) -> list[str]:
+    raw = json.loads(value) if isinstance(value, str) else value
+    if not isinstance(raw, list):
+        return []
+    known = {loc.name for loc in LOCATIONS}
+    selected = {str(name).strip() for name in raw if str(name).strip() in known}
+    return [loc.name for loc in LOCATIONS if loc.name in selected]
+
+
 def new_published_delivery() -> dict[str, str]:
     return {"version": uuid4().hex}
 
@@ -487,6 +497,9 @@ def snapshot_of(sched: Schedule) -> dict:
             wc_name: dict(sources or {})
             for wc_name, sources in (sched.assignment_sources or {}).items()
         },
+        "auto_enabled_work_centers": _normalize_auto_enabled_work_centers(
+            sched.auto_enabled_work_centers
+        ),
         "saturday_availability_overrides": dict(sched.saturday_availability_overrides or {}),
     }
 
@@ -550,7 +563,7 @@ def _load_schedule_from_db(day: date) -> Schedule:
     from . import db
     rows = db.query(
         "SELECT day, published, testing_day, notes, custom_hours, published_snapshot, published_delivery, "
-        "recycled_rotation_mode, assignment_sources, saturday_availability_overrides "
+        "recycled_rotation_mode, assignment_sources, auto_enabled_work_centers, saturday_availability_overrides "
         "FROM schedules WHERE day = %s",
         (day,),
     )
@@ -588,6 +601,9 @@ def _load_schedule_from_db(day: date) -> Schedule:
         published_delivery=_delivery_mapping(r.get("published_delivery")),
         rotation_mode=r.get("recycled_rotation_mode") or "normal",
         assignment_sources=_json_mapping(r.get("assignment_sources")),
+        auto_enabled_work_centers=_normalize_auto_enabled_work_centers(
+            r.get("auto_enabled_work_centers")
+        ),
         saturday_availability_overrides=_json_saturday_availability_overrides(
             r.get("saturday_availability_overrides")
         ),
@@ -620,7 +636,7 @@ def load_schedules_bulk(
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     sched_rows = db.query(
         "SELECT day, published, testing_day, notes, custom_hours, published_snapshot, published_delivery, "
-        "recycled_rotation_mode, assignment_sources, saturday_availability_overrides "
+        "recycled_rotation_mode, assignment_sources, auto_enabled_work_centers, saturday_availability_overrides "
         f"FROM schedules{where} ORDER BY day DESC",
         tuple(params) if params else None,
     )
@@ -674,6 +690,9 @@ def load_schedules_bulk(
             published_delivery=_delivery_mapping(r.get("published_delivery")),
             rotation_mode=r.get("recycled_rotation_mode") or "normal",
             assignment_sources=_json_mapping(r.get("assignment_sources")),
+            auto_enabled_work_centers=_normalize_auto_enabled_work_centers(
+                r.get("auto_enabled_work_centers")
+            ),
             saturday_availability_overrides=_json_saturday_availability_overrides(
                 r.get("saturday_availability_overrides")
             ),
@@ -691,8 +710,8 @@ def _save_schedule_with_cursor(
     cur.execute(
         "INSERT INTO schedules (day, published, testing_day, notes, "
         "custom_hours, published_snapshot, published_delivery, recycled_rotation_mode, "
-        "saturday_availability_overrides, assignment_sources, updated_at) "
-        "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s::jsonb, now()) "
+        "saturday_availability_overrides, auto_enabled_work_centers, assignment_sources, updated_at) "
+        "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s::jsonb, %s::jsonb, now()) "
         "ON CONFLICT (day) DO UPDATE SET "
         "  published = EXCLUDED.published, "
         "  testing_day = EXCLUDED.testing_day, "
@@ -712,6 +731,7 @@ def _save_schedule_with_cursor(
         "  recycled_rotation_mode = EXCLUDED.recycled_rotation_mode, "
         "  saturday_availability_overrides = EXCLUDED.saturday_availability_overrides, "
         "  assignment_sources = EXCLUDED.assignment_sources, "
+        "  auto_enabled_work_centers = EXCLUDED.auto_enabled_work_centers, "
         "  updated_at = now()",
         (
             schedule.day,
@@ -723,6 +743,7 @@ def _save_schedule_with_cursor(
             json.dumps(_delivery_mapping(schedule.published_delivery)),
             schedule.rotation_mode or "normal",
             json.dumps(saturday_availability_overrides),
+            json.dumps(_normalize_auto_enabled_work_centers(schedule.auto_enabled_work_centers)),
             json.dumps(assignment_sources),
         ),
     )
@@ -787,8 +808,8 @@ def create_schedule_if_absent(schedule: Schedule) -> bool:
         cur.execute(
             "INSERT INTO schedules (day, published, testing_day, notes, "
             "custom_hours, published_snapshot, published_delivery, recycled_rotation_mode, "
-            "saturday_availability_overrides, assignment_sources, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s::jsonb, now()) "
+            "saturday_availability_overrides, auto_enabled_work_centers, assignment_sources, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s::jsonb, %s::jsonb, %s::jsonb, now()) "
             "ON CONFLICT (day) DO NOTHING RETURNING day",
             (
                 schedule.day,
@@ -800,6 +821,7 @@ def create_schedule_if_absent(schedule: Schedule) -> bool:
                 json.dumps(_delivery_mapping(schedule.published_delivery)),
                 schedule.rotation_mode or "normal",
                 json.dumps(saturday_availability_overrides),
+                json.dumps(_normalize_auto_enabled_work_centers(schedule.auto_enabled_work_centers)),
                 json.dumps(assignment_sources),
             ),
         )

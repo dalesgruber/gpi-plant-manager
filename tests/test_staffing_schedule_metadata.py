@@ -403,12 +403,15 @@ def test_posted_view_does_not_overwrite_cached_draft_before_save(monkeypatch):
     repair_1 = next(loc for loc in staffing.LOCATIONS if loc.name == "Repair 1")
     draft_sources = {"Repair 1": {"Jordan": "generated"}}
     posted_sources = {"Repair 1": {"Jordan": "manual"}}
+    draft_auto_enabled_work_centers = ["Repair 2"]
+    posted_auto_enabled_work_centers = ["Repair 1"]
     cached = staffing.Schedule(
         day=DAY,
         published=False,
         assignments={"Repair 1": ["Jordan"]},
         rotation_mode="training",
         assignment_sources=draft_sources,
+        auto_enabled_work_centers=draft_auto_enabled_work_centers,
         published_snapshot={
             "assignments": {"Repair 1": ["Taylor"]},
             "notes": "posted",
@@ -416,6 +419,7 @@ def test_posted_view_does_not_overwrite_cached_draft_before_save(monkeypatch):
             "testing_day": False,
             "rotation_mode": "normal",
             "assignment_sources": posted_sources,
+            "auto_enabled_work_centers": posted_auto_enabled_work_centers,
             "custom_hours": {"start": "06:00", "end": "12:00", "breaks": []},
             "published_delivery": {"version": "v1", "printed_at": "now"},
         },
@@ -448,7 +452,7 @@ def test_posted_view_does_not_overwrite_cached_draft_before_save(monkeypatch):
         "current",
         lambda: SimpleNamespace(work_weekdays=frozenset({0, 1, 2, 3, 4})),
     )
-    monkeypatch.setattr(staffing_routes.staffing, "LOCATIONS", ())
+    monkeypatch.setattr(staffing_routes.staffing, "LOCATIONS", (repair_1,))
     monkeypatch.setattr(staffing_routes.work_centers_store, "default_people", lambda _loc: [])
     monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: "r1")
     monkeypatch.setattr(
@@ -477,6 +481,8 @@ def test_posted_view_does_not_overwrite_cached_draft_before_save(monkeypatch):
 
     assert staffing.load_schedule(DAY).rotation_mode == "training"
     assert staffing.load_schedule(DAY).assignment_sources == draft_sources
+    assert staffing.load_schedule(DAY).auto_enabled_work_centers == draft_auto_enabled_work_centers
+    assert captured_context["sched"].auto_enabled_work_centers == posted_auto_enabled_work_centers
     assert captured_context["sched"].custom_hours == {
         "start": "06:00", "end": "12:00", "breaks": [],
     }
@@ -493,3 +499,4 @@ def test_posted_view_does_not_overwrite_cached_draft_before_save(monkeypatch):
 
     assert saved[0].rotation_mode == "training"
     assert saved[0].assignment_sources == draft_sources
+    assert saved[0].auto_enabled_work_centers == draft_auto_enabled_work_centers

@@ -952,6 +952,7 @@ def _seed_new_future_draft(
         custom_hours=sched.custom_hours,
         rotation_mode=sched.rotation_mode,
         assignment_sources=sources,
+        auto_enabled_work_centers=list(sched.auto_enabled_work_centers),
     )
     if staffing.create_schedule_if_absent(seeded):
         _http_cache.invalidate_today_cache()
@@ -1056,6 +1057,9 @@ def staffing_page(
             wc_name: dict(sources or {})
             for wc_name, sources in (snap.get("assignment_sources") or {}).items()
         }
+        sched.auto_enabled_work_centers = staffing._normalize_auto_enabled_work_centers(
+            snap.get("auto_enabled_work_centers")
+        )
         sched.saturday_availability_overrides = dict(
             snap.get("saturday_availability_overrides") or {}
         )
@@ -1642,6 +1646,7 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         published_delivery=published_delivery,
         rotation_mode=existing.rotation_mode,
         assignment_sources=assignment_sources,
+        auto_enabled_work_centers=list(existing.auto_enabled_work_centers),
         saturday_availability_overrides=existing.saturday_availability_overrides,
     ))
     if action == "publish" and published and saturday_bundle is not None:
@@ -2558,6 +2563,7 @@ async def staffing_clear_testing_day(request: Request):
                 wc_name: dict(sources or {})
                 for wc_name, sources in existing.assignment_sources.items()
             },
+            auto_enabled_work_centers=list(existing.auto_enabled_work_centers),
         ))
         _bust_after_mutation()
         return JSONResponse({"ok": True})
