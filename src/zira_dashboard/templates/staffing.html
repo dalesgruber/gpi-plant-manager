@@ -88,8 +88,8 @@
                work for Odoo entries too; cleared partials are already filtered
                out of time_off_entries upstream (scheduler_time_off). #}
             {% set is_clearable = is_partial %}
-            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable %} clearable{% endif %}{% if e.pending %} pending{% endif %}"{% if e.pending %} style="opacity: 0.7;"{% endif %}{% if is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.timing_label }}" aria-label="Clear partial time off for {{ e.name }}"{% else %} title="{{ e.timing_label }}{% if e.pending %}{% if e.timing_label %} · {% endif %}pending approval{% endif %}"{% endif %}>
-              <span class="name"><a href="/staffing/people/{{ e.name|urlencode }}" class="person-card-link" onclick="event.stopPropagation()">{{ e.name }}</a>{{ cert_badges(e.name, person_certs) }}{{ goat_badges(e.name, goat_holders()) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}{% if e.pending %} <span class="pending-tag" style="font-size: 0.7rem; font-weight: 600; color: #92400e; background: #fef3c7; border-radius: 0.25rem; padding: 0 0.3rem; margin-left: 0.25rem;">pending</span>{% endif %}</span>
+            <li class="time-off-row {% if is_absent %}absent{% elif is_partial %}partial{% else %}full{% endif %}{% if is_clearable and not e.editable %} clearable{% endif %}{% if e.editable %} editable{% endif %}{% if e.pending %} pending{% endif %}"{% if e.pending %} style="opacity: 0.7;"{% endif %}{% if e.editable %} role="button" tabindex="0" data-request-id="{{ e.request_id }}" data-date-from="{{ e.date_from }}" data-date-to="{{ e.date_to }}" data-hour-from="{{ e.hour_from if e.hour_from is not none else '' }}" data-hour-to="{{ e.hour_to if e.hour_to is not none else '' }}" aria-label="Edit time off for {{ e.name }}" title="Edit time off — {{ e.timing_label }}"{% elif is_clearable %} role="button" tabindex="0" data-day="{{ day }}" data-name="{{ e.name }}" title="Click to clear this partial — {{ e.timing_label }}" aria-label="Clear partial time off for {{ e.name }}"{% else %} title="{{ e.timing_label }}{% if e.pending %}{% if e.timing_label %} · {% endif %}pending approval{% endif %}"{% endif %}>
+              <span class="name">{{ e.name }}{{ cert_badges(e.name, person_certs) }}{{ goat_badges(e.name, goat_holders()) }}{% if is_partial %} <span class="partial-tag">partial</span>{% endif %}{% if e.pending %} <span class="pending-tag" style="font-size: 0.7rem; font-weight: 600; color: #92400e; background: #fef3c7; border-radius: 0.25rem; padding: 0 0.3rem; margin-left: 0.25rem;">pending</span>{% endif %}</span>
               <span class="ts-meta">{{ e.timing_label }}</span>
             </li>
           {% endfor %}
@@ -428,6 +428,38 @@
   <span class="pill lvl-1" style="padding:0.05rem 0.5rem;font-size:0.72rem">practicing</span>
   <span class="pill lvl-0" style="padding:0.05rem 0.5rem;font-size:0.72rem">not trained</span>.
 </p>
+
+<dialog id="scheduler-time-off-editor" class="scheduler-time-off-editor" aria-labelledby="scheduler-time-off-title">
+  <form id="scheduler-time-off-form" method="dialog">
+    <header class="scheduler-time-off-head">
+      <h2 id="scheduler-time-off-title">Edit time off</h2>
+      <button type="button" id="scheduler-time-off-close" class="scheduler-time-off-close" aria-label="Close time off editor">×</button>
+    </header>
+    <p id="scheduler-time-off-person" class="scheduler-time-off-person"></p>
+    <p id="scheduler-time-off-error" class="scheduler-time-off-error" role="alert" aria-live="assertive"></p>
+    <div class="scheduler-time-off-fields">
+      <label>Start date
+        <input id="scheduler-time-off-date-from" type="date" required>
+      </label>
+      <label>End date
+        <input id="scheduler-time-off-date-to" type="date" required>
+      </label>
+    </div>
+    <div id="scheduler-time-off-partial-fields" class="scheduler-time-off-fields" hidden>
+      <label>From time
+        <input id="scheduler-time-off-hour-from" type="time" step="300">
+      </label>
+      <label>To time
+        <input id="scheduler-time-off-hour-to" type="time" step="300">
+      </label>
+    </div>
+    <div class="scheduler-time-off-actions">
+      <button type="button" id="scheduler-time-off-close-secondary">Close</button>
+      <button type="button" id="scheduler-time-off-cancel" class="scheduler-time-off-cancel">Cancel time off</button>
+      <button type="submit" id="scheduler-time-off-save">Save changes</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="training-protocol-modal" class="training-protocol-modal" aria-labelledby="training-protocol-title">
   <form id="training-protocol-form" method="dialog">

@@ -136,6 +136,51 @@
     color: white;
   }
   .timeoff .time-off-row.clearable:hover .ts-meta { color: rgba(255,255,255,0.85); }
+  .timeoff .time-off-row.editable {
+    cursor: pointer;
+    transition: background 0.1s ease, box-shadow 0.1s ease;
+  }
+  .timeoff .time-off-row.editable:hover {
+    background: var(--accent-dim);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .timeoff .time-off-row.editable:focus-visible,
+  .scheduler-time-off-editor button:focus-visible,
+  .scheduler-time-off-editor input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .scheduler-time-off-editor {
+    width: min(32rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem);
+    overflow: auto; color: var(--fg); background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45); padding: 1rem;
+  }
+  .scheduler-time-off-editor::backdrop { background: rgba(0, 0, 0, 0.55); }
+  .scheduler-time-off-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .scheduler-time-off-head h2 { margin: 0; font-size: 1.1rem; }
+  .scheduler-time-off-person { margin: 0.65rem 0; font-weight: 650; }
+  .scheduler-time-off-error { min-height: 1.2em; margin: 0 0 0.5rem; color: var(--bad); font-size: 0.85rem; }
+  .scheduler-time-off-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; margin-top: 0.65rem; }
+  .scheduler-time-off-fields label { display: grid; gap: 0.25rem; font-size: 0.82rem; font-weight: 650; }
+  .scheduler-time-off-fields input {
+    width: 100%; box-sizing: border-box; color: var(--fg); background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem; font: inherit;
+  }
+  .scheduler-time-off-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+  .scheduler-time-off-actions button, .scheduler-time-off-close {
+    color: var(--fg); background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.42rem 0.75rem; font: inherit; font-weight: 650; cursor: pointer;
+  }
+  .scheduler-time-off-close { font-size: 1rem; line-height: 1; }
+  .scheduler-time-off-actions button:last-child { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .scheduler-time-off-actions .scheduler-time-off-cancel { color: #fff; background: var(--bad); border-color: var(--bad); }
+  .scheduler-time-off-actions button:disabled { opacity: 0.6; cursor: progress; }
+  @media (max-width: 480px) {
+    .scheduler-time-off-editor { padding: 0.85rem; }
+    .scheduler-time-off-fields { grid-template-columns: 1fr; gap: 0.5rem; }
+    .scheduler-time-off-actions { justify-content: stretch; }
+    .scheduler-time-off-actions button { flex: 1 1 100%; min-height: 2.5rem; }
+  }
   .cleared-partials {
     margin-top: 0.6rem; padding-top: 0.5rem;
     border-top: 1px dashed var(--border, #d8dee5);

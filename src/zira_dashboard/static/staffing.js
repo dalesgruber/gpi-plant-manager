@@ -894,7 +894,7 @@
         _doPartialAction(btn, true);
       });
     });
-    document.querySelectorAll('.time-off-row.clearable').forEach((row) => {
+    document.querySelectorAll('.time-off-row.clearable:not([data-request-id])').forEach((row) => {
       if (row.dataset.bound) return;
       row.dataset.bound = '1';
       row.addEventListener('click', (e) => {
@@ -942,6 +942,119 @@
     });
   }
   _bindPartialHandlers();
+
+  // ---------- Scheduler time-off editor ----------
+  (() => {
+    const dialog = document.getElementById('scheduler-time-off-editor');
+    if (!dialog) return;
+    const form = document.getElementById('scheduler-time-off-form');
+    const personEl = document.getElementById('scheduler-time-off-person');
+    const errorEl = document.getElementById('scheduler-time-off-error');
+    const dateFrom = document.getElementById('scheduler-time-off-date-from');
+    const dateTo = document.getElementById('scheduler-time-off-date-to');
+    const partialFields = document.getElementById('scheduler-time-off-partial-fields');
+    const hourFrom = document.getElementById('scheduler-time-off-hour-from');
+    const hourTo = document.getElementById('scheduler-time-off-hour-to');
+    const saveBtn = document.getElementById('scheduler-time-off-save');
+    const cancelBtn = document.getElementById('scheduler-time-off-cancel');
+    const closeButtons = [
+      document.getElementById('scheduler-time-off-close'),
+      document.getElementById('scheduler-time-off-close-secondary'),
+    ];
+    let activeRequestId = null;
+    let opener = null;
+
+    function decimalHourToTime(value) {
+      if (value === '' || value == null) return '';
+      const minutes = Math.round(Number(value) * 60);
+      if (!Number.isFinite(minutes)) return '';
+      return String(Math.floor(minutes / 60)).padStart(2, '0') + ':'
+        String(minutes % 60).padStart(2, '0');
+    }
+
+    async function submitSchedulerTimeOff(action, payload) {
+      const response = await fetch(
+        '/api/staffing/time-off/' + encodeURIComponent(activeRequestId) + '/' + action,
+        {method: 'POST', headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+         body: JSON.stringify(payload)}
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || 'Could not update time off.');
+      window.location.href = '/staffing?day=' + encodeURIComponent(window.SCHEDULE_DAY);
+    }
+
+    function openEditor(row) {
+      if (__viewingPosted) return;
+      activeRequestId = row.dataset.requestId;
+      opener = row;
+      personEl.textContent = row.querySelector('.name')?.childNodes[0]?.textContent?.trim() || 'Time off';
+      dateFrom.value = row.dataset.dateFrom || '';
+      dateTo.value = row.dataset.dateTo || '';
+      hourFrom.value = decimalHourToTime(row.dataset.hourFrom);
+      hourTo.value = decimalHourToTime(row.dataset.hourTo);
+      const isPartial = !!(row.dataset.hourFrom && row.dataset.hourTo);
+      partialFields.hidden = !isPartial;
+      hourFrom.required = isPartial;
+      hourTo.required = isPartial;
+      errorEl.textContent = '';
+      dialog.showModal();
+      dateFrom.focus();
+    }
+
+    function closeEditor() {
+      if (dialog.open) dialog.close();
+    }
+
+    document.querySelectorAll('.time-off-row[data-request-id]').forEach(row => {
+      row.addEventListener('click', event => {
+        event.preventDefault();
+        openEditor(row);
+      });
+      row.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openEditor(row);
+      });
+    });
+    closeButtons.forEach(button => button?.addEventListener('click', closeEditor));
+    dialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      closeEditor();
+    });
+    dialog.addEventListener('close', () => {
+      if (opener && document.contains(opener)) opener.focus();
+      opener = null;
+      activeRequestId = null;
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      errorEl.textContent = '';
+      if (!form.reportValidity()) return;
+      saveBtn.disabled = true;
+      try {
+        await submitSchedulerTimeOff('edit', {
+          day: window.SCHEDULE_DAY,
+          date_from: dateFrom.value,
+          date_to: dateTo.value,
+          time_from: hourFrom.value,
+          time_to: hourTo.value,
+        });
+      } catch (error) {
+        errorEl.textContent = error.message || 'Could not update time off.';
+        saveBtn.disabled = false;
+      }
+    });
+    cancelBtn.addEventListener('click', async () => {
+      errorEl.textContent = '';
+      cancelBtn.disabled = true;
+      try {
+        await submitSchedulerTimeOff('cancel', {day: window.SCHEDULE_DAY});
+      } catch (error) {
+        errorEl.textContent = error.message || 'Could not cancel time off.';
+        cancelBtn.disabled = false;
+      }
+    });
+  })();
 
   // Close dropdowns when clicking outside.
   document.addEventListener('click', (e) => {

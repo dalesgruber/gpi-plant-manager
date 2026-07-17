@@ -17,6 +17,24 @@ def _print_css():
     return Path("src/zira_dashboard/static/staffing-print.css").read_text()
 
 
+def test_scheduler_time_off_rows_expose_editor_data_and_dialog():
+    html = _template()
+
+    assert 'data-request-id="{{ e.request_id }}"' in html
+    assert 'id="scheduler-time-off-editor"' in html
+    assert 'id="scheduler-time-off-save"' in html
+    assert 'id="scheduler-time-off-cancel"' in html
+
+
+def test_scheduler_script_posts_editor_actions_and_restores_focus():
+    js = _script()
+
+    assert "/api/staffing/time-off/" in js
+    assert "showModal()" in js
+    assert "scheduler-time-off-editor" in js
+    assert "window.location.href = '/staffing?day='" in js
+
+
 def test_staffing_schedule_uses_compact_assigned_labels_and_balanced_columns():
     html = _template()
     css = _style()
