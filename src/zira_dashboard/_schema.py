@@ -416,7 +416,8 @@ SELECT 'rotation_auto_enabled_work_centers',
        ), '[]'::jsonb), now()
 WHERE NOT EXISTS (
   SELECT 1 FROM app_settings WHERE key = 'rotation_auto_enabled_work_centers'
-);
+)
+ON CONFLICT (key) DO NOTHING;
 
 UPDATE app_settings settings
    SET value = COALESCE((

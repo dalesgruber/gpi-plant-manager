@@ -302,6 +302,7 @@ def test_schema_initializes_missing_auto_template_from_recent_history_before_sna
     assert migration.index("INSERT INTO app_settings") < migration.index(
         "UPDATE schedules\n   SET auto_enabled_work_centers"
     )
+    assert "ON CONFLICT (key) DO NOTHING" in migration
 
 
 def test_schema_normalizes_legacy_auto_template_to_known_canonical_centers():
@@ -349,6 +350,71 @@ def test_narrow_auto_center_update_uses_locked_latest_assignments(monkeypatch):
     assert updated.auto_enabled_work_centers == ["Repair 1"]
     assert any("UPDATE schedules SET auto_enabled_work_centers" in sql for sql, _ in executed)
     assert not any("INSERT INTO schedules" in sql for sql, _ in executed)
+
+
+def test_first_day_toggle_reloads_after_losing_schedule_creation_race(monkeypatch):
+    """A toggle that loses first-row creation must not replace the new schedule."""
+    from zira_dashboard import staffing
+
+    concurrently_created = staffing.Schedule(
+        day=date(2026, 7, 14),
+        assignments={"Repair 1": ["Concurrent save"]},
+        auto_enabled_work_centers=["Repair 1"],
+    )
+    locked_rows = iter((None, concurrently_created))
+    executed = []
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+        def fetchone(self):
+            # The conditional insert lost to the ordinary schedule save.
+            return None
+
+    monkeypatch.setattr(
+        staffing,
+        "load_schedule_for_update",
+        lambda _day, *, cur: next(locked_rows),
+    )
+
+    updated = staffing.update_auto_enabled_work_centers(
+        concurrently_created.day,
+        enabled=["Repair 2"],
+        turn_off=set(),
+        cur=Cursor(),
+    )
+
+    assert updated.assignments == {"Repair 1": ["Concurrent save"]}
+    assert updated.auto_enabled_work_centers == ["Repair 2"]
+    assert any("ON CONFLICT (day) DO NOTHING" in sql for sql, _ in executed)
+    assert not any("ON CONFLICT (day) DO UPDATE" in sql for sql, _ in executed)
+
+
+def test_ordinary_schedule_upsert_preserves_daily_list_owned_by_concurrent_toggle(monkeypatch):
+    """A stale grid save cannot put an earlier toggle selection back."""
+    from zira_dashboard import db, staffing
+
+    executed = []
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+    @contextmanager
+    def fake_cursor():
+        yield Cursor()
+
+    monkeypatch.setattr(db, "cursor", fake_cursor)
+    staffing.save_schedule(staffing.Schedule(
+        day=date(2026, 7, 14),
+        assignments={"Repair 1": ["Stale grid save"]},
+        auto_enabled_work_centers=["Repair 1"],
+    ))
+
+    upsert_sql = executed[0][0]
+    assert "auto_enabled_work_centers = schedules.auto_enabled_work_centers" in upsert_sql
+    assert "auto_enabled_work_centers = EXCLUDED.auto_enabled_work_centers" not in upsert_sql
 
 
 def test_schedule_saturday_availability_overrides_round_trip(monkeypatch):

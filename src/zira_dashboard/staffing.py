@@ -610,7 +610,7 @@ def _load_schedule_from_db(day: date) -> Schedule:
     )
 
 
-def load_schedule_for_update(day: date, *, cur) -> Schedule:
+def load_schedule_for_update(day: date, *, cur) -> Schedule | None:
     """Load a schedule through ``cur`` while holding its row lock.
 
     Toggle saves only own the enabled-center list and disabled-center rows, so
@@ -626,7 +626,7 @@ def load_schedule_for_update(day: date, *, cur) -> Schedule:
     )
     row = cur.fetchone()
     if row is None:
-        return Schedule(day=day, published=False, assignments={})
+        return None
     cur.execute(
         "SELECT wc.name AS wc_name, pe.name AS person_name "
         "FROM schedule_assignments sa "
@@ -674,7 +674,21 @@ def update_auto_enabled_work_centers(
     cur,
 ) -> Schedule:
     """Persist a daily toggle without replacing assignments saved concurrently."""
-    existing = load_schedule_for_update(day, cur=cur)
+    # A schedule may not exist on the first toggle.  Create only a bare row
+    # conditionally, then reload it under a row lock.  If another request
+    # creates the full schedule first, its row wins and we update only this
+    # field rather than upserting our stale empty Schedule over it.
+    while True:
+        existing = load_schedule_for_update(day, cur=cur)
+        if existing is not None:
+            break
+        cur.execute(
+            "INSERT INTO schedules (day, auto_enabled_work_centers) "
+            "VALUES (%s, '[]'::jsonb) "
+            "ON CONFLICT (day) DO NOTHING RETURNING day",
+            (day,),
+        )
+        cur.fetchone()
     normalized_enabled = _normalize_auto_enabled_work_centers(enabled)
     normalized_turn_off = set(_normalize_auto_enabled_work_centers(list(turn_off)))
     sched = draft_from_posted(existing)
@@ -704,15 +718,6 @@ def update_auto_enabled_work_centers(
             "updated_at = now() WHERE day = %s",
             (json.dumps(normalized_enabled), day),
         )
-    if getattr(cur, "rowcount", 1) == 0:
-        _save_schedule_with_cursor(
-            cur,
-            sched,
-            _validate_assignment_sources(sched.assignment_sources),
-            _validate_saturday_availability_overrides(sched.saturday_availability_overrides),
-        )
-        _invalidate_schedule_cache(day)
-        return sched
     if normalized_turn_off:
         cur.execute(
             "DELETE FROM schedule_assignments "
@@ -845,7 +850,10 @@ def _save_schedule_with_cursor(
         "  recycled_rotation_mode = EXCLUDED.recycled_rotation_mode, "
         "  saturday_availability_overrides = EXCLUDED.saturday_availability_overrides, "
         "  assignment_sources = EXCLUDED.assignment_sources, "
-        "  auto_enabled_work_centers = EXCLUDED.auto_enabled_work_centers, "
+        # Daily auto-work-center state is independently owned by the toggle
+        # transaction above.  A stale ordinary grid save must not restore the
+        # value it read before a concurrent toggle.
+        "  auto_enabled_work_centers = schedules.auto_enabled_work_centers, "
         "  updated_at = now()",
         (
             schedule.day,
