@@ -63,7 +63,13 @@ def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
     location = staffing.Location(
         "Repair 1", "Repair", "Bay", "Recycled", None, min_ops=2, max_ops=4,
     )
-    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: {"Repair 1"})
+    monkeypatch.setattr(
+        routes.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(
+            day=SATURDAY, auto_enabled_work_centers=["Repair 1"],
+        ),
+    )
     monkeypatch.setattr(routes.staffing_routes, "_effective_minimum", lambda _loc: 3)
     monkeypatch.setattr(routes.staffing, "LOCATIONS", (location,))
     monkeypatch.setattr(
@@ -95,7 +101,11 @@ def test_activate_from_schedule_uses_enabled_center_minimums(monkeypatch):
 
 
 def test_activate_from_schedule_rejects_no_enabled_centers(monkeypatch):
-    monkeypatch.setattr(routes.staffing_routes, "_enabled_auto_work_centers", lambda _: set())
+    monkeypatch.setattr(
+        routes.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(day=SATURDAY, auto_enabled_work_centers=[]),
+    )
 
     response = client.post(
         "/api/staffing/saturday-recruiting/activate-from-schedule",
