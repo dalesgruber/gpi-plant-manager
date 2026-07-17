@@ -131,7 +131,13 @@ def match_commitments(
     return Coverage(len(by_person), filled_by_wc, wc_by_person)
 
 
-def validate_publish(bundle, assignments, people_by_name, full_day_off_names) -> list[str]:
+def validate_publish(
+    bundle,
+    assignments,
+    people_by_name,
+    full_day_off_names,
+    available_names=None,
+) -> list[str]:
     """Return every reason a recruited Saturday schedule cannot be published."""
     openings_by_name = {opening.wc_name: opening for opening in bundle.openings}
     committed = {
@@ -139,6 +145,7 @@ def validate_publish(bundle, assignments, people_by_name, full_day_off_names) ->
         for item in bundle.commitments
         if item.status == "committed"
     }
+    available = set(committed) if available_names is None else set(available_names)
     reasons: list[str] = []
     seen: set[str] = set()
     assigned_names: set[str] = set()
@@ -153,7 +160,7 @@ def validate_publish(bundle, assignments, people_by_name, full_day_off_names) ->
             seen.add(name)
             assigned_names.add(name)
             person = people_by_name.get(name)
-            if name not in committed:
+            if name not in available:
                 reasons.append(f"{name} is not committed to Saturday.")
             if person is None or not person.active:
                 reasons.append(f"{name} is inactive.")
@@ -169,10 +176,10 @@ def validate_publish(bundle, assignments, people_by_name, full_day_off_names) ->
                         if len(opening.required_skills) == 1 else wc_name
                     )
                     reasons.append(f"{name} is no longer qualified for {qualification_label}.")
-                elif name in committed and person is not None and person.active and name not in full_day_off_names:
+                elif name in available and person is not None and person.active and name not in full_day_off_names:
                     qualified_count[wc_name] += 1
 
-    for name in committed:
+    for name in available:
         if name not in assigned_names:
             reasons.append(f"{name} committed to Saturday but is not assigned.")
     for opening in bundle.openings:

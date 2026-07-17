@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS schedule_wc_notes (
 
 ALTER TABLE schedules ADD COLUMN IF NOT EXISTS recycled_rotation_mode TEXT NOT NULL DEFAULT 'normal';
 ALTER TABLE schedules ADD COLUMN IF NOT EXISTS assignment_sources JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE schedules ADD COLUMN IF NOT EXISTS saturday_availability_overrides JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE schedules
   ADD COLUMN IF NOT EXISTS published_delivery JSONB NOT NULL DEFAULT '{}'::jsonb;
 

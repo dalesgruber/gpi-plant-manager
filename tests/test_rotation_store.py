@@ -253,6 +253,73 @@ def test_schedule_metadata_round_trips(monkeypatch):
     assert hydrated.assignment_sources == {"Repair 1": {"Jordan": "manual"}}
 
 
+def test_schedule_saturday_availability_overrides_round_trip(monkeypatch):
+    from zira_dashboard import db, staffing
+
+    overrides = {"Ana": "off", "Cara": "unassigned"}
+    schedule = staffing.Schedule(
+        day=date(2026, 7, 18), saturday_availability_overrides=overrides,
+    )
+    executed: list[tuple[str, tuple | None]] = []
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            executed.append((sql, params))
+
+    @contextmanager
+    def fake_cursor():
+        yield Cursor()
+
+    monkeypatch.setattr(db, "cursor", fake_cursor)
+    staffing.save_schedule(schedule)
+
+    assert "saturday_availability_overrides" in executed[0][0]
+    assert executed[0][1] is not None
+    assert '{"Ana": "off", "Cara": "unassigned"}' in executed[0][1]
+
+    def fake_query(sql, params=None):
+        if "FROM schedules" in sql:
+            return [{
+                "day": schedule.day,
+                "published": False,
+                "testing_day": False,
+                "notes": "",
+                "custom_hours": None,
+                "published_snapshot": None,
+                "recycled_rotation_mode": "normal",
+                "assignment_sources": {},
+                "saturday_availability_overrides": overrides,
+            }]
+        return []
+
+    monkeypatch.setattr(db, "query", fake_query)
+    assert staffing._load_schedule_from_db(schedule.day).saturday_availability_overrides == overrides
+
+
+@pytest.mark.parametrize("overrides", [{"Ana": "maybe"}, {1: "off"}, ["Ana"]])
+def test_schedule_rejects_malformed_saturday_availability_overrides_before_persisting(
+    monkeypatch, overrides,
+):
+    from zira_dashboard import db, staffing
+
+    called = False
+
+    @contextmanager
+    def fake_cursor():
+        nonlocal called
+        called = True
+        yield object()
+
+    monkeypatch.setattr(db, "cursor", fake_cursor)
+
+    with pytest.raises(ValueError, match="saturday_availability_overrides"):
+        staffing.save_schedule(
+            staffing.Schedule(day=date(2026, 7, 18), saturday_availability_overrides=overrides)
+        )
+
+    assert called is False
+
+
 @pytest.mark.parametrize(
     "sources",
     [

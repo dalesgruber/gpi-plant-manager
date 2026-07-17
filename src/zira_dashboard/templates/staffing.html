@@ -58,7 +58,7 @@
       <h3>{{ 'Unassigned' if is_saturday_recruiting else 'Unscheduled' }} <span class="count">{{ unassigned|length }}</span></h3>
       <ul>
         {% if unassigned %}
-          {% for n in unassigned %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}{% if saturday_availability_by_name and n in saturday_availability_by_name %}<span class="saturday-availability-badge">{{ saturday_availability_by_name[n] }}</span>{% endif %}{% if partial_hours_by_name and n in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ n }}" title="Click to clear this partial for {{ n }} — they actually worked through it" aria-label="Clear partial time off for {{ n }}">{{ partial_range_by_name.get(n) or (partial_hours_by_name[n] ~ 'h') }} ✕</button>{% endif %}</li>{% endfor %}
+          {% for n in unassigned %}<li class="{% if is_saturday_recruiting %}saturday-person-row{% endif %}" data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}{% if saturday_availability_by_name and n in saturday_availability_by_name %}<span class="saturday-availability-badge">{{ saturday_availability_by_name[n] }}</span>{% endif %}{% if partial_hours_by_name and n in partial_hours_by_name %}<button type="button" class="partial-hours-badge clearable" data-day="{{ day }}" data-name="{{ n }}" title="Click to clear this partial for {{ n }} — they actually worked through it" aria-label="Clear partial time off for {{ n }}">{{ partial_range_by_name.get(n) or (partial_hours_by_name[n] ~ 'h') }} ✕</button>{% endif %}{% if is_saturday_recruiting %}<button type="button" class="saturday-availability-swap" data-name="{{ n }}" data-destination="off" title="Move {{ n }} to Off" aria-label="Move {{ n }} to Off">⇄</button>{% endif %}</li>{% endfor %}
         {% else %}
           <li class="empty">— all scheduled —</li>
         {% endif %}
@@ -69,7 +69,7 @@
     <div class="section saturday-off">
       <h3>Off <span class="count">{{ off|length }}</span></h3>
       <ul>
-        {% for n in off %}<li data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}</li>{% endfor %}
+        {% for n in off %}<li class="saturday-person-row" data-name="{{ n }}"><a href="/staffing/people/{{ n|urlencode }}" class="person-card-link">{{ n }}</a>{{ cert_badges(n, person_certs) }}{{ goat_badges(n, goat_holders()) }}<button type="button" class="saturday-availability-swap" data-name="{{ n }}" data-destination="unassigned" title="Move {{ n }} to Unassigned" aria-label="Move {{ n }} to Unassigned">⇄</button></li>{% endfor %}
         {% if not off %}<li class="empty">— no one off —</li>{% endif %}
       </ul>
     </div>
@@ -457,6 +457,18 @@
       <button type="button" id="scheduler-time-off-close-secondary">Close</button>
       <button type="button" id="scheduler-time-off-cancel" class="scheduler-time-off-cancel">Cancel time off</button>
       <button type="submit" id="scheduler-time-off-save">Save changes</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="saturday-availability-confirm" class="saturday-availability-confirm" aria-labelledby="saturday-availability-confirm-title">
+  <form id="saturday-availability-confirm-form" method="dialog">
+    <h2 id="saturday-availability-confirm-title">Confirm availability change</h2>
+    <p id="saturday-availability-confirm-message"></p>
+    <p id="saturday-availability-confirm-error" role="alert" aria-live="assertive"></p>
+    <div class="saturday-availability-confirm-actions">
+      <button type="button" id="saturday-availability-confirm-cancel">Cancel</button>
+      <button type="submit" id="saturday-availability-confirm-save">Move</button>
     </div>
   </form>
 </dialog>

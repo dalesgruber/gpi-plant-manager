@@ -82,6 +82,21 @@ def test_staffing_partial_time_off_controls_name_the_person():
     assert "btn.setAttribute('aria-label', 'Clear partial time off for ' + name);" in js
 
 
+def test_saturday_availability_swap_is_left_rail_only_and_confirms_before_saving():
+    html = _template()
+    js = _script()
+    css = _style()
+
+    assert 'class="saturday-availability-swap"' in html
+    assert 'id="saturday-availability-confirm"' in html
+    assert 'aria-label="Move {{ n }} to Off"' in html
+    assert 'aria-label="Move {{ n }} to Unassigned"' in html
+    assert "/api/staffing/saturday-availability" in js
+    assert "showModal()" in js
+    assert ".saturday-availability-swap { opacity: 0;" in css
+    assert ".saturday-person-row:hover .saturday-availability-swap" in css
+
+
 def test_staffing_custom_hours_controls_are_named_and_busy():
     html = _template()
     js = _script()

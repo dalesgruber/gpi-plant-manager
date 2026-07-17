@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, UTC
 
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from .. import _http_cache, app_settings, attendance, auto_schedule_capacity, db, late_report, rotation_store, rotation_suggestions, rotation_training, saturday_recruiting as sr, saturday_recruiting_store, schedule_solver, schedule_store, scheduler_time_off, shift_config, staffing, staffing_view, time_format, time_off_sync, work_centers_store
@@ -1045,6 +1045,9 @@ def staffing_page(
             wc_name: dict(sources or {})
             for wc_name, sources in (snap.get("assignment_sources") or {}).items()
         }
+        sched.saturday_availability_overrides = dict(
+            snap.get("saturday_availability_overrides") or {}
+        )
         sched.custom_hours = copy.deepcopy(snap.get("custom_hours"))
         sched.published_delivery = staffing._delivery_mapping(snap.get("published_delivery"))
     try:
@@ -1287,6 +1290,7 @@ def staffing_page(
                 if saturday_bundle and saturday_bundle.recruitment.status != "cancelled"
                 else None
             ),
+            saturday_availability_overrides=sched.saturday_availability_overrides,
         )
 
     # Forklift demand advisor (read-only; never blocks scheduling).
@@ -1504,12 +1508,23 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         and saturday_bundle.recruitment.status in {"recruiting", "closed", "published"}
     )
     committed_names = set()
+    saturday_available_names = set()
     if active_saturday_recruiting:
-        committed_names = {
+        recruiting_commitments = {
             item.person_name
+            : {"start": item.availability_start, "end": item.availability_end}
             for item in saturday_bundle.commitments
             if item.status == "committed"
         }
+        existing_for_saturday_availability = staffing.load_schedule(d)
+        effective_commitments = staffing.effective_saturday_commitments(
+            recruiting_commitments,
+            existing_for_saturday_availability.saturday_availability_overrides,
+            saturday_bundle.recruitment.shift_start,
+            saturday_bundle.recruitment.shift_end,
+        )
+        saturday_available_names = set(effective_commitments)
+        committed_names = saturday_available_names
 
     def _noncommitted_names(candidate_assignments):
         return sorted({
@@ -1556,7 +1571,11 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
                     if entry.get("hours") is None
                 }
                 saturday_block = sr.validate_publish(
-                    saturday_bundle, assignments, people_by_name, full_day_off_names,
+                    saturday_bundle,
+                    assignments,
+                    people_by_name,
+                    full_day_off_names,
+                    available_names=saturday_available_names,
                 )
             publish_block = saturday_block
         except Exception:
@@ -1605,6 +1624,7 @@ def _staffing_save_work(request: Request, d: date, auto: int, form):
         published_delivery=published_delivery,
         rotation_mode=existing.rotation_mode,
         assignment_sources=assignment_sources,
+        saturday_availability_overrides=existing.saturday_availability_overrides,
     ))
     if action == "publish" and published and saturday_bundle is not None:
         try:
@@ -2329,6 +2349,105 @@ async def cancel_scheduler_time_off(
     except Exception:  # noqa: BLE001 -- respond consistently to malformed JSON
         body = {}
     return _cancel_scheduler_time_off(request_id, body, background_tasks)
+
+
+def _set_saturday_availability_work(day: date, name: str, destination: str) -> dict:
+    """Persist one manager correction to a live Saturday recruiting roster."""
+    if day.weekday() != 5:
+        raise HTTPException(status_code=409, detail="Saturday availability can only be changed on Saturday.")
+    if destination not in {"unassigned", "off"}:
+        raise HTTPException(
+            status_code=409, detail="Saturday availability destination must be Unassigned or Off."
+        )
+    bundle = saturday_recruiting_store.get(day)
+    if bundle is None or bundle.recruitment.status not in {"recruiting", "closed", "published"}:
+        raise HTTPException(status_code=409, detail="Saturday recruiting is not active for this date.")
+
+    people = {person.name: person for person in staffing.load_roster()}
+    person = people.get(name)
+    if person is None or not person.active or person.reserve:
+        raise HTTPException(status_code=409, detail=f"{name} is not an active non-reserve employee.")
+    full_day_off_names = {
+        entry["name"]
+        for entry in _safe_time_off_entries(day)
+        if entry.get("hours") is None
+    }
+    if name in full_day_off_names:
+        raise HTTPException(status_code=409, detail=f"{name} has approved full-day time off.")
+
+    schedule = staffing.draft_from_posted(staffing.load_schedule(day))
+    overrides = dict(schedule.saturday_availability_overrides or {})
+    overrides[name] = destination
+    schedule.saturday_availability_overrides = overrides
+    staffing.save_schedule(schedule)
+    _bust_after_mutation()
+
+    recruiting_commitments = {
+        item.person_name: {"start": item.availability_start, "end": item.availability_end}
+        for item in bundle.commitments
+        if item.status == "committed"
+        and item.availability_start is not None
+        and item.availability_end is not None
+    }
+    available_names = set(staffing.effective_saturday_commitments(
+        recruiting_commitments,
+        overrides,
+        bundle.recruitment.shift_start,
+        bundle.recruitment.shift_end,
+    ))
+    assigned_names = {
+        person_name
+        for names in (schedule.assignments or {}).values()
+        for person_name in names
+    }
+    eligible_people = [person for person in people.values() if person.active and not person.reserve]
+    unassigned_count = sum(
+        person.name in available_names
+        and person.name not in assigned_names
+        and person.name not in full_day_off_names
+        for person in eligible_people
+    )
+    off_count = sum(
+        person.name not in available_names
+        and person.name not in assigned_names
+        and person.name not in full_day_off_names
+        for person in eligible_people
+    )
+    return {
+        "ok": True,
+        "destination": destination,
+        "unassigned_count": unassigned_count,
+        "off_count": off_count,
+    }
+
+
+@router.post("/api/staffing/saturday-availability")
+async def set_saturday_availability(request: Request):
+    """Move one active person between Saturday Unassigned and Off."""
+    try:
+        body = await request.json()
+        day = date.fromisoformat(str(body["day"]))
+        name = str(body["name"]).strip()
+        destination = str(body["destination"])
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return JSONResponse(
+            {"ok": False, "error": "A Saturday date, person, and destination are required."},
+            status_code=422,
+        )
+    if not name:
+        return JSONResponse(
+            {"ok": False, "error": "A person is required."}, status_code=422,
+        )
+    try:
+        result = await asyncio.to_thread(_set_saturday_availability_work, day, name, destination)
+    except HTTPException as exc:
+        return JSONResponse({"ok": False, "error": str(exc.detail)}, status_code=exc.status_code)
+    except Exception:
+        log.exception("Could not update Saturday availability for %s on %s", name, day)
+        return JSONResponse(
+            {"ok": False, "error": "Could not update Saturday availability."}, status_code=500,
+        )
+    return JSONResponse(result)
 
 
 @router.post("/api/staffing/clear-partial")

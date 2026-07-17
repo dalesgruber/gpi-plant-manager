@@ -19,7 +19,7 @@ from __future__ import annotations
 
 def build_staffing_bays(
     roster, sched, time_off_entries, publish_blocked, enabled_work_centers=None,
-    saturday_commitments=None, saturday_shift=None,
+    saturday_commitments=None, saturday_shift=None, saturday_availability_overrides=None,
 ):
     """Build the per-work-center render model from already-fetched inputs.
 
@@ -133,7 +133,12 @@ def build_staffing_bays(
     # volunteers are allowed into the staffing grid; stale draft placements
     # must not make a non-volunteer look scheduled.
     is_saturday_recruiting = saturday_commitments is not None
-    committed_names = set(saturday_commitments or ())
+    effective_saturday_commitments = staffing.effective_saturday_commitments(
+        saturday_commitments,
+        saturday_availability_overrides,
+        *(saturday_shift or (None, None)),
+    )
+    committed_names = set(effective_saturday_commitments)
     if is_saturday_recruiting:
         assignments = {
             wc_name: [name for name in names if name in committed_names]
@@ -144,7 +149,7 @@ def build_staffing_bays(
 
     saturday_availability_by_name = {
         name: f"{start.strftime('%I:%M %p').lstrip('0')}–{end.strftime('%I:%M %p').lstrip('0')}"
-        for name, value in (saturday_commitments or {}).items()
+        for name, value in effective_saturday_commitments.items()
         for start, end in [(value["start"], value["end"])]
         if saturday_shift is None or (start, end) != saturday_shift
     }

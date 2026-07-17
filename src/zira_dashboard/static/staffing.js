@@ -502,6 +502,107 @@
   const __saturdayRecruiting = window.SATURDAY_RECRUITING;
   const __saturdayCommittedNames = new Set(window.SATURDAY_COMMITTED_NAMES || []);
   const __saturdayAvailabilityByName = window.SATURDAY_AVAILABILITY_BY_NAME || {};
+  const __saturdayAvailabilityDialog = document.getElementById('saturday-availability-confirm');
+  const __saturdayAvailabilityForm = document.getElementById('saturday-availability-confirm-form');
+  const __saturdayAvailabilityMessage = document.getElementById('saturday-availability-confirm-message');
+  const __saturdayAvailabilityError = document.getElementById('saturday-availability-confirm-error');
+  const __saturdayAvailabilitySave = document.getElementById('saturday-availability-confirm-save');
+  const __saturdayAvailabilityCancel = document.getElementById('saturday-availability-confirm-cancel');
+  let __saturdayAvailabilityState = null;
+
+  function _saturdaySection(destination) {
+    return document.querySelector(destination === 'unassigned' ? '.section.unscheduled' : '.section.saturday-off');
+  }
+
+  function _refreshSaturdayAvailabilityCount(destination, count) {
+    const section = _saturdaySection(destination);
+    const countEl = section && section.querySelector('h3 .count');
+    if (countEl) countEl.textContent = count;
+  }
+
+  function _moveSaturdayAvailabilityRow(name, destination, counts) {
+    const fromDestination = destination === 'unassigned' ? 'off' : 'unassigned';
+    const fromSection = _saturdaySection(fromDestination);
+    const toSection = _saturdaySection(destination);
+    const row = fromSection && fromSection.querySelector(`li[data-name="${CSS.escape(name)}"]`);
+    const targetList = toSection && toSection.querySelector('ul');
+    if (!row || !targetList) return;
+    targetList.querySelector('li.empty')?.remove();
+    targetList.appendChild(row);
+    const button = row.querySelector('.saturday-availability-swap');
+    const nextLabel = destination === 'unassigned' ? 'Off' : 'Unassigned';
+    if (button) {
+      button.dataset.destination = destination === 'unassigned' ? 'off' : 'unassigned';
+      button.title = `Move ${name} to ${nextLabel}`;
+      button.setAttribute('aria-label', `Move ${name} to ${nextLabel}`);
+    }
+    [...targetList.querySelectorAll('li:not(.empty)')]
+      .sort((left, right) => (left.dataset.name || '').localeCompare(right.dataset.name || ''))
+      .forEach(item => targetList.appendChild(item));
+    if (fromSection && !fromSection.querySelector('li[data-name]')) {
+      const empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = fromDestination === 'unassigned' ? '— all scheduled —' : '— no one off —';
+      fromSection.querySelector('ul')?.appendChild(empty);
+    }
+    _refreshSaturdayAvailabilityCount('unassigned', counts.unassigned_count);
+    _refreshSaturdayAvailabilityCount('off', counts.off_count);
+  }
+
+  function _openSaturdayAvailabilityConfirm(button) {
+    if (!__saturdayAvailabilityDialog || !__saturdayAvailabilityForm || __viewingPosted) return;
+    const { name, destination } = button.dataset;
+    if (!name || !destination) return;
+    const label = destination === 'unassigned' ? 'Unassigned' : 'Off';
+    __saturdayAvailabilityState = { name, destination, trigger: button };
+    __saturdayAvailabilityMessage.textContent = `Move ${name} to ${label}?`;
+    __saturdayAvailabilityError.textContent = '';
+    __saturdayAvailabilitySave.disabled = false;
+    __saturdayAvailabilityDialog.showModal();
+    __saturdayAvailabilitySave.focus();
+  }
+
+  if (__saturdayAvailabilityCancel) {
+    __saturdayAvailabilityCancel.addEventListener('click', () => __saturdayAvailabilityDialog?.close());
+  }
+  if (__saturdayAvailabilityDialog) {
+    __saturdayAvailabilityDialog.addEventListener('close', () => {
+      const trigger = __saturdayAvailabilityState?.trigger;
+      __saturdayAvailabilityState = null;
+      if (trigger && document.contains(trigger)) trigger.focus();
+    });
+  }
+  if (__saturdayAvailabilityForm) {
+    __saturdayAvailabilityForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const state = __saturdayAvailabilityState;
+      if (!state) return;
+      __saturdayAvailabilitySave.disabled = true;
+      __saturdayAvailabilityError.textContent = '';
+      try {
+        const response = await fetch('/api/staffing/saturday-availability', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            day: window.SCHEDULE_DAY,
+            name: state.name,
+            destination: state.destination,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Could not update Saturday availability.');
+        _moveSaturdayAvailabilityRow(state.name, state.destination, data);
+        __saturdayAvailabilityDialog.close();
+      } catch (error) {
+        __saturdayAvailabilityError.textContent = error.message || 'Could not update Saturday availability.';
+        __saturdayAvailabilitySave.disabled = false;
+      }
+    });
+  }
+  document.addEventListener('click', event => {
+    const button = event.target.closest('.saturday-availability-swap');
+    if (button && __saturdayRecruiting) _openSaturdayAvailabilityConfirm(button);
+  });
 
   // Partial-day off labels (name -> "arrives 11:30am" / "gone 10am–12pm" /
   // hours). Used to re-attach the amber "off" badge when a partial person is

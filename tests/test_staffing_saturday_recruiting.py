@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from starlette.datastructures import FormData
+from fastapi import HTTPException
 
 from zira_dashboard import saturday_recruiting as sr
 from zira_dashboard import saturday_recruiting_store as recruiting_store
@@ -63,6 +64,33 @@ def test_only_commitments_enter_saturday_unassigned(patch_wcs):
     assert "Ana" not in model["saturday_availability_by_name"]
     assert model["saturday_availability_by_name"]["Bob"] == "7:00 AM–11:30 AM"
     assert model["is_saturday_recruiting"] is True
+
+
+def test_saturday_availability_overrides_replace_recruiting_status_in_left_rail(patch_wcs):
+    model = staffing_view.build_staffing_bays(
+        roster=[_person("Ana", Repair=3), _person("Cara", Repair=3)],
+        sched=_sched(), time_off_entries=[], publish_blocked=0,
+        saturday_commitments={"Ana": {"start": time(6), "end": time(12)}},
+        saturday_availability_overrides={"Ana": "off", "Cara": "unassigned"},
+        saturday_shift=(time(6), time(12)),
+    )
+
+    assert model["unassigned"] == ["Cara"]
+    assert model["off"] == ["Ana"]
+    assert model["saturday_committed_names"] == ["Cara"]
+
+
+def test_full_day_time_off_beats_saturday_unassigned_override(patch_wcs):
+    model = staffing_view.build_staffing_bays(
+        roster=[_person("Cara", Repair=3)], sched=_sched(), publish_blocked=0,
+        time_off_entries=[{"name": "Cara", "hours": None}],
+        saturday_commitments={},
+        saturday_availability_overrides={"Cara": "unassigned"},
+        saturday_shift=(time(6), time(12)),
+    )
+
+    assert model["unassigned"] == []
+    assert model["off"] == []
 
 
 def test_closed_plant_saturday_puts_every_active_person_off(patch_wcs):
@@ -177,6 +205,18 @@ def test_publish_requires_commitments_and_requested_coverage():
     assert "Dismantle requires 1 qualified operator — currently 0." in reasons
 
 
+def test_publish_accepts_manager_marked_saturday_unassigned_person():
+    reasons = sr.validate_publish(
+        _repair_only_bundle(),
+        {"Repair 1": ["Cara"]},
+        _people(),
+        set(),
+        available_names={"Cara"},
+    )
+
+    assert reasons == []
+
+
 @pytest.mark.parametrize(
     ("assignments", "people", "full_day_off_names", "expected"),
     [
@@ -202,6 +242,7 @@ def test_publish_before_deadline_is_blocked(monkeypatch):
     monkeypatch.setattr(staffing_routes.work_centers_store, "min_ops", lambda loc: loc.min_ops)
     monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: staffing.Schedule(day=SATURDAY, assignments={}))
     monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: None)
     monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
     monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: bundle)
     monkeypatch.setattr(staffing_routes, "plant_now", lambda: datetime(2026, 7, 23, 8, tzinfo=SITE_TZ))
@@ -284,6 +325,105 @@ def test_saturday_save_rejects_noncommitted_assignment_without_persisting(monkey
 
     assert response.status_code == 409
     assert b"Cara is not committed to Saturday." in response.body
+    assert saved == []
+
+
+def test_saturday_save_accepts_manager_marked_unassigned_person(monkeypatch):
+    bundle = _repair_only_bundle(status="closed")
+    saved = []
+    repair = staffing.Location("Repair 1", "Repair", "Bay 1", "Recycled", None, min_ops=1, max_ops=2)
+    monkeypatch.setattr(staffing_routes.staffing, "LOCATIONS", (repair,))
+    monkeypatch.setattr(
+        staffing_routes.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(
+            day=SATURDAY,
+            assignments={},
+            saturday_availability_overrides={"Cara": "unassigned"},
+        ),
+    )
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: None)
+    monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: bundle)
+
+    response = staffing_routes._staffing_save_work(
+        SimpleNamespace(headers={"accept": "application/json"}), SATURDAY, 0,
+        FormData([("action", "save"), ("loc__Repair 1", "Cara")]),
+    )
+
+    assert response.status_code == 200
+    assert saved[0].assignments == {"Repair 1": ["Cara"]}
+    assert saved[0].saturday_availability_overrides == {"Cara": "unassigned"}
+
+
+def test_saturday_save_rejects_committed_person_marked_off(monkeypatch):
+    bundle = _repair_only_bundle(status="closed")
+    saved = []
+    repair = staffing.Location("Repair 1", "Repair", "Bay 1", "Recycled", None, min_ops=1, max_ops=2)
+    monkeypatch.setattr(staffing_routes.staffing, "LOCATIONS", (repair,))
+    monkeypatch.setattr(
+        staffing_routes.staffing,
+        "load_schedule",
+        lambda _day: staffing.Schedule(
+            day=SATURDAY,
+            assignments={},
+            saturday_availability_overrides={"Ana": "off"},
+        ),
+    )
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
+    monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: bundle)
+
+    response = staffing_routes._staffing_save_work(
+        SimpleNamespace(headers={"accept": "application/json"}), SATURDAY, 0,
+        FormData([("action", "save"), ("loc__Repair 1", "Ana")]),
+    )
+
+    assert response.status_code == 409
+    assert b"Ana is not committed to Saturday." in response.body
+    assert saved == []
+
+
+def test_saturday_availability_endpoint_drafts_posted_schedule_and_persists_override(monkeypatch):
+    saved = []
+    posted = staffing.Schedule(day=SATURDAY, published=True, assignments={})
+    monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: _repair_only_bundle())
+    monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: posted)
+    monkeypatch.setattr(staffing_routes.staffing, "load_roster", lambda: list(_people().values()))
+    monkeypatch.setattr(staffing_routes, "_safe_time_off_entries", lambda _day: [])
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(staffing_routes, "_bust_after_mutation", lambda: None)
+
+    result = staffing_routes._set_saturday_availability_work(SATURDAY, "Cara", "unassigned")
+
+    assert result["ok"] is True
+    assert result["destination"] == "unassigned"
+    assert saved[0].published is False
+    assert saved[0].saturday_availability_overrides == {"Cara": "unassigned"}
+
+
+@pytest.mark.parametrize(
+    ("day", "name", "destination", "message"),
+    [
+        (date(2026, 7, 20), "Cara", "off", "only be changed on Saturday"),
+        (SATURDAY, "Missing", "off", "not an active non-reserve employee"),
+        (SATURDAY, "Cara", "away", "destination must be Unassigned or Off"),
+    ],
+)
+def test_saturday_availability_endpoint_rejects_invalid_changes(
+    monkeypatch, day, name, destination, message,
+):
+    saved = []
+    monkeypatch.setattr(staffing_routes.saturday_recruiting_store, "get", lambda _day: _repair_only_bundle())
+    monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: staffing.Schedule(day=SATURDAY))
+    monkeypatch.setattr(staffing_routes.staffing, "load_roster", lambda: list(_people().values()))
+    monkeypatch.setattr(staffing_routes, "_safe_time_off_entries", lambda _day: [])
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+
+    with pytest.raises(HTTPException, match=message):
+        staffing_routes._set_saturday_availability_work(day, name, destination)
+
     assert saved == []
 
 
