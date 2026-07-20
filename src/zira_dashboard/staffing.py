@@ -666,6 +666,29 @@ def load_schedule_for_update(day: date, *, cur) -> Schedule | None:
     )
 
 
+def remove_person_from_schedule(day: date, person_name: str) -> bool:
+    """Remove one person from every saved assignment for ``day``."""
+    from . import db
+
+    with db.cursor() as cur:
+        schedule = load_schedule_for_update(day, cur=cur)
+        if schedule is None:
+            return False
+        assignments = {
+            wc_name: [name for name in names if name != person_name]
+            for wc_name, names in schedule.assignments.items()
+        }
+        if assignments == schedule.assignments:
+            return False
+        sources = {
+            wc_name: {name: source for name, source in people.items() if name != person_name}
+            for wc_name, people in schedule.assignment_sources.items()
+        }
+        sources = {wc_name: people for wc_name, people in sources.items() if people}
+        save_schedule(replace(schedule, assignments=assignments, assignment_sources=sources), cur=cur)
+    return True
+
+
 def update_auto_enabled_work_centers(
     day: date,
     *,

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from datetime import date, time
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -25,6 +26,42 @@ def _schedule(**changes):
     }
     values.update(changes)
     return staffing.Schedule(**values)
+
+
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
+def test_remove_person_from_schedule_clears_assignments_and_sources():
+    staffing.save_schedule(staffing.Schedule(
+        day=DAY,
+        assignments={
+            "Repair 1": ["Jordan", "Taylor"],
+            "Repair 2": ["Taylor", "Morgan"],
+        },
+        assignment_sources={
+            "Repair 1": {"Jordan": "manual", "Taylor": "generated"},
+            "Repair 2": {"Taylor": "default", "Morgan": "manual"},
+        },
+    ))
+
+    changed = staffing.remove_person_from_schedule(DAY, "Taylor")
+
+    saved = staffing.load_schedule(DAY)
+    assert changed is True
+    assert saved.assignments == {"Repair 1": ["Jordan"], "Repair 2": ["Morgan"]}
+    assert saved.assignment_sources == {
+        "Repair 1": {"Jordan": "manual"}, "Repair 2": {"Morgan": "manual"},
+    }
+
+
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
+def test_remove_person_from_schedule_is_noop_when_person_is_not_assigned():
+    staffing.save_schedule(staffing.Schedule(
+        day=DAY,
+        assignments={"Repair 1": ["Jordan"]},
+        assignment_sources={"Repair 1": {"Jordan": "manual"}},
+    ))
+
+    assert staffing.remove_person_from_schedule(DAY, "Taylor") is False
+    assert staffing.load_schedule(DAY).assignments == {"Repair 1": ["Jordan"]}
 
 
 def test_snapshot_includes_hours_and_delivery():
