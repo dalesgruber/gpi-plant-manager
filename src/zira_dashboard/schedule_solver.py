@@ -709,6 +709,50 @@ def _complete_attempt_key(attempt: _CompleteAttempt) -> tuple[object, ...]:
     )
 
 
+def solve_best_effort_schedule(
+    *,
+    people: Sequence[str],
+    centers: Sequence[CompleteCenter],
+    candidates: Sequence[CandidateEdge],
+) -> CompleteScheduleResult:
+    """Place as many requested people as possible across non-coupled centers.
+
+    Uses the same maximum-cardinality, minimum-cost flow as
+    ``solve_complete_schedule`` but returns the best *partial* placement rather
+    than all-or-nothing, so a rebuild schedules everyone it safely can and
+    strands only genuinely unplaceable people (their qualified centers are
+    full). Because the flow maximizes cardinality, a person with a single
+    qualified center is never displaced by a more flexible person who has
+    somewhere else to go.
+
+    ``centers`` must be non-coupled (no ``crew_options``) and each must have
+    ``minimum <= capacity``; coupled crews are resolved by the caller.
+    """
+    for center in centers:
+        if center.crew_options:
+            raise ValueError("best-effort centers must not carry crew options")
+        if center.minimum > center.capacity:
+            raise ValueError("center minimum cannot exceed capacity")
+    attempt = _complete_flow_attempt(
+        people=people,
+        centers=centers,
+        candidates=candidates,
+    )
+    placed = frozenset(attempt.placed_people)
+    unplaced = tuple(
+        person for person in sorted(people, key=str.lower) if person not in placed
+    )
+    return CompleteScheduleResult(
+        complete=attempt.all_people_placed,
+        decisions=attempt.decisions,
+        placed_people=attempt.placed_people,
+        unplaced_people=unplaced,
+        staffed_centers=attempt.staffed_centers,
+        issues=(),
+        total_cost=sum(item.rank_cost for item in attempt.decisions),
+    )
+
+
 def solve_complete_schedule(
     *,
     people: Sequence[str],

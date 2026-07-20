@@ -1441,7 +1441,27 @@ def suggest_recycled_assignments(
             if level < 1:
                 continue
             preference = _preference_for(resolved_preferences, name, group)
-            if name in group_target_by_person:
+            if name in exact_target_by_person:
+                # An exact default is a hard work-center preference: give the
+                # person's default center cost 0 (below every other center's
+                # positive cost) so the placement flow seats them there whenever
+                # possible, while keeping their other qualified centers as
+                # fallbacks. Because placement maximizes headcount first, the
+                # default only yields when honoring it would strand someone —
+                # the defaulted person is never dropped to reserve their slot.
+                if center == exact_target_by_person[name]:
+                    rank_cost = 0
+                else:
+                    rank_cost = _minimum_rank_cost(
+                        person,
+                        group,
+                        center,
+                        mode,
+                        resolved_preferences,
+                        resolved_history,
+                        resolved_group_required_skills,
+                    )
+            elif name in group_target_by_person:
                 user_group = group_target_by_person[name]
                 rank_cost = (
                     int(resolved_history.center_counts.get((name, center), 0))
@@ -1569,9 +1589,13 @@ def suggest_recycled_assignments(
 
     placement_issues.extend(coupled_failure)
 
-    # Choose safe coupled crews first, then greedily place each remaining
-    # person at their best qualified ordinary center. Minimum coverage is not
-    # a prerequisite for either decision; capacity and qualification are.
+    # Choose safe coupled crews first, then place every remaining person via a
+    # maximum-cardinality, minimum-cost flow over the ordinary centers. The flow
+    # schedules everyone who can be placed (a person with a single qualified
+    # center is reserved that slot rather than being crowded out by a more
+    # flexible person), and only strands people whose qualified centers are
+    # genuinely full. Minimum coverage is not a prerequisite; capacity and
+    # qualification are.
     preference_order = {"primary": 0, "regular": 1, "occasional": 2, "never": 3}
     selected: list[schedule_solver.AssignmentDecision] = []
     selected_people: set[str] = set()
@@ -1609,42 +1633,46 @@ def suggest_recycled_assignments(
             selected_people.add(edge.person)
             remaining_capacity[center.center] -= 1
 
-    for name in sorted(
-        solver_people,
-        key=lambda candidate: (
-            minimum_only and candidate not in exact_target_by_person,
-            candidate.lower(),
-        ),
+    flow_people = tuple(name for name in solver_people if name not in selected_people)
+    flow_centers = tuple(
+        schedule_solver.CompleteCenter(
+            center=center.center,
+            group=center.group,
+            # Clamp minimum to remaining capacity so the flow never forces more
+            # than a center can hold; true minimum shortfalls are reported by
+            # the center_minimum_unmet pass below. In minimum_only mode the
+            # capacity is already the remaining minimum (see remaining_capacity).
+            minimum=min(
+                remaining_minimum_by_center.get(center.center, 0),
+                remaining_capacity.get(center.center, 0),
+            ),
+            capacity=remaining_capacity.get(center.center, 0),
+        )
+        for center in complete_centers
+    )
+    # Coupled centers contribute no direct candidates, so the flow only fills
+    # ordinary centers; coupled crews were already chosen above.
+    flow_candidates = tuple(
+        edge for edge in direct_candidates if edge.person not in selected_people
+    )
+    flow_result = schedule_solver.solve_best_effort_schedule(
+        people=flow_people,
+        centers=flow_centers,
+        candidates=flow_candidates,
+    )
+    for decision in sorted(
+        flow_result.decisions,
+        key=lambda item: (item.center.lower(), item.person.lower()),
     ):
-        if name in selected_people:
-            continue
-        choices = [
-            edge for edge in direct_candidates
-            if edge.person == name
-            and (not minimum_only or remaining_minimum_by_center.get(edge.center, 0) > 0)
-            and remaining_capacity.get(edge.center, 0) > 0
-        ]
-        if not choices:
-            continue
-        choice = min(choices, key=lambda edge: (
-            -edge.level,
-            preference_order[edge.preference],
-            edge.rank_cost,
-            edge.center.lower(),
-        ))
-        selected.append(schedule_solver.AssignmentDecision(
-            center=choice.center,
-            person=choice.person,
-            level=choice.level,
-            preference=choice.preference,
-            reason_code="partial_fill",
-            reason="Assigned to a safe Auto work center.",
-            rank_cost=choice.rank_cost,
-        ))
-        selected_people.add(choice.person)
-        remaining_capacity[choice.center] -= 1
+        selected.append(decision)
+        selected_people.add(decision.person)
+        remaining_capacity[decision.center] = max(
+            0, remaining_capacity.get(decision.center, 0) - 1
+        )
         if minimum_only:
-            remaining_minimum_by_center[choice.center] -= 1
+            remaining_minimum_by_center[decision.center] = max(
+                0, remaining_minimum_by_center.get(decision.center, 0) - 1
+            )
 
     complete_result = schedule_solver.CompleteScheduleResult(
         complete=len(selected_people) == len(solver_people),

@@ -40,33 +40,31 @@ def placement_signatures(out):
     }
 
 
-def test_greedy_engine_keeps_safe_assignments_when_later_person_is_unplaced():
+def test_keeps_safe_assignments_and_reports_genuinely_unplaceable_person():
+    # Three people qualify only for Repair, but only Repair 1 (capacity 2) runs.
+    # Best-effort placement fills the two slots and reports the one person who
+    # is genuinely unplaceable, without rolling back the safe assignments.
     result = suggest_recycled_assignments(
         TARGET_DAY,
         "normal",
         roster=[
-            staffing.Person("Cross", True, False, {"Repair": 3, "Dismantle": 1}),
             staffing.Person("Repair A", True, False, {"Repair": 1}),
             staffing.Person("Repair B", True, False, {"Repair": 1}),
+            staffing.Person("Repair C", True, False, {"Repair": 1}),
         ],
-        group_locations={"Repair": ("Repair 1",), "Dismantler": ("Dismantler 1",)},
-        group_required_skills={"Repair": ("Repair",), "Dismantler": ("Dismantle",)},
-        center_minimums={"Repair 1": 1, "Dismantler 1": 1},
-        center_capacities={"Repair 1": 2, "Dismantler 1": 1},
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 2},
     )
 
-    assert result.assignments == {
-        "Repair 1": ["Cross", "Repair A"],
-        "Dismantler 1": [],
-    }
-    assert result.unused_people == ("Repair B",)
+    assert set(result.assignments["Repair 1"]) == {"Repair A", "Repair B"}
+    assert len(result.assignments["Repair 1"]) == 2
+    assert result.unused_people == ("Repair C",)
     assert result.complete is False
     assert placement_signatures(result) == {
-        ("person_unplaced", "Repair B", ()),
-        ("center_minimum_unmet", None, ("Dismantler 1",)),
+        ("person_unplaced", "Repair C", ()),
     }
-    assert result.unresolved_centers == ("Dismantler 1",)
-    assert len(result.assignments["Repair 1"]) == 2
 
 
 def test_minimum_only_reserves_exact_default_and_leaves_extra_person_waiting():
@@ -1072,23 +1070,30 @@ def _duplicate_protected_lock_suggestion(locked_assignments):
 
 
 def _assert_duplicate_enabled_lock_is_sanitized(out):
-    assert out.assignments == {
-        "Repair 1": ["Duplicated Lock", "Backfill A"],
-        "Repair 2": ["Backfill B"],
-    }
     assert out.unused_people == ()
     assert out.complete is True
     assert out.placement_issues == ()
-    assert any(
-        "Duplicated Lock was removed from Repair 2" in warning
-        for warning in out.warnings
-    )
+    # The duplicated lock survives exactly once, on its first (Repair 1) copy,
+    # and the conflicting Repair 2 copy is removed.
+    assert out.assignments["Repair 1"][0] == "Duplicated Lock"
+    assert out.sources["Repair 1"]["Duplicated Lock"] == "manual"
     assert sum(
         name == "Duplicated Lock"
         for names in out.assignments.values()
         for name in names
     ) == 1
-    assert out.sources["Repair 1"]["Duplicated Lock"] == "manual"
+    assert any(
+        "Duplicated Lock was removed from Repair 2" in warning
+        for warning in out.warnings
+    )
+    # Both interchangeable backfills are placed, one per Repair bench (which one
+    # lands where is an arbitrary, deterministic tie-break and not asserted).
+    assert len(out.assignments["Repair 1"]) == 2
+    assert len(out.assignments["Repair 2"]) == 1
+    assert (
+        set(out.assignments["Repair 1"]) | set(out.assignments["Repair 2"])
+        == {"Duplicated Lock", "Backfill A", "Backfill B"}
+    )
 
 
 def test_duplicate_manual_lock_keeps_first_copy_and_removes_conflicting_copy():
@@ -1455,7 +1460,11 @@ def test_training_mode_never_creates_invalid_trim_saw_pair():
     }
 
 
-def test_optimized_greedy_assignment_reports_later_unplaced_person():
+def test_placement_reserves_single_skill_center_so_everyone_is_scheduled():
+    # Alice can run Repair or Dismantle; Bob can only Dismantle; Carl only
+    # Repair. The single Dismantler slot must be reserved for Bob (his only
+    # option), with the flexible Alice pairing onto Repair beside Carl, so all
+    # three are scheduled rather than stranding Bob.
     roster = [
         staffing.Person(name="Alice", skills={"Repair": 3, "Dismantle": 3}),
         staffing.Person(name="Bob", skills={"Dismantle": 3}),
@@ -1470,16 +1479,13 @@ def test_optimized_greedy_assignment_reports_later_unplaced_person():
         history=RecycledHistory(), locked_assignments={}, block_effects=(),
     )
     assert out.assignments == {
-        "Dismantler 1": ["Alice"],
-        "Repair 1": ["Carl"],
+        "Dismantler 1": ["Bob"],
+        "Repair 1": ["Alice", "Carl"],
     }
-    assert out.unused_people == ("Bob",)
-    assert out.complete is False
-    assert placement_signatures(out) == {
-        ("person_unplaced", "Bob", ()),
-    }
+    assert out.unused_people == ()
+    assert out.complete is True
+    assert placement_signatures(out) == set()
     assert out.staffed_centers == ("Dismantler 1", "Repair 1")
-    assert sum(name == "Alice" for names in out.assignments.values() for name in names) == 1
 
 
 def test_block_effect_with_unknown_group_warns_once():
@@ -1827,3 +1833,94 @@ def test_every_generated_assignment_path_has_a_stable_reason_code_and_text():
                 if source == "generated":
                     assert suggestion.reason_codes[center][name]
                     assert suggestion.reasons[center][name]
+
+
+# --- Best-effort maximum placement + hard exact-default reservation ---------
+# These encode the manager-facing guarantees: rebuilds must schedule every
+# available person when a feasible assignment exists (steering flexible people
+# away from scarce centers so single-skill people are not stranded), and an
+# exact default work center is a hard reservation.
+
+
+def test_flexible_person_yields_scarce_bench_so_everyone_is_placed():
+    # Cross is qualified for Repair and Dismantle; Repair A/B only for Repair.
+    # With Repair 1 (cap 2) and Dismantler 1 (cap 1), the only assignment that
+    # places all three is Cross -> Dismantler 1, Repair A + Repair B -> Repair 1.
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Cross", True, False, {"Repair": 3, "Dismantle": 1}),
+            staffing.Person("Repair A", True, False, {"Repair": 1}),
+            staffing.Person("Repair B", True, False, {"Repair": 1}),
+        ],
+        group_locations={"Repair": ("Repair 1",), "Dismantler": ("Dismantler 1",)},
+        group_required_skills={"Repair": ("Repair",), "Dismantler": ("Dismantle",)},
+        center_minimums={"Repair 1": 1, "Dismantler 1": 1},
+        center_capacities={"Repair 1": 2, "Dismantler 1": 1},
+    )
+
+    assert result.unused_people == ()
+    assert result.complete is True
+    assert set(result.assignments["Repair 1"]) == {"Repair A", "Repair B"}
+    assert result.assignments["Dismantler 1"] == ["Cross"]
+    assert placement_signatures(result) == set()
+
+
+def test_exact_default_is_a_hard_reservation():
+    # Juan defaults to Work Orders but is a stronger operator at Repair. The
+    # exact default must win: he is placed on Work Orders, never on Repair.
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Juan", True, False, {"Mechanic": 2, "Repair": 3}),
+        ],
+        group_locations={
+            "Work Orders": ("Work Orders",),
+            "Repair": ("Repair 1",),
+        },
+        group_required_skills={
+            "Work Orders": ("Mechanic",),
+            "Repair": ("Repair",),
+        },
+        exact_defaults={"Work Orders": ("Juan",)},
+        center_minimums={"Work Orders": 0, "Repair 1": 0},
+        center_capacities={"Work Orders": None, "Repair 1": 1},
+    )
+
+    assert result.assignments["Work Orders"] == ["Juan"]
+    assert "Juan" not in result.assignments.get("Repair 1", [])
+    assert result.reason_codes["Work Orders"]["Juan"] == "exact_default"
+    assert result.unused_people == ()
+
+
+def test_exact_default_never_strands_the_defaulted_person():
+    # Zoe defaults to Work Orders (capacity 1) but also qualifies for Repair;
+    # Adam can only run Work Orders. Honoring Zoe's default rigidly would strand
+    # Adam AND leave a Repair bench empty. Scheduling everyone wins: Zoe yields
+    # to Repair so Adam takes the single Work Orders slot -- and, crucially, the
+    # defaulted person is never the one left unscheduled.
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Zoe Default", True, False, {"Mechanic": 2, "Repair": 3}),
+            staffing.Person("Adam Nodefault", True, False, {"Mechanic": 2}),
+        ],
+        group_locations={
+            "Work Orders": ("Work Orders",),
+            "Repair": ("Repair 1",),
+        },
+        group_required_skills={
+            "Work Orders": ("Mechanic",),
+            "Repair": ("Repair",),
+        },
+        exact_defaults={"Work Orders": ("Zoe Default",)},
+        center_minimums={"Work Orders": 0, "Repair 1": 0},
+        center_capacities={"Work Orders": 1, "Repair 1": 1},
+    )
+
+    assert result.unused_people == ()
+    assert result.assignments["Work Orders"] == ["Adam Nodefault"]
+    assert result.assignments["Repair 1"] == ["Zoe Default"]
