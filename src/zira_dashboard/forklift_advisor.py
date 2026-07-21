@@ -7,19 +7,14 @@ available=False when there is no signal so the template degrades quietly.
 """
 from __future__ import annotations
 
-import math
 from datetime import date
 
 from . import (
     app_settings,
     forklift_demand,
-    forklift_queue,
     forklift_settings,
     forklift_store,
 )
-
-# Window (days) over which handling time + calibration samples are read.
-_CALIB_WINDOW_DAYS = 90
 
 
 def _cfg() -> forklift_settings.Settings:
@@ -104,14 +99,6 @@ def _forecast(target_day: date, history_samples: int,
     return forecast
 
 
-def _mean_handle_or_none() -> float | None:
-    """History-derived mean handling time (seconds); None on no data / failure."""
-    try:
-        return forklift_store.mean_handle_seconds(_CALIB_WINDOW_DAYS)
-    except Exception:
-        return None
-
-
 _CLAIM_WINDOW_DAYS = 90
 
 
@@ -121,69 +108,6 @@ def _observed_claim_or_none() -> float | None:
         return forklift_store.recent_claim_seconds(_CLAIM_WINDOW_DAYS)
     except Exception:
         return None
-
-
-def _fit_calibration(mean_handle: float) -> forklift_queue.CalibResult:
-    """Calibrate the queue model against actual recorded waits. Defensive: a
-    store-read failure yields an uncalibrated (k=1.0) result, never raises."""
-    try:
-        samples = forklift_store.calibration_samples(_CALIB_WINDOW_DAYS)
-    except Exception:
-        samples = []
-    return forklift_queue.fit_calibration(samples, mean_handle)
-
-
-def _recommend_for_target(forecast: forklift_demand.DemandForecast,
-                          params: forklift_settings.Resolved,
-                          mean_handle: float, k: float,
-                          target_seconds: float) -> forklift_queue.RecResult:
-    """SLA recommendation: smallest crew whose calibrated predicted time-to-claim
-    stays under `target_seconds`, sized to the chosen percentile's hour."""
-    _, lam = forklift_demand.demand_at_percentile(forecast.by_hour, params.percentile)
-    return forklift_queue.recommend_for_target(lam, mean_handle, target_seconds, k)
-
-
-def _guard_overload(rec: forklift_queue.RecResult,
-                    forecast: forklift_demand.DemandForecast,
-                    resolved: forklift_settings.Resolved,
-                    mean_handle: float,
-                    calib: forklift_queue.CalibResult) -> forklift_queue.RecResult:
-    """Suppress a spurious 'overloaded' verdict from an untrustworthy model.
-
-    When the calibration fit slams the upper clamp (k == CALIB_CLAMP max), the
-    queue model under-predicts real claim times so badly that its "no crew up to
-    MAX_DRIVERS can meet the target" verdict is not credible. In that case re-size
-    against the raw (uninflated, k=1.0) model and surface that best-effort crew
-    instead of the alarming 'Overloaded / Target missed' badge. A genuinely
-    extreme forecast that overloads even the raw model is left untouched."""
-    if not rec.overloaded or calib.uncalibrated:
-        return rec
-    if calib.k < forklift_queue.CALIB_CLAMP[1]:
-        return rec
-    raw = _recommend_for_target(forecast, resolved, mean_handle, 1.0,
-                                resolved.target_claim_seconds)
-    return raw if raw.drivers is not None else rec
-
-
-def _status_for_prediction(predicted_seconds: float | None, target_seconds: float,
-                           overloaded: bool) -> str:
-    if overloaded or predicted_seconds is None:
-        return "danger"
-    if predicted_seconds <= target_seconds:
-        return "ok"
-    if predicted_seconds <= target_seconds * 1.5:
-        return "warn"
-    return "danger"
-
-
-def _scheduled_prediction(scheduled: int, lambda_per_hr: float, mean_handle: float,
-                          k: float) -> tuple[float | None, bool]:
-    if scheduled < 1:
-        return None, True
-    raw = forklift_queue.erlang_c_wait_seconds(scheduled, lambda_per_hr, mean_handle)
-    if not math.isfinite(raw):
-        return None, True
-    return k * raw, False
 
 
 def build_advisor(target_day: date, scheduled: int, backups: int) -> dict:
