@@ -25,7 +25,6 @@ BASES = {"_base_app.html", "timeclock_base.html"}
 # nav_inbox_summary()). Everything else is queued for conversion.
 ALLOWED_STANDALONE = {
     "auth_denied.html",             # permanent
-    "exceptions.html",              # Wave 1
     "settings.html",                # Wave 1
     "new_dept.html",                # Wave 2 (TV-shared)
     "new_leaderboard_tv.html",      # Wave 2 (TV-shared)
@@ -89,3 +88,22 @@ def test_work_centers_extends_base_app(monkeypatch):
     assert resp.status_code == 200
     _assert_single_chrome(resp.text)
     assert "<title>Work Centers — GPI Plant Manager</title>" in resp.text
+
+
+def test_exceptions_extends_base_app(monkeypatch):
+    from zira_dashboard.routes import exceptions as exceptions_route
+
+    monkeypatch.setattr(
+        exceptions_route.exception_inbox,
+        "build_snapshot",
+        lambda **k: {
+            "today": "2026-07-21", "generated_at": "1:22 PM", "total": 0,
+            "urgent_total": 0, "follow_up_total": 0, "source_errors": [],
+            "work_centers": [], "people": [], "sections": [], "queue": [],
+        },
+    )
+    client = TestClient(app)
+    resp = client.get("/exceptions")
+    assert resp.status_code == 200
+    _assert_single_chrome(resp.text)
+    assert '<main class="inbox-shell">' in resp.text
