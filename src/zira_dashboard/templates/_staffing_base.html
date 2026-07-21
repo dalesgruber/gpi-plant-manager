@@ -1,12 +1,13 @@
+{% extends "_base_app.html" %}
 {% from "_goat_badges.html" import hover_tip_clamp_script %}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" href="/static/gpi-logo.png">
-<title>{% block title %}Staffing{% endblock %} — GPI Plant Manager</title>
-<link rel="stylesheet" href="/static/topnav.css?v={{ static_v('topnav.css') }}">
+{#
+  Intermediate base for the Staffing and Trophy Case families. Pass
+  `active` in the route context to pick the sub-nav + active tab.
+  Children keep their existing blocks: title, styles, extra_head,
+  content, scripts.
+#}
+{% block title %}Staffing{% endblock %}
+{% block head %}
 <style>
   :root {
     --bg: #f1f4f7;
@@ -55,20 +56,16 @@
   {% block styles %}{% endblock %}
 </style>
 {% block extra_head %}{% endblock %}
-</head>
-<body>
-<header class="app">
-  {% set active_nav = 'trophies' if active in ['trophies', 'leaderboards'] else 'staffing' %}{% include "_topnav.html" %}
-</header>
+{% endblock %}
+{% block topnav %}{% set active_nav = 'trophies' if active in ['trophies', 'leaderboards'] else 'staffing' %}{% include "_topnav.html" %}{% endblock %}
+{% block subnav %}
 {% if active in ['trophies', 'leaderboards'] %}
 {% with active=active %}{% include '_trophies_subnav.html' %}{% endwith %}
 {% else %}
 {% with active=active %}{% include '_staffing_subnav.html' %}{% endwith %}
 {% endif %}
-<main>
-  {% block content %}{% endblock %}
-</main>
-{% include '_footer.html' %}
+{% endblock %}
+{% block body_end %}
 <script>
 // Only one <details> open at a time across the page. Skips ancestors of the
 // just-opened element so opening a nested group doesn't collapse its parent.
@@ -83,5 +80,4 @@ document.addEventListener('toggle', (e) => {
 </script>
 {{ hover_tip_clamp_script() }}
 {% block scripts %}{% endblock %}
-</body>
-</html>
+{% endblock %}
