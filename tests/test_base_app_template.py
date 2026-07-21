@@ -29,7 +29,6 @@ ALLOWED_STANDALONE = {
     "auth_denied.html",             # permanent
     "new_dept.html",                # Wave 2 (TV-shared)
     "new_leaderboard_tv.html",      # Wave 2 (TV-shared)
-    "recycling.html",               # Wave 2 (TV-shared)
     "recycling_leaderboard_tv.html",  # Wave 2 (TV-shared)
     "wc_dashboard.html",            # Wave 2 (TV-shared)
     "staffing.html",                # Wave 3
