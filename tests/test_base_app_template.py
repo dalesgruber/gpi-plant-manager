@@ -27,7 +27,6 @@ BASES = {"_base_app.html", "timeclock_base.html"}
 # nav_inbox_summary()). Everything else is queued for conversion.
 ALLOWED_STANDALONE = {
     "auth_denied.html",             # permanent
-    "new_dept.html",                # Wave 2 (TV-shared)
     "new_leaderboard_tv.html",      # Wave 2 (TV-shared)
     "recycling_leaderboard_tv.html",  # Wave 2 (TV-shared)
     "wc_dashboard.html",            # Wave 2 (TV-shared)
