@@ -103,7 +103,7 @@ def test_cold_start_uses_today_shape_for_recommendation(monkeypatch):
     assert adv["available"] is True and adv["basis"] == "bootstrap"
     assert adv["total_calls"] == 100
     # peak hour = 9 (a real clock hour, not slot 36); 100/day * 70/100 = 70
-    # calls/hr -> SLA recommends 5 @ 240s, k=1
+    # calls/hr -> capacity coverage ceil(70 / (16*0.75=12)) = 6
     assert adv["peak_label"].startswith("9:")
     assert adv["recommended"] == 6
     assert adv["coverage"].status == "short"   # 6 needed, 2 scheduled
@@ -216,7 +216,7 @@ def test_demand_summary_carries_algo_and_overrides_and_hour_values(monkeypatch):
     monkeypatch.setattr("zira_dashboard.forklift_store.recent_claim_seconds",
                         lambda window_days=90: 250.0)
     s = forklift_advisor.demand_summary(date(2026, 6, 26))
-    # all-auto (default 240s target): user recommendation matches the baseline.
+    # all-auto: the user recommendation matches the algorithm baseline.
     assert s["recommended"] == s["algo_recommended"] == 6
     assert s["hour_values"] == [30.0, 70.0]          # sorted ascending for JS preview
     # plan-for + history sliders survive; their algorithm ticks are still carried.

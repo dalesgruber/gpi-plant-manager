@@ -766,7 +766,7 @@ def _parse_forklift_overrides(form) -> forklift_settings.Settings:  # noqa: F821
     values. Each numeric knob: the literal string "auto" or blank → None (follow
     the algorithm); otherwise parse + clamp. "Reset all to algorithm" is just a
     submit with every numeric field = "auto". Utilization arrives as a PERCENT
-    (5-100) → stored as a fraction (0.05-1.0). Checkboxes via truthiness."""
+    (slider range 40-100) → stored as a fraction. Checkboxes via truthiness."""
     from .. import forklift_settings
 
     def _override(key, lo, hi, *, integer, scale=1.0):
