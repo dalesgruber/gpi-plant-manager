@@ -6,9 +6,11 @@ full-document templates are frozen in ALLOWED_STANDALONE and the list
 only shrinks — never add to it. See
 docs/superpowers/specs/2026-07-21-ui-consolidation.md.
 """
+import os
 import re
 from pathlib import Path
 
+import pytest
 from starlette.testclient import TestClient
 
 from zira_dashboard.app import app
@@ -25,7 +27,6 @@ BASES = {"_base_app.html", "timeclock_base.html"}
 # nav_inbox_summary()). Everything else is queued for conversion.
 ALLOWED_STANDALONE = {
     "auth_denied.html",             # permanent
-    "settings.html",                # Wave 1
     "new_dept.html",                # Wave 2 (TV-shared)
     "new_leaderboard_tv.html",      # Wave 2 (TV-shared)
     "recycling.html",               # Wave 2 (TV-shared)
@@ -107,3 +108,14 @@ def test_exceptions_extends_base_app(monkeypatch):
     assert resp.status_code == 200
     _assert_single_chrome(resp.text)
     assert '<main class="inbox-shell">' in resp.text
+
+
+@pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"), reason="needs Postgres (/settings loads DB)"
+)
+def test_settings_extends_base_app():
+    client = TestClient(app)
+    resp = client.get("/settings?section=diagnostics")
+    assert resp.status_code == 200
+    _assert_single_chrome(resp.text)
+    assert 'id="page-undo-btn"' in resp.text  # header_extra survived
