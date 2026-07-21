@@ -26,7 +26,6 @@ BASES = {"_base_app.html", "timeclock_base.html"}
 ALLOWED_STANDALONE = {
     "auth_denied.html",             # permanent
     "exceptions.html",              # Wave 1
-    "index.html",                   # Wave 1
     "settings.html",                # Wave 1
     "new_dept.html",                # Wave 2 (TV-shared)
     "new_leaderboard_tv.html",      # Wave 2 (TV-shared)
@@ -74,3 +73,19 @@ def test_work_centers_filter_posts_back_to_work_centers(monkeypatch):
     assert resp.status_code == 200
     assert 'action="/work-centers"' in resp.text
     assert 'action="/"' not in resp.text
+
+
+def _assert_single_chrome(html: str):
+    lowered = html.lower()
+    assert lowered.count("<!doctype") == 1
+    assert html.count('class="brand-row"') == 1
+    assert "changelog-modal" in html  # _footer.html present
+
+
+def test_work_centers_extends_base_app(monkeypatch):
+    monkeypatch.setattr(dashboard_route, "leaderboard", lambda *a, **k: [])
+    client = TestClient(app)
+    resp = client.get("/work-centers")
+    assert resp.status_code == 200
+    _assert_single_chrome(resp.text)
+    assert "<title>Work Centers — GPI Plant Manager</title>" in resp.text
