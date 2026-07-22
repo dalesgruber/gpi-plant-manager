@@ -1,30 +1,27 @@
-"""Top-level dashboard routes: GET /work-centers and GET /api/leaderboard.
+"""Top-level dashboard routes: GET / (redirect), /tv/ping, /api/leaderboard.
 
 GET / redirects to /recycling so the home page lands on the Recycling
-department dashboard. The Work Centers page (formerly served at /) now
-lives at /work-centers and is reachable from the Dashboards subnav.
+department dashboard. (The old Work Centers page at /work-centers was
+folded 2026-07-22 after 30 days at 4 views/month — its per-WC states show
+on the Recycling dashboard; the URL 301s there. /api/leaderboard still
+serves the raw per-station day numbers.)
 """
 
 from __future__ import annotations
 
 from datetime import datetime, UTC
 
-from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import APIRouter, Query, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 
-from .. import shift_config
 from ..deps import (
     _filter_stations,
-    _fmt_duration,
     _parse_day,
-    _relative,
     _state,
     client,
-    templates,
 )
 from ..leaderboard import cached_leaderboard as leaderboard
 from ..plant_day import today as plant_today
-from ..stations import CATEGORIES
 
 router = APIRouter()
 
@@ -49,74 +46,11 @@ def tv_ping():
     return Response(status_code=204)
 
 
-@router.get("/work-centers", response_class=HTMLResponse)
-def index(
-    request: Request,
-    day: str | None = Query(default=None),
-    category: str | None = Query(default=None),
-):
-    d = _parse_day(day)
-    today = plant_today()
-    is_today = d == today
-    # Try cached HTML response.
-    from .._http_cache import get_cached_response, set_cache_headers, store_cached_response
-    cache_key = ("work_centers", d.isoformat(), category or "")
-    cached = get_cached_response(cache_key, includes_today=is_today)
-    if cached is not None:
-        return cached
-    stations = _filter_stations(category)
-    now = datetime.now(UTC)
-    results = leaderboard(client, stations, d, now_utc=now if is_today else None)
-
-    enriched = []
-    counts = {"Running": 0, "Stopped": 0, "Offline": 0}
-    for r in results:
-        state = _state(r, now, is_today)
-        if state in counts:
-            counts[state] += 1
-        enriched.append(
-            {
-                "station": r.station,
-                "units": r.units,
-                "reading_count": r.reading_count,
-                "truncated": r.truncated,
-                "downtime_minutes": r.downtime_minutes,
-                "downtime_display": _fmt_duration(r.downtime_minutes),
-                "last_reading_at": r.last_reading_at,
-                "last_relative": _relative(r.last_reading_at, now),
-                "last_status": r.last_status,
-                "state": state,
-            }
-        )
-
-    top = max((r.units for r in results), default=0)
-    category_order = {"Dismantler": 0, "Repair": 1, "Other": 2}
-    by_category: dict[str, list[dict]] = {c: [] for c in CATEGORIES}
-    for row in enriched:
-        by_category[row["station"].category].append(row)
-
-    response = templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "day": d.isoformat(),
-            "today": today.isoformat(),
-            "is_today": is_today,
-            "category": category or "All",
-            "categories": ("All",) + CATEGORIES,
-            "ordered_categories": sorted(CATEGORIES, key=lambda c: category_order.get(c, 99)),
-            "rows": enriched,
-            "by_category": by_category,
-            "counts": counts,
-            "top_units": top,
-            "refreshed_at": now.astimezone(shift_config.SITE_TZ).strftime("%-I:%M:%S %p"),
-            "active_vs": "work_centers",
-            "active_dashboard_key": "vs_work_centers",
-        },
-    )
-    set_cache_headers(response, includes_today=is_today)
-    store_cached_response(cache_key, includes_today=is_today, response=response)
-    return response
+@router.get("/work-centers", include_in_schema=False)
+def work_centers_redirect():
+    """The Work Centers page folded into the Recycling dashboard
+    (2026-07-22); the URL 301s so old bookmarks keep working."""
+    return RedirectResponse(url="/recycling", status_code=301)
 
 
 @router.get("/api/leaderboard")

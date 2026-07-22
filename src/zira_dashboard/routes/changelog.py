@@ -19,7 +19,6 @@ from pathlib import Path
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
-from ..deps import templates
 
 router = APIRouter()
 
@@ -185,17 +184,16 @@ def _latest_deploy_when(text: str) -> str | None:
 
 @router.get("/changelog", response_class=HTMLResponse)
 def changelog_html(request: Request, fragment: int = Query(default=0)):
-    """`?fragment=1` (the What's New modal) gets the bare card stack;
-    a direct browser visit gets the same cards inside the shared layout."""
-    if not CHANGELOG_PATH.exists():
-        body = "<p>No changelog yet.</p>"
-    else:
-        body = _md_to_html(CHANGELOG_PATH.read_text(encoding="utf-8"))
+    """`?fragment=1` serves the What's New modal its card stack. The
+    standalone page folded 2026-07-22 (5 views/month vs ~12k modal fetches);
+    a direct visit 301s home, where the modal shows the same entries."""
     if fragment:
-        return HTMLResponse(body)
-    return templates.TemplateResponse(
-        request, "changelog.html", {"entries_html": body}
-    )
+        if not CHANGELOG_PATH.exists():
+            return HTMLResponse("<p>No changelog yet.</p>")
+        return HTMLResponse(_md_to_html(CHANGELOG_PATH.read_text(encoding="utf-8")))
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/", status_code=301)
 
 
 # Parsed /changelog/latest result keyed on the file's mtime — every page's

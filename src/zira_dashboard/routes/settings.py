@@ -286,7 +286,9 @@ def settings_page(
                 "ref": "",
                 "name": "New-Leaderboard",
             },
-            {"kind": "vs_work_centers", "ref": "", "name": "Work Centers"},
+            # (vs_work_centers dropped 2026-07-22 with the Work Centers page;
+            # the TV dispatcher never had a branch for it, so a display
+            # created with that kind would have 500'd.)
         ]
         for loc in staffing.LOCATIONS:
             all_dashboards_for_picker.append(

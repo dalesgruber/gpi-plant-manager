@@ -17,11 +17,13 @@ plant TVs bookmark them and there is no keyboard on a TV remote. This is a
 binding product decision (Dale, 2026-07-21, recorded in the spec).
 
 **Performance** (Dale, 2026-07-22) is the one home for every "how are we
-doing" page: the department dashboards, the operator view, the work-center
-grid, the department leaderboard pages, the plant leaderboards, the forklift
-leaderboards, and the Trophy Case — all tabs of `_performance_subnav.html`.
-URLs did not change (e.g. `/staffing/leaderboards` and `/staffing/forklift`
-keep their paths; only the nav moved).
+doing" page: the department dashboards, the operator view, the department
+leaderboard pages, the plant leaderboards, the forklift leaderboards, and
+the Trophy Case — all tabs of `_performance_subnav.html`. URLs did not
+change (e.g. `/staffing/leaderboards` and `/staffing/forklift` keep their
+paths; only the nav moved). Folded pages that 301 to their replacement:
+`/work-centers` → `/recycling`, `/changelog` → `/` (the What's-New modal
+still fetches `/changelog?fragment=1` and polls `/changelog/latest`).
 
 **Staffing** has three tabs: Plant Scheduler, Time Off (which includes the
 approvals panel — the old `/staffing/time-off/approvals` page 301s there),

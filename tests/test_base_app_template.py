@@ -14,7 +14,6 @@ import pytest
 from starlette.testclient import TestClient
 
 from zira_dashboard.app import app
-from zira_dashboard.routes import dashboard as dashboard_route
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "zira_dashboard"
 TEMPLATES = SRC / "templates"
@@ -88,16 +87,13 @@ def test_template_static_references_exist():
     assert missing == [], f"templates reference missing static assets: {missing}"
 
 
-def test_work_centers_filter_posts_back_to_work_centers(monkeypatch):
-    # The Day/Category form must post to /work-centers itself. It used to
-    # post to "/", which 307-redirects to /recycling and drops the query
-    # string — silently losing the user's filter.
-    monkeypatch.setattr(dashboard_route, "leaderboard", lambda *a, **k: [])
+def test_work_centers_url_redirects_to_recycling():
+    # The Work Centers page folded into the Recycling dashboard
+    # (2026-07-22, 4 views/month); the URL 301s for old bookmarks.
     client = TestClient(app)
-    resp = client.get("/work-centers")
-    assert resp.status_code == 200
-    assert 'action="/work-centers"' in resp.text
-    assert 'action="/"' not in resp.text
+    resp = client.get("/work-centers", follow_redirects=False)
+    assert resp.status_code == 301
+    assert resp.headers["location"] == "/recycling"
 
 
 def _assert_single_chrome(html: str):
@@ -106,14 +102,6 @@ def _assert_single_chrome(html: str):
     assert html.count('class="brand-row"') == 1
     assert "changelog-modal" in html  # _footer.html present
 
-
-def test_work_centers_extends_base_app(monkeypatch):
-    monkeypatch.setattr(dashboard_route, "leaderboard", lambda *a, **k: [])
-    client = TestClient(app)
-    resp = client.get("/work-centers")
-    assert resp.status_code == 200
-    _assert_single_chrome(resp.text)
-    assert "<title>Work Centers — GPI Plant Manager</title>" in resp.text
 
 
 def test_exceptions_extends_base_app(monkeypatch):

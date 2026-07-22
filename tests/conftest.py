@@ -61,7 +61,6 @@ _KNOWN_DB_TEST_DEBT = {
     "tests/test_dashboards_polish.py::test_recycling_past_day_view_shows_assigned_names",
     "tests/test_dashboards_polish.py::test_recycling_renders_edit_controls_after_partial_extraction",
     "tests/test_dashboards_polish.py::test_top_nav_renamed_and_work_centers_dropped",
-    "tests/test_dashboards_polish.py::test_work_centers_subnav_active_on_work_centers_page",
     "tests/test_odoo_sync.py::test_sync_deactivates_employees_missing_from_odoo_response",
     "tests/test_odoo_sync.py::test_sync_force_refreshes_even_within_ttl",
     "tests/test_odoo_sync.py::test_sync_inserts_certification_at_level_3_regardless_of_bucket",
