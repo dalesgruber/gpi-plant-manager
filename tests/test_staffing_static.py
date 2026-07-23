@@ -159,6 +159,15 @@ def test_nonstandard_hours_badge_uses_compact_custom_copy():
     assert '<span>{{ eff_custom_hours_label }}</span>' in html
 
 
+def test_nonstandard_hours_badge_uses_blue_treatment():
+    css = _style()
+
+    assert (
+        ".hours-pill.custom { color: #2563eb; border-color: #2563eb; "
+        "background: #dbeafe; }"
+    ) in css
+
+
 def test_nonstandard_schedule_rows_use_soft_blue():
     html = _template()
     css = _style()

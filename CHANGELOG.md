@@ -19,6 +19,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ### Fixes
 
+- **Custom schedule hours are blue now.** The Custom hours bubble now matches the blue schedule rows, so special days are easier to spot.
 - **Saturday recruiting now waits for the schedule to save.** If you clear the Saturday schedule and click Recruit right away, the app saves the empty schedule first. If saving fails, recruiting does not start.
 
 ## 2026-07-14
