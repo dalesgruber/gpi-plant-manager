@@ -89,3 +89,24 @@ Rows created by the old code before the fix (e.g. 07/24, 07/27) still exist
 and block seeding; one Reset-to-defaults click per affected day replaces them
 with the full default schedule (Reset now succeeds — it uses the same
 capacity-bounded solve).
+
+## Addendum 2026-07-23 (later) — "the defaults" reverts to defaults-only
+
+Dale reversed the 2026-07-21 "the defaults = full auto rebuild" decision. New
+behavior for BOTH the new-day seed and Reset to defaults:
+
+- **Clear, then load only the configured defaults** — the people set as a
+  work-center or group default (`staffing_route.defaults_only_schedule` →
+  `_defaults_only_assignments`, sources `default`). Everyone else is left in
+  the Unscheduled rail.
+- The full auto fill is the **goal button's** job, run on demand — not part of
+  "the defaults".
+- Reset never runs the solver and never 422s: defaults always place, so it
+  always succeeds (no configured defaults → the day is cleared to empty). It
+  still preserves notes / snapshot / testing day / custom hours / Auto toggles.
+- The seed persists the defaults-only draft on a successful read; a hard input
+  read raises (`strict=True`) and leaves no row so the next view retries.
+
+`rotations.default_complete_schedule` (the solver-based clean rebuild) is
+removed. The goal button keeps `minimum_only=True`; the min-crew infeasibility
+fix for it lives separately (worktree branch `claude/optimistic-wilbur-…`).

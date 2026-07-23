@@ -481,99 +481,6 @@ def _build_assignment_sources(existing_sources, suggestion) -> dict[str, dict[st
     return new_sources
 
 
-def default_complete_schedule(
-    d: date,
-    roster,
-    time_off_entries,
-    *,
-    mode: str = "normal",
-    enabled_centers,
-):
-    """The day's "default schedule": a clean-slate complete rebuild.
-
-    Runs the same engine the goal buttons use, but with no base assignments,
-    no manual locks, and no prior sources — exactly what Reset to defaults
-    produces. Returns ``(assignments, sources)`` only when every available
-    person places safely; any read failure, incomplete solve, or unsafe
-    placement returns ``None`` so callers fall back instead of persisting a
-    partial schedule. New-day seeding (``_seed_new_future_draft``) and the
-    reset path of ``POST /api/rotations/rebuild`` must stay in lockstep — a
-    fresh day and a reset day are the same product state.
-
-    Unlike the interactive goal button (which staffs to minimum crew and
-    relies on the user balancing Auto centers with the advisory), this solve
-    runs unattended, so it fills past minimums up to each center's capacity —
-    the only way "place everyone exactly once" is feasible when more people
-    are present than the enabled minimum slots, or when a center's exact
-    defaults exceed its minimum (Work Orders runs 3 defaults on a min-1
-    center in production; the minimum-capped solve could never seat them).
-    """
-    try:
-        enabled = staffing_route._ordered_work_center_names(enabled_centers)
-        if not enabled:
-            return None
-        exact_defaults, group_defaults, user_group_centers = (
-            staffing_route._default_inputs(strict=True)
-        )
-        center_capacities = staffing_route._configured_center_capacities(
-            enabled, strict=True,
-        )
-        center_minimums = {
-            loc.name: staffing_route._effective_minimum(loc)
-            for loc in staffing.LOCATIONS if loc.name in enabled
-        }
-        group_locations, group_required_skills = staffing_route._auto_group_maps(enabled)
-        required_skills = {
-            center: group_required_skills[group]
-            for group, centers in group_locations.items()
-            for center in centers
-        }
-    except Exception:
-        log.exception("Could not load default-schedule inputs for %s", d)
-        return None
-    suggestion = staffing_route._recycled_suggestion_for_day(
-        d,
-        roster,
-        mode,
-        base_assignments={},
-        locked_assignments={},
-        time_off_entries=time_off_entries,
-        enabled_work_centers=enabled,
-        assignment_sources={},
-        center_minimums=center_minimums,
-        center_capacities=center_capacities,
-        exact_defaults=exact_defaults,
-        group_defaults=group_defaults,
-        user_group_centers=user_group_centers,
-        minimum_only=False,
-    )
-    if suggestion is None or not suggestion.complete:
-        return None
-    try:
-        assignments = staffing_route._merge_recycled_assignments({}, suggestion)
-        sources = _build_assignment_sources({}, suggestion)
-        validation_issues = _validate_complete_rebuild(
-            available_people=suggestion.available_people,
-            protected_assignments={},
-            enabled_centers=enabled,
-            center_minimums=center_minimums,
-            center_capacities=center_capacities,
-            required_skills=required_skills,
-            roster=staffing_route._roster_minus_full_day_off(roster, time_off_entries),
-            exact_defaults=exact_defaults,
-            group_defaults=group_defaults,
-            user_group_centers=user_group_centers,
-            proposed_assignments=assignments,
-            proposed_sources=sources,
-        )
-    except Exception:
-        log.exception("Could not validate the default schedule for %s", d)
-        return None
-    if any(issue.code in _HARD_ISSUE_CODES for issue in validation_issues):
-        return None
-    return assignments, sources
-
-
 @router.post("/api/rotations/rebuild")
 async def rebuild_rotation(request: Request):
     body = await _json_body(request)
@@ -590,18 +497,70 @@ async def rebuild_rotation(request: Request):
         return _error("Invalid day.")
     if mode not in _VALID_MODES:
         return _error(f"Unknown mode: {mode}")
+    def _reset_to_defaults():
+        """Clear the schedule and load ONLY the configured defaults.
+
+        Discards every prior assignment (manual picks and non-Auto centers
+        included) and every source, then seats the people set as a work-center
+        or group default — the same state a brand-new day is seeded with (see
+        ``staffing_route.defaults_only_schedule``). Non-default people are left
+        unscheduled; this always succeeds (no solver, no partial-fill), so it
+        never 422s. Metadata not owned by rotation is preserved.
+        """
+        sched = staffing.draft_from_posted(staffing.load_schedule(d))
+        roster = staffing.load_roster()
+        try:
+            if staffing.schedule_revision(d) is None:
+                sched.auto_enabled_work_centers = staffing_route._default_auto_work_centers(d)
+            else:
+                sched.auto_enabled_work_centers = staffing_route._ordered_work_center_names(
+                    staffing_route._enabled_auto_work_centers(d)
+                )
+            enabled_centers = staffing_route._ordered_work_center_names(
+                sched.auto_enabled_work_centers
+            )
+            time_off = scheduler_time_off.time_off_entries_for_day(d)
+            assignments, sources = staffing_route.defaults_only_schedule(
+                d, roster, time_off, enabled_centers,
+            )
+        except Exception:
+            log.exception("Could not reset the schedule to defaults for %s", d)
+            return _error("Could not reset the schedule to defaults.", 503)
+        staffing.save_schedule(staffing.Schedule(
+            day=d,
+            published=sched.published,
+            assignments=assignments,
+            notes=sched.notes,
+            wc_notes=dict(sched.wc_notes),
+            testing_day=sched.testing_day,
+            published_snapshot=sched.published_snapshot,
+            custom_hours=sched.custom_hours,
+            published_delivery=sched.published_delivery,
+            rotation_mode=mode,
+            assignment_sources=sources,
+            auto_enabled_work_centers=list(sched.auto_enabled_work_centers),
+        ))
+        _http_cache.invalidate_today_cache()
+        return JSONResponse({
+            "ok": True,
+            "applied": True,
+            "assignments": assignments,
+            "sources": sources,
+            "reasons": {},
+            "warnings": [],
+            "unplaced": [],
+            "coverage": {"issues": []},
+            "enabled_work_centers": enabled_centers,
+            "placement": {"issues": []},
+        })
+
     def _work():
+        if reset_to_defaults:
+            return _reset_to_defaults()
         roster = staffing.load_roster()
         sched = staffing.draft_from_posted(staffing.load_schedule(d))
-        # Reset rebuilds from a clean slate: every prior assignment (manual
-        # picks and non-Auto centers included) and every prior source is
-        # discarded before the complete rebuild, so a reset day matches what a
-        # brand-new day is seeded with (see ``default_complete_schedule``).
-        base_assignments = (
-            {} if reset_to_defaults
-            else {k: list(v) for k, v in sched.assignments.items()}
-        )
-        existing_sources = {} if reset_to_defaults else sched.assignment_sources
+        base_assignments = {k: list(v) for k, v in sched.assignments.items()}
+        existing_sources = sched.assignment_sources
         try:
             if staffing.schedule_revision(d) is None:
                 sched.auto_enabled_work_centers = staffing_route._default_auto_work_centers(d)
@@ -620,7 +579,7 @@ async def rebuild_rotation(request: Request):
                 enabled_centers,
                 strict=True,
             )
-            manual_locks = {} if reset_to_defaults else staffing_route._protected_locks(
+            manual_locks = staffing_route._protected_locks(
                 existing_sources,
                 base_assignments,
                 allowed_centers=enabled_centers,
@@ -657,32 +616,13 @@ async def rebuild_rotation(request: Request):
             exact_defaults=exact_defaults,
             group_defaults=group_defaults,
             user_group_centers=user_group_centers,
-            # Reset fills past minimums so every person places (lockstep with
-            # the new-day seed in ``default_complete_schedule``); the non-reset
-            # goal button keeps its minimum-crew contract with the advisory.
-            minimum_only=not reset_to_defaults,
+            # The goal button staffs to minimum crew; the user balances Auto
+            # centers with the advisory. (Reset to defaults is handled in its
+            # own branch above and never reaches here.)
+            minimum_only=True,
         )
         if suggestion is None:
             return _error("Could not rebuild the schedule.", 503)
-        if reset_to_defaults and not suggestion.complete:
-            # A goal rebuild that can't place everyone leaves the base
-            # assignments in the suggestion, so saving is a no-op. Reset has
-            # no base — persisting an incomplete solve would wipe the day, so
-            # keep the prior schedule and report why instead.
-            return JSONResponse(
-                {
-                    "ok": False,
-                    "error": (
-                        "Auto could not safely place everyone for a full reset. "
-                        "Previous schedule kept."
-                    ),
-                    "schedule_kept": True,
-                    "placement": _placement_payload(
-                        suggestion, suggestion.placement_issues,
-                    ),
-                },
-                status_code=422,
-            )
 
         new_assignments = staffing_route._merge_recycled_assignments(base_assignments, suggestion)
         new_sources = _build_assignment_sources(existing_sources, suggestion)

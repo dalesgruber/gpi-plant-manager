@@ -1864,8 +1864,8 @@
       resetScheduleBtn.addEventListener('click', async () => {
         if (__viewingPosted) return;
         if (!confirm(
-          'Clear this schedule and load the default schedule?\n\n' +
-          'This removes manual and automated assignments everywhere, then reloads the automatic default schedule. Notes, time off, and schedule settings stay.'
+          'Clear this schedule and load the default people?\n\n' +
+          'This removes every assignment, then loads only the people set as a default on a work center or group. Everyone else goes back to Unscheduled. Notes, time off, and schedule settings stay.'
         )) return;
         resetScheduleBtn.disabled = true;
         try {

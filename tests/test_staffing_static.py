@@ -426,8 +426,8 @@ def test_reset_to_defaults_confirms_clearing_and_loading_the_default_schedule():
         "modeBtns.forEach", 1
     )[0]
     assert "await rebuild(currentMode(), { resetToDefaults: true })" in reset
-    assert "Clear this schedule and load the default schedule?" in reset
-    assert "This removes manual and automated assignments everywhere, then reloads the automatic default schedule." in reset
+    assert "Clear this schedule and load the default people?" in reset
+    assert "loads only the people set as a default on a work center or group" in reset
     assert "Previous schedule will be kept" not in reset
     assert "Rebuild enabled Auto work centers" not in reset
 

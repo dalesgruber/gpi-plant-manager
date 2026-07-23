@@ -953,6 +953,43 @@ def _smart_defaults_for_day(
         return {k: list(v) for k, v in (defaults or {}).items()}
 
 
+def defaults_only_schedule(
+    day: date,
+    roster: Sequence[staffing.Person],
+    time_off_entries,
+    enabled_centers,
+) -> tuple[dict[str, list[str]], dict[str, dict[str, str]]]:
+    """The day's "default schedule": place ONLY people configured as a default
+    on a work center or group, at/among their centers. Non-default people stay
+    unscheduled. Returns ``(assignments, sources)`` with every source marked
+    ``default``; raises on a hard input-read failure so callers don't persist a
+    schedule built from a partial read.
+
+    New-day seeding (``_seed_new_future_draft``) and the reset path of
+    ``POST /api/rotations/rebuild`` both use this, so a fresh day and a reset
+    day are the same product state: cleared, then the defaults loaded. (This
+    is deliberately NOT the full auto rebuild — the goal buttons run that on
+    demand; see Dale's 2026-07-23 decision.)
+    """
+    exact_defaults, group_defaults, user_group_centers = _default_inputs(strict=True)
+    center_capacities = _configured_center_capacities(enabled_centers, strict=True)
+    history = rotation_suggestions._load_recycled_history(
+        day,
+        group_locations=_auto_history_group_locations(),
+        user_group_centers=user_group_centers,
+    )
+    return _defaults_only_assignments(
+        roster=roster,
+        full_day_off_names=rotation_suggestions._full_day_time_off_names(time_off_entries),
+        exact_defaults=exact_defaults,
+        group_defaults=group_defaults,
+        user_group_centers=user_group_centers,
+        enabled_centers=enabled_centers,
+        center_capacities=center_capacities,
+        history=history,
+    )
+
+
 def _seed_new_future_draft(
     day: date,
     today: date,
@@ -966,44 +1003,13 @@ def _seed_new_future_draft(
         if staffing.schedule_revision(day) is not None:
             return staffing.load_schedule(day)
         enabled_centers = _default_auto_work_centers(day)
-        # A brand-new day starts with "the defaults loaded": the same
-        # clean-slate complete rebuild Reset to defaults produces. When that
-        # solve is unavailable or can't place everyone safely, fall back to
-        # defaults-only placement rather than leaving the day blank.
-        from . import rotations as rotations_route
-
-        complete = rotations_route.default_complete_schedule(
-            day,
-            roster,
-            time_off_entries,
-            mode="normal",
-            enabled_centers=enabled_centers,
+        # A brand-new day opens with "the defaults loaded": only the people set
+        # as a work-center or group default, exactly what Reset to defaults
+        # produces. A read failure raises and leaves no persisted row so the
+        # next view retries rather than freezing the day in a partial state.
+        assignments, sources = defaults_only_schedule(
+            day, roster, time_off_entries, enabled_centers,
         )
-        if complete is not None:
-            assignments, sources = complete
-        else:
-            # Defaults-only placement is a DISPLAY fallback. It must never be
-            # persisted: a saved row makes ``schedule_revision`` non-None, so
-            # every later view would skip seeding and the day would be frozen
-            # in this near-blank state (the prod midnight-warmer rows that
-            # blocked new days from ever loading the complete schedule).
-            exact_defaults, group_defaults, user_group_centers = _default_inputs(strict=True)
-            center_capacities = _configured_center_capacities(enabled_centers, strict=True)
-            history = rotation_suggestions._load_recycled_history(
-                day,
-                group_locations=_auto_history_group_locations(),
-                user_group_centers=user_group_centers,
-            )
-            assignments, sources = _defaults_only_assignments(
-                roster=roster,
-                full_day_off_names=rotation_suggestions._full_day_time_off_names(time_off_entries),
-                exact_defaults=exact_defaults,
-                group_defaults=group_defaults,
-                user_group_centers=user_group_centers,
-                enabled_centers=enabled_centers,
-                center_capacities=center_capacities,
-                history=history,
-            )
     except Exception:
         log.exception("Could not seed default staffing draft for %s", day)
         return sched
@@ -1019,10 +1025,6 @@ def _seed_new_future_draft(
         assignment_sources=sources,
         auto_enabled_work_centers=enabled_centers,
     )
-    if complete is None:
-        # Render the fallback but leave no persisted row, so the next view
-        # retries the complete rebuild once its inputs are healthy again.
-        return seeded
     if staffing.create_schedule_if_absent(seeded):
         _http_cache.invalidate_today_cache()
         return seeded
