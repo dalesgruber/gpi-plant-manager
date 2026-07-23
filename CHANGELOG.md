@@ -10,6 +10,12 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
      changed and how it helps; skip developer-only details, code names, routes,
      and implementation steps; explain any unfamiliar word right away. -->
 
+## 2026-07-23
+
+### Planning update
+
+- **No app change yet.** We are getting ready to make weekend and special-hour schedules easier to spot with soft-blue work centers.
+
 ## 2026-07-14
 
 ### Features
