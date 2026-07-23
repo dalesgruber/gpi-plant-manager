@@ -15,6 +15,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 ### Planning update
 
 - **No app change yet.** We are getting ready to make weekend and special-hour time bubbles short and easy to spot.
+- **No app change yet.** The plan for the smaller time bubble is ready.
 
 ### Features
 
