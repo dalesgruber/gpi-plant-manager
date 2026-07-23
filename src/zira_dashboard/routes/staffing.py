@@ -1098,15 +1098,14 @@ def _seed_new_future_draft(
     try:
         if staffing.schedule_revision(day) is not None:
             return staffing.load_schedule(day)
+        enabled_centers = _default_auto_work_centers(day)
         if day.weekday() == 5:
-            enabled_centers = []
             assignments, sources = {}, {}
         else:
-            enabled_centers = _default_auto_work_centers(day)
-        # A brand-new day opens with "the defaults loaded": only the people set
-        # as a work-center or group default, exactly what Reset to defaults
-        # produces. A read failure raises and leaves no persisted row so the
-        # next view retries rather than freezing the day in a partial state.
+            # A brand-new weekday opens with "the defaults loaded": only the
+            # people set as a work-center or group default, exactly what Reset
+            # to defaults produces. Saturdays keep assignments blank for
+            # recruiting while still showing the manager's enabled centers.
             assignments, sources = defaults_only_schedule(
                 day, roster, time_off_entries, enabled_centers,
             )
@@ -1975,7 +1974,10 @@ async def staffing_hours_save(request: Request):
         except ValueError:
             return JSONResponse({"ok": False, "error": "bad day"}, status_code=400)
 
+        new_day = staffing.schedule_revision(d) is None
         sched = staffing.draft_from_posted(staffing.load_schedule(d))
+        if new_day:
+            sched.auto_enabled_work_centers = _default_auto_work_centers(d)
 
         if form.get("reset") == "1":
             sched.custom_hours = None

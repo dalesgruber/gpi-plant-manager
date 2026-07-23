@@ -1513,12 +1513,12 @@
   // preserved, so we reconcile only enabled Auto pickers.
   (function () {
     const controls = document.querySelector('.rotation-controls');
-    if (!controls) return;
-    const modeBtns = [...controls.querySelectorAll('.rotation-mode-btn')];
+    const workCenterRows = [...document.querySelectorAll('tr[data-loc]')];
+    if (!controls && !workCenterRows.length) return;
+    const modeBtns = controls ? [...controls.querySelectorAll('.rotation-mode-btn')] : [];
     const warnBox = document.getElementById('rotation-warnings');
     const helpEl = document.getElementById('rotation-mode-help');
-    const workCenterRows = [...document.querySelectorAll('tr[data-loc]')];
-    const day = controls.dataset.day || window.SCHEDULE_DAY;
+    const day = controls?.dataset.day || window.SCHEDULE_DAY;
     let rebuilding = false;
     let savingAutoCenters = false;
 

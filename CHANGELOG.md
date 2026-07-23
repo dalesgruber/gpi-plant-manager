@@ -19,6 +19,7 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ### Fixes
 
+- **New schedules keep your work-center defaults.** New Saturdays and days with custom hours start with the work centers you chose in Settings. You can turn each work center on or off right away.
 - **Custom schedule hours are blue now.** The Custom hours bubble now matches the blue schedule rows, so special days are easier to spot.
 - **Saturday recruiting now waits for the schedule to save.** If you clear the Saturday schedule and click Recruit right away, the app saves the empty schedule first. If saving fails, recruiting does not start.
 - **Saturday recruiting saves the schedule you can see.** Recruit now checks the current empty schedule again before it starts, so old hidden assignments do not get in the way.

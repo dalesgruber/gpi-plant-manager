@@ -460,6 +460,7 @@ class _FormRequest:
 def test_hours_save_on_posted_schedule_starts_draft(monkeypatch):
     saved = []
     posted = staffing.Schedule(day=DAY, published=True, published_delivery={"version": "v1"})
+    monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: "r1")
     monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: posted)
     monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
     monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
@@ -471,6 +472,51 @@ def test_hours_save_on_posted_schedule_starts_draft(monkeypatch):
     assert response.status_code == 200
     assert saved[0].published is False
     assert saved[0].published_snapshot["published_delivery"]["version"] == "v1"
+
+
+def test_hours_save_on_new_day_starts_with_default_work_centers(monkeypatch):
+    saved = []
+    blank = staffing.Schedule(day=DAY)
+    monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: None)
+    monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: blank)
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(
+        staffing_routes,
+        "_default_auto_work_centers",
+        lambda _day: ["Repair 1", "Repair 2"],
+    )
+    monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
+
+    response = asyncio.run(staffing_routes.staffing_hours_save(_FormRequest({
+        "day": DAY.isoformat(), "start": "06:00", "end": "12:00",
+    })))
+
+    assert response.status_code == 200
+    assert saved[0].auto_enabled_work_centers == ["Repair 1", "Repair 2"]
+
+
+def test_hours_save_preserves_existing_work_center_selection(monkeypatch):
+    saved = []
+    existing = staffing.Schedule(
+        day=DAY,
+        auto_enabled_work_centers=["Repair 3"],
+    )
+    monkeypatch.setattr(staffing_routes.staffing, "schedule_revision", lambda _day: "r1")
+    monkeypatch.setattr(staffing_routes.staffing, "load_schedule", lambda _day: existing)
+    monkeypatch.setattr(staffing_routes.staffing, "save_schedule", saved.append)
+    monkeypatch.setattr(
+        staffing_routes,
+        "_default_auto_work_centers",
+        lambda _day: ["Repair 1", "Repair 2"],
+    )
+    monkeypatch.setattr(staffing_routes._http_cache, "invalidate_today_cache", lambda: None)
+
+    response = asyncio.run(staffing_routes.staffing_hours_save(_FormRequest({
+        "day": DAY.isoformat(), "start": "06:00", "end": "12:00",
+    })))
+
+    assert response.status_code == 200
+    assert saved[0].auto_enabled_work_centers == ["Repair 3"]
 
 
 def test_json_save_includes_lifecycle_fields(monkeypatch):

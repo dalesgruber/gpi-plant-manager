@@ -3306,7 +3306,7 @@ def test_first_future_staffing_view_seeds_and_persists_only_defaults(monkeypatch
     assert ctx["sched"] is saved[0]
 
 
-def test_first_future_saturday_view_starts_blank_with_no_enabled_work_centers(monkeypatch):
+def test_first_future_saturday_view_starts_blank_with_default_work_centers(monkeypatch):
     saved = []
 
     ctx = _render_staffing_page(
@@ -3322,7 +3322,7 @@ def test_first_future_saturday_view_starts_blank_with_no_enabled_work_centers(mo
     assert len(saved) == 1
     assert saved[0].assignments == {}
     assert saved[0].assignment_sources == {}
-    assert saved[0].auto_enabled_work_centers == []
+    assert saved[0].auto_enabled_work_centers == ["Repair 1", "Repair 2"]
     assert ctx["sched"] is saved[0]
 
 

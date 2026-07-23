@@ -341,6 +341,19 @@ def test_staffing_print_hides_schedule_goal_and_schedule_actions():
     assert ".sidebar-schedule-actions" in css
 
 
+def test_work_center_toggles_initialize_without_saturday_goal_controls():
+    js = _script()
+    controller = js.split(
+        "// ---------- Rotation goal (mode buttons + auto-center toggles) ----------",
+        1,
+    )[1].split("// ---------- Unified training", 1)[0]
+
+    assert "if (!controls) return;" not in controller
+    assert "const modeBtns = controls ? [...controls.querySelectorAll('.rotation-mode-btn')] : [];" in controller
+    assert "if (!controls && !workCenterRows.length) return;" in controller
+    assert "const day = controls?.dataset.day || window.SCHEDULE_DAY;" in controller
+
+
 def test_staffing_print_balances_schedule_columns_and_keeps_fitting_name_pairs_inline():
     css = _print_css()
 
