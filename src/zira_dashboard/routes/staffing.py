@@ -1399,6 +1399,7 @@ def staffing_page(
         for b in shift_config.configured_breaks_for(d)
     ]
     hours_source = shift_config.scheduler_hours_source(d, sched.custom_hours is not None)
+    nonstandard_schedule = sched.custom_hours is not None or d.weekday() in {5, 6}
     eff_hours_label = f"{eff_start.strftime('%H:%M')}–{eff_end.strftime('%H:%M')}"
     eff_custom_hours_label = (
         f"{eff_start.strftime('%I:%M').lstrip('0')}–"
@@ -1635,6 +1636,7 @@ def staffing_page(
                 "eff_hours_end": eff_end.strftime("%H:%M"),
                 "eff_breaks": eff_breaks,
                 "hours_source": hours_source,
+                "nonstandard_schedule": nonstandard_schedule,
                 "eff_hours_label": eff_hours_label,
                 "eff_custom_hours_label": eff_custom_hours_label,
                 "person_certs": person_certs,

@@ -151,12 +151,12 @@ def test_staffing_custom_hours_badge_uses_compact_copy_and_toggles_editor():
     assert "pill.addEventListener('click', () => editor.hidden ? open() : close());" in js
 
 
-def test_custom_hours_enabled_work_centers_use_soft_blue():
+def test_nonstandard_schedule_rows_use_soft_blue():
     html = _template()
     css = _style()
 
-    assert "custom-hours-day" in html
-    assert 'tr.custom-hours-day[data-on="true"] td { background: #dbeafe; }' in css
+    assert "nonstandard-schedule-day" in html
+    assert 'tr.nonstandard-schedule-day[data-on="true"] td { background: #dbeafe; }' in css
 
 
 def test_staffing_custom_hours_panel_manages_focus_and_escape():

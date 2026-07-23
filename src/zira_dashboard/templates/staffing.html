@@ -283,7 +283,7 @@
           {% set _attrib_names_for_row = _wc_attribs_for_row | map(attribute='person_name') | list %}
           {% set visible_assigned = row.present_assigned | rejectattr('name', 'in', _attrib_names_for_row) | list %}
           {% set _center_on = row.loc.name in auto_schedule_enabled_wc_names %}
-          <tr class="{% if hours_source == 'custom' %}custom-hours-day {% endif %}{% if not _center_on %}work-center-off{% endif %}" data-loc="{{ row.loc.name }}" data-on="{{ _center_on|tojson }}" data-minimum="{{ row.min_ops }}">
+          <tr class="{% if nonstandard_schedule %}nonstandard-schedule-day {% endif %}{% if not _center_on %}work-center-off{% endif %}" data-loc="{{ row.loc.name }}" data-on="{{ _center_on|tojson }}" data-minimum="{{ row.min_ops }}">
             {% if loop.first %}
               <td class="bay" rowspan="{{ bay.rows|length }}">
                 <div class="bay-screen-label{% if bay.name == 'Transportation' %} transportation-bay-label{% endif %}">{{ bay.name }}</div>
