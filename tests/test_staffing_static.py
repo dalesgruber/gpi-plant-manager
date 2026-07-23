@@ -151,6 +151,14 @@ def test_staffing_custom_hours_badge_uses_compact_copy_and_toggles_editor():
     assert "pill.addEventListener('click', () => editor.hidden ? open() : close());" in js
 
 
+def test_nonstandard_hours_badge_uses_compact_custom_copy():
+    html = _template()
+
+    assert 'class="hours-pill {% if nonstandard_schedule %}custom' in html
+    assert '<span class="label">Custom</span>' in html
+    assert '<span>{{ eff_custom_hours_label }}</span>' in html
+
+
 def test_nonstandard_schedule_rows_use_soft_blue():
     html = _template()
     css = _style()

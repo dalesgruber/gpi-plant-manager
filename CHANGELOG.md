@@ -12,13 +12,9 @@ Latest updates to GPI Plant Manager. Newest first. Each day is split by deployme
 
 ## 2026-07-23
 
-### Planning update
-
-- **No app change yet.** We are getting ready to make weekend and special-hour time bubbles short and easy to spot.
-- **No app change yet.** The plan for the smaller time bubble is ready.
-
 ### Features
 
+- **Weekend and special-hour time bubbles are shorter.** Saturdays, Sundays, and days with special hours now show a small blue Custom bubble. Normal Monday–Friday schedules keep the full Hours bubble.
 - **Weekend and special-hour schedules are easier to spot.** Work centers that are turned on now show in soft blue on Saturdays, Sundays, and days with special hours. Regular Monday–Friday schedules stay green.
 
 ## 2026-07-14
