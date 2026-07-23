@@ -215,7 +215,7 @@
               {% endfor %}
             </div>
           {% endif %}
-          {% if not (day_is_saturday and saturday_recruiting and saturday_recruiting.status == 'recruiting') %}
+          {% if not day_is_saturday or saturday_staffing_prepared %}
             {% if saturday_publish_locked %}
               <span id="saturday-publish-lock" class="save-block">{{ saturday_publish_lock_message }}</span>
             {% endif %}
