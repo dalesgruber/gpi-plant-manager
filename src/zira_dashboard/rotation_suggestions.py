@@ -1599,8 +1599,21 @@ def suggest_recycled_assignments(
     preference_order = {"primary": 0, "regular": 1, "occasional": 2, "never": 3}
     selected: list[schedule_solver.AssignmentDecision] = []
     selected_people: set[str] = set()
+    # In minimum_only mode each exact default is edge-restricted to their own
+    # center, so the center must hold all of its present defaults even past its
+    # minimum (bounded by capacity) — otherwise defaults beyond the minimum are
+    # unplaceable no matter which other centers run.
+    unplaced_defaults_by_center: dict[str, int] = {}
+    for target in exact_target_by_person.values():
+        unplaced_defaults_by_center[target] = unplaced_defaults_by_center.get(target, 0) + 1
     remaining_capacity = {
-        center.center: (min(center.capacity, center.minimum) if minimum_only else center.capacity)
+        center.center: (
+            min(
+                center.capacity,
+                max(center.minimum, unplaced_defaults_by_center.get(center.center, 0)),
+            )
+            if minimum_only else center.capacity
+        )
         for center in complete_centers
     }
     for center in sorted(
@@ -1641,7 +1654,8 @@ def suggest_recycled_assignments(
             # Clamp minimum to remaining capacity so the flow never forces more
             # than a center can hold; true minimum shortfalls are reported by
             # the center_minimum_unmet pass below. In minimum_only mode the
-            # capacity is already the remaining minimum (see remaining_capacity).
+            # capacity is already the remaining minimum, raised to the center's
+            # present exact defaults (see remaining_capacity).
             minimum=min(
                 remaining_minimum_by_center.get(center.center, 0),
                 remaining_capacity.get(center.center, 0),

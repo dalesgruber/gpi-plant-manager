@@ -3319,6 +3319,93 @@ def test_minimum_crew_balance_uses_explicit_saturday_available_names(monkeypatch
     assert result.recommended_centers == ()
 
 
+def test_minimum_crew_balance_counts_exact_defaults_past_center_minimum(monkeypatch):
+    # Prod shape: 3 exact defaults on a min-1 center. The minimum_only solve
+    # will seat all three, so the advisory must count three open slots — not
+    # claim "ready" is impossible (or reachable) from the bare minimum of 1.
+    from zira_dashboard.routes import staffing as staffing_routes
+
+    location = staffing.Location(
+        "Repair 1", "Repair", "Bay 1", "Recycled", None,
+        min_ops=1, max_ops=3, required_skills=("Repair",),
+    )
+    monkeypatch.setattr(staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(staffing_routes, "_effective_minimum", lambda _loc: 1)
+    monkeypatch.setattr(staffing_routes.work_centers_store, "max_ops", lambda _loc: 3)
+    monkeypatch.setattr(
+        staffing_routes, "_default_inputs",
+        lambda strict=False: ({"Repair 1": ("Ana", "Ben", "Cai")}, {}, {}),
+    )
+
+    result = staffing_routes._minimum_crew_balance_for_day(
+        roster=[_person("Ana", 3), _person("Ben", 3), _person("Cai", 3)],
+        schedule=staffing.Schedule(day=date(2026, 7, 20), assignments={}),
+        time_off_entries=[],
+        enabled_centers=("Repair 1",),
+    )
+
+    assert result.unassigned_people == 3
+    assert result.open_minimum_slots == 3
+    assert result.direction == "ready"
+
+
+def test_minimum_crew_balance_bounds_exact_default_slots_by_capacity(monkeypatch):
+    from zira_dashboard.routes import staffing as staffing_routes
+
+    location = staffing.Location(
+        "Repair 1", "Repair", "Bay 1", "Recycled", None,
+        min_ops=1, max_ops=2, required_skills=("Repair",),
+    )
+    monkeypatch.setattr(staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(staffing_routes, "_effective_minimum", lambda _loc: 1)
+    monkeypatch.setattr(staffing_routes.work_centers_store, "max_ops", lambda _loc: 2)
+    monkeypatch.setattr(
+        staffing_routes, "_default_inputs",
+        lambda strict=False: ({"Repair 1": ("Ana", "Ben", "Cai")}, {}, {}),
+    )
+
+    result = staffing_routes._minimum_crew_balance_for_day(
+        roster=[_person("Ana", 3), _person("Ben", 3), _person("Cai", 3)],
+        schedule=staffing.Schedule(day=date(2026, 7, 20), assignments={}),
+        time_off_entries=[],
+        enabled_centers=("Repair 1",),
+    )
+
+    assert result.open_minimum_slots == 2
+    assert result.direction == "turn_on"
+
+
+def test_minimum_crew_balance_counts_assigned_default_toward_center_need(monkeypatch):
+    # One default already seated at their center still raises the center's
+    # effective need, so the two waiting defaults see two open slots.
+    from zira_dashboard.routes import staffing as staffing_routes
+
+    location = staffing.Location(
+        "Repair 1", "Repair", "Bay 1", "Recycled", None,
+        min_ops=1, max_ops=3, required_skills=("Repair",),
+    )
+    monkeypatch.setattr(staffing, "LOCATIONS", (location,))
+    monkeypatch.setattr(staffing_routes, "_effective_minimum", lambda _loc: 1)
+    monkeypatch.setattr(staffing_routes.work_centers_store, "max_ops", lambda _loc: 3)
+    monkeypatch.setattr(
+        staffing_routes, "_default_inputs",
+        lambda strict=False: ({"Repair 1": ("Ana", "Ben", "Cai")}, {}, {}),
+    )
+
+    result = staffing_routes._minimum_crew_balance_for_day(
+        roster=[_person("Ana", 3), _person("Ben", 3), _person("Cai", 3)],
+        schedule=staffing.Schedule(
+            day=date(2026, 7, 20), assignments={"Repair 1": ["Ana"]},
+        ),
+        time_off_entries=[],
+        enabled_centers=("Repair 1",),
+    )
+
+    assert result.unassigned_people == 2
+    assert result.open_minimum_slots == 2
+    assert result.direction == "ready"
+
+
 def test_saturday_context_uses_final_unassigned_names_for_schedule_goal(monkeypatch):
     ctx = _render_staffing_page(
         monkeypatch,

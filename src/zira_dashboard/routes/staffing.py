@@ -216,6 +216,16 @@ def _minimum_crew_balance_for_day(
         and (available is None or person.name in available)
         for person in roster
     )
+    # Exact defaults are hard constraints the minimum_only rebuild seats even
+    # past a center's minimum (prod: Work Orders runs 3 defaults on a min-1
+    # center), so a center's effective need is max(minimum, its present
+    # defaults) bounded by capacity — the same rule the rebuild's capacity map
+    # uses. The balance is advisory, so a defaults read failure falls back to
+    # the bare minimums instead of making the scheduler page unavailable.
+    try:
+        exact_defaults, _group_defaults, _group_centers = _default_inputs()
+    except Exception:
+        exact_defaults = {}
     slots = {}
     for loc in staffing.LOCATIONS:
         try:
@@ -224,8 +234,30 @@ def _minimum_crew_balance_for_day(
             # The balance is advisory; a Settings read failure must not make
             # the scheduler page unavailable.
             minimum = max(0, int(loc.min_ops))
+        try:
+            capacity = work_centers_store.max_ops(loc)
+        except Exception:
+            capacity = loc.max_ops
+        assigned_here = set((schedule.assignments or {}).get(loc.name, ()))
+        defaults_present = sum(
+            person is not None and person.active and not person.reserve
+            and person.name not in absent
+            and all(person.level(skill) >= 1 for skill in staffing.required_skills_for(loc))
+            and (
+                person.name in assigned_here
+                or (
+                    person.name not in assigned
+                    and (available is None or person.name in available)
+                )
+            )
+            for name in (exact_defaults.get(loc.name) or ())
+            for person in (by_name.get(str(name).strip()),)
+        )
+        effective_minimum = max(minimum, defaults_present)
+        if capacity is not None:
+            effective_minimum = min(effective_minimum, max(0, int(capacity)))
         if loc.name not in enabled_set:
-            slots[loc.name] = minimum
+            slots[loc.name] = effective_minimum
             continue
         qualified = sum(
             person is not None and person.active and not person.reserve
@@ -234,7 +266,7 @@ def _minimum_crew_balance_for_day(
             for name in (schedule.assignments or {}).get(loc.name, ())
             for person in (by_name.get(name),)
         )
-        slots[loc.name] = max(0, minimum - qualified)
+        slots[loc.name] = max(0, effective_minimum - qualified)
     return auto_schedule_capacity.analyze_minimum_crew_balance(
         unassigned_people=waiting,
         enabled_centers=enabled,

@@ -87,6 +87,101 @@ def test_minimum_only_reserves_exact_default_and_leaves_extra_person_waiting():
     assert result.unused_people == ("Extra",)
 
 
+def test_minimum_only_places_every_exact_default_past_center_minimum():
+    # Prod shape: Work Orders runs 3 exact defaults on a min-1 center. Each
+    # default is edge-restricted to their own center in minimum_only mode, so
+    # a minimum-capped fill would strand two of them no matter which other
+    # Auto centers run.
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Default A", True, False, {"Repair": 3}),
+            staffing.Person("Default B", True, False, {"Repair": 3}),
+            staffing.Person("Default C", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        exact_defaults={"Repair 1": ("Default A", "Default B", "Default C")},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 3},
+        minimum_only=True,
+    )
+
+    assert set(result.assignments["Repair 1"]) == {"Default A", "Default B", "Default C"}
+    assert result.unused_people == ()
+    assert result.complete is True
+
+
+def test_minimum_only_default_bump_still_leaves_non_default_extras_waiting():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Default A", True, False, {"Repair": 3}),
+            staffing.Person("Default B", True, False, {"Repair": 3}),
+            staffing.Person("Extra", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        exact_defaults={"Repair 1": ("Default A", "Default B")},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 3},
+        minimum_only=True,
+    )
+
+    assert set(result.assignments["Repair 1"]) == {"Default A", "Default B"}
+    assert result.unused_people == ("Extra",)
+
+
+def test_minimum_only_default_bump_is_bounded_by_center_capacity():
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Default A", True, False, {"Repair": 3}),
+            staffing.Person("Default B", True, False, {"Repair": 3}),
+            staffing.Person("Default C", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        exact_defaults={"Repair 1": ("Default A", "Default B", "Default C")},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 2},
+        minimum_only=True,
+    )
+
+    assert len(result.assignments["Repair 1"]) == 2
+    assert set(result.assignments["Repair 1"]) <= {"Default A", "Default B", "Default C"}
+    assert len(result.unused_people) == 1
+    assert result.complete is False
+
+
+def test_minimum_only_default_bump_survives_a_lock_that_meets_the_minimum():
+    # A manual lock at the center satisfies its minimum outright; the two
+    # remaining defaults must still be admitted rather than capped at zero.
+    result = suggest_recycled_assignments(
+        TARGET_DAY,
+        "normal",
+        roster=[
+            staffing.Person("Locked", True, False, {"Repair": 3}),
+            staffing.Person("Default A", True, False, {"Repair": 3}),
+            staffing.Person("Default B", True, False, {"Repair": 3}),
+        ],
+        group_locations={"Repair": ("Repair 1",)},
+        group_required_skills={"Repair": ("Repair",)},
+        locked_assignments={"Repair 1": ["Locked"]},
+        exact_defaults={"Repair 1": ("Default A", "Default B")},
+        center_minimums={"Repair 1": 1},
+        center_capacities={"Repair 1": 3},
+        minimum_only=True,
+    )
+
+    assert set(result.assignments["Repair 1"]) == {"Locked", "Default A", "Default B"}
+    assert result.unused_people == ()
+    assert result.complete is True
+
+
 def test_group_default_rotates_over_qualified_enabled_members():
     history = RecycledHistory(
         center_counts={("Ana", "Repair 1"): 2, ("Ana", "Repair 2"): 1},
