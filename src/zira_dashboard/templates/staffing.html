@@ -215,7 +215,7 @@
               {% endfor %}
             </div>
           {% endif %}
-          {% if not day_is_saturday or saturday_staffing_prepared %}
+          {% if not day_is_saturday or saturday_recruiting_finished %}
             {% if saturday_publish_locked %}
               <span id="saturday-publish-lock" class="save-block">{{ saturday_publish_lock_message }}</span>
             {% endif %}
@@ -395,7 +395,7 @@
       <label class="notes-label" for="notes-textarea">Notes for the day <span class="hint">— shown with the published schedule</span></label>
       <textarea id="notes-textarea" name="notes" rows="6" placeholder=""{% if viewing_posted %} readonly{% endif %}>{{ notes }}</textarea>
     </div>
-    {% if auto_scheduler_available and (not day_is_saturday or saturday_staffing_prepared) %}
+    {% if auto_scheduler_available and (not day_is_saturday or saturday_recruiting_finished) %}
     <div class="rotation-controls" data-day="{{ day }}">
       <div class="rotation-mode" role="group" aria-labelledby="rotation-mode-label">
         <span class="rotation-mode-label" id="rotation-mode-label">Schedule goal</span>

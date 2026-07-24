@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from contextlib import nullcontext
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -3571,10 +3571,59 @@ def test_staffing_context_enables_auto_scheduler_every_day(monkeypatch, day):
     assert ctx["auto_scheduler_available"] is True
 
 
+def _render_saturday_with_bundle(monkeypatch, *, status):
+    """Render the Saturday staffing page with a recruiting bundle in ``status``
+    and ``staffing_prepared_at`` left NULL — the stuck production state."""
+    from zira_dashboard.routes import staffing as staffing_routes
+
+    saturday = date(2026, 7, 25)
+    bundle = saturday_recruiting_store.RecruitmentBundle(
+        saturday_recruiting_store.Recruitment(
+            saturday, status, time(6), time(12),
+            datetime(2026, 7, 24, 12, tzinfo=timezone.utc),
+        ),
+        (),
+        (),
+    )
+    monkeypatch.setattr(
+        staffing_routes.saturday_recruiting_store, "get",
+        lambda _day, **_kw: bundle,
+    )
+    monkeypatch.setattr(
+        staffing_routes.saturday_recruiting_store, "available_positions",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        staffing_routes.saturday_recruiting_store, "serialize_bundle",
+        lambda _bundle: {"coverage": {"requested": 0, "total": 0}, "commitments": []},
+    )
+    # The prepare step already failed to persist a marker in production; model
+    # that so the fix cannot lean on staffing_prepared_at being set.
+    monkeypatch.setattr(
+        staffing_routes, "_prepare_closed_saturday_schedule",
+        lambda *_a, **_kw: None,
+    )
+    return _render_staffing_page(monkeypatch, day=saturday)
+
+
+def test_closed_saturday_switches_to_normal_publish_flow(monkeypatch):
+    # Recruiting has closed but staffing_prepared_at is NULL. The manager must
+    # still get the normal draft/publish flow — not a permanently stuck day.
+    ctx = _render_saturday_with_bundle(monkeypatch, status="closed")
+
+    assert ctx["saturday_recruiting_finished"] is True
+
+
+def test_open_saturday_recruiting_keeps_normal_flow_hidden(monkeypatch):
+    ctx = _render_saturday_with_bundle(monkeypatch, status="recruiting")
+
+    assert ctx["saturday_recruiting_finished"] is False
+
+
 def test_staffing_template_renders_auto_controls_from_the_available_context():
     html = (ROOT / "src/zira_dashboard/templates/staffing.html").read_text()
 
-    assert "{% if auto_scheduler_available and (not day_is_saturday or saturday_staffing_prepared) %}" in html
+    assert "{% if auto_scheduler_available and (not day_is_saturday or saturday_recruiting_finished) %}" in html
     assert 'class="rotation-controls"' in html
     assert 'data-work-center-toggle' in html
 

@@ -1461,6 +1461,15 @@ def staffing_page(
         "day_is_saturday": d.weekday() == 5,
         "saturday_recruiting": saturday_bundle.recruitment if saturday_bundle else None,
         "saturday_staffing_prepared": saturday_staffing_prepared,
+        # Once recruiting has closed the Saturday behaves like any other draft:
+        # the manager gets the normal schedule-goal and publish controls. This
+        # is deliberately keyed off recruiting status, not staffing_prepared_at,
+        # so a Saturday is never left unpublishable when the one-shot prepare
+        # step could not persist its marker.
+        "saturday_recruiting_finished": bool(
+            saturday_bundle
+            and saturday_bundle.recruitment.status in {"closed", "published"}
+        ),
         "saturday_recruit_enabled_count": saturday_recruit_enabled_count,
         "saturday_response_summary": saturday_response_summary,
         "saturday_positions": saturday_positions,

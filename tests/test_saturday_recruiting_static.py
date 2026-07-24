@@ -11,10 +11,10 @@ def test_scheduler_uses_recruit_action_not_separate_panel():
     assert "_saturday_recruiting_panel.html" not in template
 
 
-def test_saturday_hides_publish_until_staffing_is_prepared():
+def test_saturday_shows_publish_once_recruiting_finishes():
     template = Path("src/zira_dashboard/templates/staffing.html").read_text()
 
-    assert "{% if not day_is_saturday or saturday_staffing_prepared %}" in template
+    assert "{% if not day_is_saturday or saturday_recruiting_finished %}" in template
 
 
 def test_staffing_template_has_live_saturday_recruiting_demand_target():
